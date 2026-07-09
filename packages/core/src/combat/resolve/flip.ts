@@ -136,10 +136,39 @@ const addTemporaryCoin = (
   return nextState;
 };
 
+const grantElement = (
+  state: CombatState,
+  atom: Extract<EffectAtom, { kind: 'grantElement' }>,
+  db: ContentDb,
+  events: CombatEvent[]
+): CombatState => {
+  if (atom.scope !== 'allBasicInHand') throw new Error(`unsupported grant scope: ${atom.scope}`);
+  const targets = state.zones.hand.filter((coin) => {
+    const instance = state.coins[Number(coin)];
+    const def = instance === undefined ? undefined : db.coins[String(instance.defId)];
+    return def?.element === null;
+  });
+  if (targets.length === 0) return state;
+  const targetSet = new Set<CoinUid>(targets);
+  events.push({ type: 'elementGranted', coins: targets, element: atom.element });
+  return {
+    ...state,
+    coins: Object.fromEntries(
+      Object.entries(state.coins).map(([key, coin]) => [
+        key,
+        targetSet.has(coin.uid) && !coin.grants.includes(atom.element)
+          ? { ...coin, grants: [...coin.grants, atom.element] }
+          : coin
+      ])
+    )
+  };
+};
+
 export const applyEffectAtom = (
   state: CombatState,
   atom: EffectAtom,
   target: TargetRef,
+  db: ContentDb,
   events: CombatEvent[]
 ): CombatState => {
   if (state.phase === 'victory' || state.phase === 'defeat') return state;
@@ -170,7 +199,7 @@ export const applyEffectAtom = (
     case 'addCoin':
       return addTemporaryCoin(state, atom, events);
     case 'grantElement':
-      throw new Error('grantElement is reserved for M3');
+      return grantElement(state, atom, db, events);
   }
 };
 
@@ -264,7 +293,7 @@ export const resolveFlip = (
   state = { ...state, rng: { ...state.rng, flip: rng.snapshot() } };
 
   for (const atom of collectEffects(skill, faces)) {
-    state = applyEffectAtom(state, atom, skillTarget, events);
+    state = applyEffectAtom(state, atom, skillTarget, db, events);
     if (state.phase === 'victory' || state.phase === 'defeat') return { state, events };
   }
 
@@ -278,7 +307,7 @@ export const resolveFlip = (
       for (const atom of proc.effects) {
         const procTarget = targetForElementProc(state, atom, skillTarget);
         if (procTarget === undefined) continue;
-        state = applyEffectAtom(state, atom, procTarget, events);
+        state = applyEffectAtom(state, atom, procTarget, db, events);
         if (state.phase === 'victory' || state.phase === 'defeat') return { state, events };
       }
     }

@@ -4,6 +4,7 @@ import { derive, rngFrom, seedFromString } from '../rng';
 import type { Command } from './commands';
 import { initialIntent, runEnemyPhase } from './enemy';
 import type { CombatEvent } from './events';
+import { resolveConsume } from './resolve/consume';
 import { applyDamage, applyEffectAtom, checkCombatEnd, resolveFlip } from './resolve/flip';
 import { cloneState } from './state';
 import type { CombatState, CombatZones } from './state';
@@ -61,7 +62,7 @@ const runCombatStartTrait = (input: CombatState, db: ContentDb, characterId: Cha
   const events: CombatEvent[] = [{ type: 'traitTriggered', trait: character.trait.id }];
   let state = input;
   for (const atom of character.trait.effects) {
-    state = applyEffectAtom(state, atom, { type: 'player' }, events);
+    state = applyEffectAtom(state, atom, { type: 'player' }, db, events);
     if (state.phase === 'victory' || state.phase === 'defeat') break;
   }
   return { state, events };
@@ -234,7 +235,14 @@ export const step = (state: CombatState, cmd: Command, db: ContentDb): StepResul
       if (skill === undefined || skill.type !== 'flip') return { ok: false, error: 'slot is not a flip skill' };
       return { ok: true, ...resolveFlip(input, cmd.slot, skill, cmd.target, db) };
     }
-    return { ok: false, error: 'consume skills are reserved for M4' };
+    if (cmd.type === 'useConsumeSkill') {
+      const slotState = input.slots[Number(cmd.slot)];
+      if (slotState === undefined) return { ok: false, error: 'slot does not exist' };
+      const skill = db.skills[String(slotState.skillId)];
+      if (skill === undefined || skill.type !== 'consume') return { ok: false, error: 'slot is not a consume skill' };
+      return { ok: true, ...resolveConsume(input, cmd.slot, skill, cmd.coins, cmd.target, db) };
+    }
+    return { ok: false, error: 'unknown command' };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }

@@ -1,5 +1,6 @@
 import { contentDb } from '@game/content';
-import type { CoinUid, SlotId } from '@game/core';
+import type { CoinUid, EffectAtom, SlotId } from '@game/core';
+import { effectiveElements } from '@game/core';
 import { createCombat, legalCommands, previewFlip, step } from '@game/core';
 import type { CombatEvent, CombatState, Command } from '@game/core';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -42,7 +43,12 @@ const sameCommand = (left: Command, right: Command): boolean => {
   if (left.type === 'useFlipSkill' && right.type === 'useFlipSkill') return left.slot === right.slot && left.target === right.target;
   if (left.type === 'endTurn' && right.type === 'endTurn') return true;
   if (left.type === 'useConsumeSkill' && right.type === 'useConsumeSkill') {
-    return left.slot === right.slot && left.coins.every((coin, index) => coin === right.coins[index]);
+    return (
+      left.slot === right.slot &&
+      left.target === right.target &&
+      left.coins.length === right.coins.length &&
+      left.coins.every((coin, index) => coin === right.coins[index])
+    );
   }
   return false;
 };
@@ -57,14 +63,17 @@ const intentText = (enemy: CombatState['enemies'][number]): string =>
 
 const effectText = (skillId: string): string => {
   const skill = contentDb.skills[skillId];
-  if (skill?.type !== 'flip') return '소비형 예약';
-  const atomText = (atom: (typeof skill.base)[number]): string => {
+  const atomText = (atom: EffectAtom): string => {
     if (atom.kind === 'damage') return `피해 ${atom.amount}`;
     if (atom.kind === 'block') return `방어 ${atom.amount}`;
     if (atom.kind === 'applyStatus' && atom.status === 'burn') return `화상 ${atom.stacks}`;
     if (atom.kind === 'addCoin') return `임시 ${atom.coin} +${atom.count}`;
+    if (atom.kind === 'selfDamage') return `자신 피해 ${atom.amount}`;
+    if (atom.kind === 'grantElement') return `기본 코인 ${atom.element} 취급`;
     return '특수';
   };
+  if (skill?.type === 'consume') return skill.effects.map(atomText).join(' / ');
+  if (skill?.type !== 'flip') return '';
   const parts = skill.base.map(atomText);
   if (skill.heads !== undefined) {
     parts.push(...skill.heads.effects.map((atom) => (atom.kind === 'damage' ? `앞면 +${atom.amount}` : `앞면 ${atomText(atom)}`)));
@@ -78,7 +87,8 @@ const effectText = (skillId: string): string => {
 const coinLabel = (state: CombatState, coin: CoinUid): string => {
   const instance = state.coins[Number(coin)];
   const def = instance === undefined ? undefined : contentDb.coins[String(instance.defId)];
-  return def?.element ?? '기본';
+  const granted = instance?.grants.includes('fire') === true && def?.element !== 'fire';
+  return granted ? '기본+화염' : def?.element ?? '기본';
 };
 
 const coinClasses = (state: CombatState, coin: CoinUid, selected: boolean, flipping: boolean): string => {
@@ -89,6 +99,7 @@ const coinClasses = (state: CombatState, coin: CoinUid, selected: boolean, flipp
     selected ? 'selected' : '',
     flipping ? 'flipping' : '',
     def?.element === 'fire' ? 'fire' : '',
+    instance?.grants.includes('fire') === true ? 'granted-fire' : '',
     instance?.permanent === false ? 'temporary' : ''
   ]
     .filter(Boolean)
@@ -217,19 +228,26 @@ export const App = () => {
       </section>
 
       <section className="skill-row" aria-label="스킬 카드">
-        {state.slots.slice(0, 4).map((slotState, index) => {
+        {state.slots.slice(0, 6).map((slotState, index) => {
           const skill = contentDb.skills[String(slotState.skillId)];
           const placed = state.zones.placed[slot(index)] ?? [];
-          const use = findLegal({ type: 'useFlipSkill', slot: slot(index), target: skill?.targetType === 'single-enemy' ? 0 : undefined });
+          const consumeUse = legal.find((command): command is Extract<Command, { type: 'useConsumeSkill' }> => command.type === 'useConsumeSkill' && command.slot === slot(index));
+          const use =
+            skill?.type === 'consume'
+              ? consumeUse
+              : findLegal({ type: 'useFlipSkill', slot: slot(index), target: skill?.targetType === 'single-enemy' ? 0 : undefined });
           const canPlace = selectedCoin !== null && findLegal({ type: 'placeCoin', coin: selectedCoin, slot: slot(index) }) !== undefined;
           const preview = placed.length > 0 && skill?.type === 'flip' ? previewFlip(state, slot(index), contentDb) : null;
+          const consumeReady = skill?.type === 'consume' && consumeUse !== undefined;
+          const lockedOnce = skill?.oncePerCombat === true && slotState.usedThisCombat;
           return (
             <article
-              className={`skill-card ${use !== undefined ? 'ready' : ''} ${slotState.usedThisTurn ? 'spent' : ''}`}
+              className={`skill-card ${use !== undefined ? 'ready' : ''} ${slotState.usedThisTurn ? 'spent' : ''} ${lockedOnce ? 'combat-locked' : ''}`}
               key={String(slotState.skillId)}
               onClick={() => (use !== undefined ? runCommand(use) : undefined)}
             >
               <header>{skill?.name ?? '빈 슬롯'}</header>
+              {skill?.oncePerCombat === true ? <span className="once-badge">전투당 1회</span> : null}
               <div className="sockets" aria-label={`${skill?.name ?? '스킬'} 코스트 소켓`}>
                 {Array.from({ length: skill?.type === 'flip' ? skill.cost : 0 }, (_unused, socketIndex) => {
                   const coin = placed[socketIndex];
@@ -250,11 +268,18 @@ export const App = () => {
                   );
                 })}
               </div>
+              {skill?.type === 'consume' ? (
+                <div className={`consume-condition ${consumeReady ? 'met' : ''}`}>
+                  🔥×{skill.consume.count}
+                  {consumeUse !== undefined ? <span>{consumeUse.coins.map((coin) => `#${String(coin)}`).join(' ')}</span> : null}
+                </div>
+              ) : null}
               <div className="card-art" aria-hidden="true">
-                {skill?.tags.includes('attack') ? '⚔' : '▣'}
+                {skill?.type === 'consume' ? '🔥' : skill?.tags.includes('attack') ? '⚔' : '▣'}
               </div>
               <p>{effectText(String(slotState.skillId))}</p>
               {slotState.usedThisTurn ? <span className="spent-label">사용됨</span> : null}
+              {lockedOnce ? <span className="locked-label">잠금</span> : null}
               {preview !== null ? (
                 <div className="preview-tip" role="tooltip">
                   피해 {preview.byAxis.damage.min}~{preview.byAxis.damage.max} (기대 {preview.expected.damage})
@@ -284,7 +309,7 @@ export const App = () => {
               type="button"
               onClick={() => setSelectedCoin(selectedCoin === coin ? null : coin)}
             >
-              <span>{coinFaces[Number(coin)] ?? (coinLabel(state, coin) === 'fire' ? '🔥' : 'B')}</span>
+              <span>{coinFaces[Number(coin)] ?? (effectiveElements(state.coins[Number(coin)]!, contentDb).includes('fire') ? '🔥' : 'B')}</span>
               <small>{coinLabel(state, coin)}</small>
             </button>
           ))}

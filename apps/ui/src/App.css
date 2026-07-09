@@ -171,13 +171,13 @@ button {
   left: 50%;
   bottom: 175px;
   display: flex;
-  gap: 16px;
+  gap: 10px;
   transform: translateX(-50%);
 }
 
 .skill-card {
   position: relative;
-  width: 176px;
+  width: 145px;
   height: 245px;
   padding: 42px 14px 14px;
   color: #f8efd2;
@@ -195,6 +195,11 @@ button {
   filter: grayscale(0.65) brightness(0.75);
 }
 
+.skill-card.combat-locked {
+  cursor: not-allowed;
+  filter: grayscale(0.8) brightness(0.62);
+}
+
 .skill-card header {
   position: absolute;
   top: 0;
@@ -206,6 +211,19 @@ button {
   border-bottom: 5px solid #10131a;
   font-weight: 900;
   text-align: center;
+}
+
+.once-badge {
+  position: absolute;
+  top: 37px;
+  right: 6px;
+  z-index: 2;
+  padding: 3px 5px;
+  color: #201811;
+  background: #ffd95a;
+  border: 3px solid #5b381c;
+  font-size: 10px;
+  font-weight: 900;
 }
 
 .sockets {
@@ -236,10 +254,39 @@ button {
   outline: 3px solid #fff3a2;
 }
 
+.consume-condition {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  margin-bottom: 8px;
+  padding: 4px 6px;
+  color: #f8efd2;
+  background: #11151d;
+  border: 3px solid #4b5361;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.consume-condition.met {
+  color: #201811;
+  background: #ffdf5b;
+  border-color: #f8efd2;
+}
+
+.consume-condition span {
+  overflow: hidden;
+  max-width: 60px;
+  color: inherit;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .card-art {
   display: grid;
   place-items: center;
-  height: 95px;
+  height: 78px;
   margin-bottom: 14px;
   color: #ffd95a;
   background: linear-gradient(180deg, #6b8d70, #2f544d);
@@ -251,16 +298,23 @@ button {
   margin: 0;
   min-height: 52px;
   color: #e7dfc5;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
-.spent-label {
+.spent-label,
+.locked-label {
   position: absolute;
   right: 10px;
   bottom: 10px;
   color: #ffdf5b;
   font-size: 12px;
+}
+
+.locked-label {
+  left: 10px;
+  right: auto;
+  color: #ff8f6d;
 }
 
 .preview-tip {
@@ -360,6 +414,11 @@ button {
 .socket.loaded {
   background: #f28a28;
   border-color: #7b2815;
+}
+
+.coin.granted-fire {
+  border-color: #ffdf5b;
+  box-shadow: 0 0 0 4px rgba(255, 119, 43, 0.72), 0 0 18px rgba(255, 140, 46, 0.82);
 }
 
 .coin.temporary {

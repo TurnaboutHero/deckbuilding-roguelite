@@ -66,6 +66,32 @@ export const skills = {
     base: [{ kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }],
     heads: { mode: 'any', effects: [{ kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }] },
     tails: { mode: 'any', effects: [{ kind: 'damage', amount: 3 }] }
+  },
+  'ignite-sword': {
+    id: skill('ignite-sword'),
+    name: '점화 검술',
+    type: 'consume',
+    rarity: 'advanced',
+    tags: ['attack'],
+    targetType: 'single-enemy',
+    consume: { element: 'fire', count: 1 },
+    effects: [
+      { kind: 'damage', amount: 10 },
+      { kind: 'applyStatus', status: 'burn', stacks: 2, to: 'target' }
+    ]
+  },
+  'flame-rampage': {
+    id: skill('flame-rampage'),
+    name: '화염 폭주',
+    type: 'flip',
+    rarity: 'rare',
+    tags: ['utility'],
+    targetType: 'self',
+    oncePerCombat: true,
+    cost: 1,
+    base: [{ kind: 'grantElement', element: 'fire', scope: 'allBasicInHand' }],
+    heads: { mode: 'any', effects: [{ kind: 'addCoin', coin: coin('fire'), zone: 'hand', count: 1 }] },
+    tails: { mode: 'any', effects: [{ kind: 'selfDamage', amount: 2 }] }
   }
 } satisfies Record<string, SkillDef>;
 
@@ -88,7 +114,14 @@ export const characters = {
     name: '전사',
     maxHp: 70,
     startingBag: [...Array.from({ length: 8 }, () => coin('basic')), coin('fire'), coin('fire')],
-    startingSkills: [skill('slash'), skill('guard'), skill('burning-strike'), skill('ignite')],
+    startingSkills: [
+      skill('slash'),
+      skill('guard'),
+      skill('burning-strike'),
+      skill('ignite'),
+      skill('ignite-sword'),
+      skill('flame-rampage')
+    ],
     trait: {
       id: 'ember-pouch',
       name: '불씨 주머니',

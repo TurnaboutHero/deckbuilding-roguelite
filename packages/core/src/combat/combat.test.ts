@@ -86,6 +86,32 @@ const testDb = (): ContentDb => ({
       base: [{ kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }],
       heads: { mode: 'any', effects: [{ kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }] },
       tails: { mode: 'any', effects: [{ kind: 'damage', amount: 3 }] }
+    },
+    'ignite-sword': {
+      id: id<SkillId>('ignite-sword'),
+      name: '점화 검술',
+      type: 'consume',
+      rarity: 'advanced',
+      tags: ['attack'],
+      targetType: 'single-enemy',
+      consume: { element: 'fire', count: 1 },
+      effects: [
+        { kind: 'damage', amount: 10 },
+        { kind: 'applyStatus', status: 'burn', stacks: 2, to: 'target' }
+      ]
+    },
+    'flame-rampage': {
+      id: id<SkillId>('flame-rampage'),
+      name: '화염 폭주',
+      type: 'flip',
+      rarity: 'rare',
+      tags: ['utility'],
+      targetType: 'self',
+      oncePerCombat: true,
+      cost: 1,
+      base: [{ kind: 'grantElement', element: 'fire', scope: 'allBasicInHand' }],
+      heads: { mode: 'any', effects: [{ kind: 'addCoin', coin: id<CoinDefId>('fire'), zone: 'hand', count: 1 }] },
+      tails: { mode: 'any', effects: [{ kind: 'selfDamage', amount: 2 }] }
     }
   },
   enemies: {
@@ -105,7 +131,14 @@ const testDb = (): ContentDb => ({
       name: '전사',
       maxHp: 70,
       startingBag: Array.from({ length: 10 }, () => id<CoinDefId>('basic')),
-      startingSkills: [id<SkillId>('slash'), id<SkillId>('guard'), id<SkillId>('burning-strike'), id<SkillId>('ignite')],
+      startingSkills: [
+        id<SkillId>('slash'),
+        id<SkillId>('guard'),
+        id<SkillId>('burning-strike'),
+        id<SkillId>('ignite'),
+        id<SkillId>('ignite-sword'),
+        id<SkillId>('flame-rampage')
+      ],
       trait: {
         id: 'ember-pouch',
         name: '불씨 주머니',
@@ -256,6 +289,192 @@ describe('combat golden traces', () => {
     const tails = useFirstCoin(tailsState, 3);
     expect(tails.state.enemies[0]?.statuses.burn).toBe(1);
     expect(tails.state.enemies[0]?.hp).toBe(72);
+  });
+});
+
+describe('M4 consume skills, grants, and once per combat', () => {
+  it('ignite sword consumes one fire coin for fixed damage and burn without flips or procs', () => {
+    const db = testDb();
+    const state = withHandDefs(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'ignite-sword'), [
+      'fire'
+    ]);
+    const fuel = firstHandCoin(state);
+    const result = step(state, { type: 'useConsumeSkill', slot: slot(4), coins: [fuel], target: 0 }, db);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.enemies[0]?.hp).toBe(65);
+    expect(result.state.enemies[0]?.statuses.burn).toBe(2);
+    expect(result.state.zones.exhausted).toContain(fuel);
+    expect(result.state.zones.hand).not.toContain(fuel);
+    expect(result.events.filter((event) => event.type === 'coinFlipped')).toHaveLength(0);
+  });
+
+  it('flame rampage granted basic coins count as ignite sword fuel and are consumed to exhausted', () => {
+    const db = testDb();
+    let state = replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'rampage-combo'), [
+      'tails'
+    ]);
+    const cost = firstHandCoin(state);
+    const placed = step(state, { type: 'placeCoin', coin: cost, slot: slot(5) }, db);
+    expect(placed.ok).toBe(true);
+    if (!placed.ok) return;
+    const rampage = step(placed.state, { type: 'useFlipSkill', slot: slot(5) }, db);
+    expect(rampage.ok).toBe(true);
+    if (!rampage.ok) return;
+    state = rampage.state;
+
+    const consume = legalCommands(state, db).find((command) => command.type === 'useConsumeSkill' && command.slot === slot(4));
+    expect(consume).toBeDefined();
+    if (consume?.type !== 'useConsumeSkill') return;
+    expect(state.coins[Number(consume.coins[0])]?.grants).toContain('fire');
+
+    const result = step(state, consume, db);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.zones.exhausted).toContain(consume.coins[0]);
+    expect(result.state.enemies[0]?.hp).toBe(65);
+  });
+
+  it('clears grants from every zone at turn end, including exhausted', () => {
+    const db = testDb();
+    const state = replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'grant-expire'), [
+      'tails'
+    ]);
+    const placed = step(state, { type: 'placeCoin', coin: firstHandCoin(state), slot: slot(5) }, db);
+    expect(placed.ok).toBe(true);
+    if (!placed.ok) return;
+    const rampage = step(placed.state, { type: 'useFlipSkill', slot: slot(5) }, db);
+    expect(rampage.ok).toBe(true);
+    if (!rampage.ok) return;
+    const consume = legalCommands(rampage.state, db).find((command) => command.type === 'useConsumeSkill' && command.slot === slot(4));
+    expect(consume?.type).toBe('useConsumeSkill');
+    if (consume?.type !== 'useConsumeSkill') return;
+    const consumed = step(rampage.state, consume, db);
+    expect(consumed.ok).toBe(true);
+    if (!consumed.ok) return;
+    expect(Object.values(consumed.state.coins).some((coin) => coin.grants.length > 0)).toBe(true);
+
+    const ended = step(consumed.state, { type: 'endTurn' }, db);
+    expect(ended.ok).toBe(true);
+    if (!ended.ok) return;
+    expect(Object.values(ended.state.coins).every((coin) => coin.grants.length === 0)).toBe(true);
+    expect(ended.state.zones.exhausted).toContain(consume.coins[0]);
+  });
+
+  it('flame rampage tags only the hand snapshot, excludes its placed cost, and resolves both faces', () => {
+    const db = testDb();
+    const headsState = replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'rampage-heads'), [
+      'heads'
+    ]);
+    const cost = firstHandCoin(headsState);
+    const placed = step(headsState, { type: 'placeCoin', coin: cost, slot: slot(5) }, db);
+    expect(placed.ok).toBe(true);
+    if (!placed.ok) return;
+    const snapshot = [...placed.state.zones.hand];
+    const heads = step(placed.state, { type: 'useFlipSkill', slot: slot(5) }, db);
+    expect(heads.ok).toBe(true);
+    if (!heads.ok) return;
+    expect(heads.state.coins[Number(cost)]?.grants).toEqual([]);
+    for (const coin of snapshot) expect(heads.state.coins[Number(coin)]?.grants).toContain('fire');
+    const created = heads.events.find((event) => event.type === 'coinCreated');
+    expect(created).toMatchObject({ type: 'coinCreated', defId: 'fire', zone: 'hand' });
+    if (created?.type === 'coinCreated') expect(heads.state.coins[Number(created.coin)]?.grants).toEqual([]);
+
+    const tailsState = {
+      ...replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'rampage-tails'), ['tails']),
+      player: { ...headsState.player, block: 1 }
+    };
+    const tailsPlaced = step(tailsState, { type: 'placeCoin', coin: firstHandCoin(tailsState), slot: slot(5) }, db);
+    expect(tailsPlaced.ok).toBe(true);
+    if (!tailsPlaced.ok) return;
+    const tails = step(tailsPlaced.state, { type: 'useFlipSkill', slot: slot(5) }, db);
+    expect(tails.ok).toBe(true);
+    if (!tails.ok) return;
+    expect(tails.state.player.hp).toBe(69);
+    expect(tails.state.player.block).toBe(0);
+    expect(tails.events).toContainEqual({ type: 'damageDealt', target: { type: 'player' }, amount: 1, blocked: 1, source: 'self' });
+  });
+
+  it('rejects flame rampage after it was used once, even on later turns', () => {
+    const db = testDb();
+    let state = replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'once'), ['tails']);
+    const placed = step(state, { type: 'placeCoin', coin: firstHandCoin(state), slot: slot(5) }, db);
+    expect(placed.ok).toBe(true);
+    if (!placed.ok) return;
+    const first = step(placed.state, { type: 'useFlipSkill', slot: slot(5) }, db);
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    state = first.state;
+    expect(step(state, { type: 'useFlipSkill', slot: slot(5) }, db).ok).toBe(false);
+
+    const ended = step(state, { type: 'endTurn' }, db);
+    expect(ended.ok).toBe(true);
+    if (!ended.ok) return;
+    expect(ended.state.slots[5]?.usedThisCombat).toBe(true);
+    expect(legalCommands(ended.state, db).some((command) => command.type === 'useFlipSkill' && command.slot === slot(5))).toBe(false);
+  });
+
+  it('keeps exhausted coins isolated from reshuffle and draw', () => {
+    const db = testDb();
+    const state = withHandDefs(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'exhausted'), [
+      'fire'
+    ]);
+    const fuel = firstHandCoin(state);
+    const consumed = step(state, { type: 'useConsumeSkill', slot: slot(4), coins: [fuel], target: 0 }, db);
+    expect(consumed.ok).toBe(true);
+    if (!consumed.ok) return;
+    const rigged = {
+      ...consumed.state,
+      zones: {
+        ...consumed.state.zones,
+        draw: [],
+        hand: [],
+        discard: consumed.state.zones.hand,
+        exhausted: consumed.state.zones.exhausted
+      }
+    };
+    const ended = step(rigged, { type: 'endTurn' }, db);
+    expect(ended.ok).toBe(true);
+    if (!ended.ok) return;
+    expect(ended.state.zones.exhausted).toContain(fuel);
+    expect(ended.state.zones.hand).not.toContain(fuel);
+  });
+
+  it('counts consume skills toward the three-use cap', () => {
+    const db = testDb();
+    let state = withHandDefs(
+      replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'consume-cap'), [
+        'heads',
+        'heads',
+        'heads'
+      ]),
+      ['basic', 'basic', 'fire', 'basic']
+    );
+    state = useFirstCoin(state, 0, 0, db).state;
+    state = useFirstCoin(state, 1, 0, db).state;
+    const fire = state.zones.hand.find((coin) => state.coins[Number(coin)]?.defId === 'fire');
+    expect(fire).toBeDefined();
+    if (fire === undefined) return;
+    const consume = step(state, { type: 'useConsumeSkill', slot: slot(4), coins: [fire], target: 0 }, db);
+    expect(consume.ok).toBe(true);
+    if (!consume.ok) return;
+    const fourthPlaced = step(consume.state, { type: 'placeCoin', coin: firstHandCoin(consume.state), slot: slot(3) }, db);
+    expect(fourthPlaced.ok).toBe(true);
+    if (!fourthPlaced.ok) return;
+    expect(step(fourthPlaced.state, { type: 'useFlipSkill', slot: slot(3), target: 0 }, db).ok).toBe(false);
+  });
+
+  it('omits consume legal commands when hand has no fire or fire grant', () => {
+    const db = testDb();
+    const state = withHandDefs(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'no-fuel'), [
+      'basic',
+      'basic',
+      'basic',
+      'basic',
+      'basic'
+    ]);
+    expect(legalCommands(state, db).some((command) => command.type === 'useConsumeSkill')).toBe(false);
   });
 });
 

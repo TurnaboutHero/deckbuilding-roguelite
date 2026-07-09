@@ -1,4 +1,5 @@
 import type { ContentDb } from '../content-types';
+import { effectiveElements } from '../content-types';
 import type { CoinUid, SlotId } from '../ids';
 import type { CombatState } from './state';
 
@@ -30,7 +31,18 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
         }
       }
     } else {
-      const usable = state.zones.hand.slice(0, skill.consume.count);
+      const usable = state.zones.hand
+        .filter((coin) => {
+          const instance = state.coins[Number(coin)];
+          return instance !== undefined && effectiveElements(instance, db).includes(skill.consume.element);
+        })
+        .sort((left, right) => {
+          const leftGranted = state.coins[Number(left)]?.grants.includes(skill.consume.element) === true;
+          const rightGranted = state.coins[Number(right)]?.grants.includes(skill.consume.element) === true;
+          if (leftGranted === rightGranted) return 0;
+          return leftGranted ? -1 : 1;
+        })
+        .slice(0, skill.consume.count);
       if (usable.length === skill.consume.count) {
         commands.push({ type: 'useConsumeSkill', slot, coins: usable, target: skill.targetType === 'single-enemy' ? 0 : undefined });
       }
