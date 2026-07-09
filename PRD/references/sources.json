@@ -1,0 +1,49 @@
+{
+  "query": {
+    "service": "coin deckbuilding roguelike",
+    "style": "pixel art retro",
+    "source": "itch.io",
+    "searchUrl": "https://itch.io/games/tag-deck-building/tag-pixel-art"
+  },
+  "retrievedAt": "2026-07-10",
+  "note": "Dribbble/Cosmos WAF 차단으로 itch.io 폴백. 게임 커버아트 = 무드/팔레트 레퍼런스 (UI 상세 레퍼런스 아님)",
+  "license_note": "Reference-only local cache. Do NOT republish in deliverables; link to source instead.",
+  "items": [
+    {
+      "file": "ref1-degenerate-gamblers.png",
+      "title": "Dungeons & Degenerate Gamblers",
+      "sourceImage": "https://img.itch.zone/aW1nLzE2Mjc3NjU5LnBuZw==/315x250%23c/lGH%2BUI.png",
+      "sourcePage": "https://purplemosscollectors.itch.io/dndg",
+      "screen": "desktop",
+      "match": "스타일(픽셀아트) ✓ / 도메인(덱빌더·로그라이크) ✓ / 픽셀 카드 도박 덱빌더 — 테이블/칩/카드 무드가 동전 덱빌딩과 가장 근접",
+      "verdict": "keep — best fit"
+    },
+    {
+      "file": "ref2-die-in-the-dungeon.png",
+      "title": "Die in the Dungeon CLASSIC",
+      "sourceImage": "https://img.itch.zone/aW1nLzk5NjE2MTYuZ2lm/315x250%23c/vItMN%2F.gif",
+      "sourcePage": "https://alarts.itch.io/die-in-the-dungeon",
+      "screen": "desktop",
+      "match": "스타일(픽셀아트) ✓ / 도메인(덱빌더·로그라이크) ✓ / 비카드 토큰(주사위) 덱빌더 로그라이크 — 동전=토큰 자원 UI의 선례",
+      "verdict": "keep"
+    },
+    {
+      "file": "ref3-shogun-showdown.png",
+      "title": "Shogun Showdown - Alpha",
+      "sourceImage": "https://img.itch.zone/aW1nLzExNjA1MjU3LnBuZw==/315x250%23c/EeVzxf.png",
+      "sourcePage": "https://roboatino.itch.io/shogunshowdown",
+      "screen": "desktop",
+      "match": "스타일(픽셀아트) ✓ / 도메인(덱빌더·로그라이크) ✓ / 제한 팔레트(단색+실루엣) 픽셀 무드 — 전투 화면 톤 레퍼런스",
+      "verdict": "keep"
+    },
+    {
+      "file": "ref4-dungeon-deck.png",
+      "title": "Dungeon Deck",
+      "sourceImage": "https://img.itch.zone/aW1nLzE1NDg0MzI5LnBuZw==/315x250%23c/IWSW2X.png",
+      "sourcePage": "https://incinious.itch.io/dungeon-deck",
+      "screen": "desktop",
+      "match": "스타일(픽셀아트) ✓ / 도메인(덱빌더·로그라이크) ✓ / 밝은 카툰 픽셀 카드 덱빌더 — 가독성 높은 라이트 톤 옵션",
+      "verdict": "keep"
+    }
+  ]
+}
