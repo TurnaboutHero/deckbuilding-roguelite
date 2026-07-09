@@ -7,7 +7,8 @@
     "test": "vitest run",
     "build": "pnpm -r run build",
     "sim": "pnpm --filter @game/sim run cli",
-    "dev": "pnpm --filter @game/ui run dev"
+    "dev": "pnpm --filter @game/ui run dev",
+    "shot": "pnpm --filter @game/ui run shot"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",

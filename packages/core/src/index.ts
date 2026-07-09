@@ -5,3 +5,4 @@ export * from './combat/commands';
 export * from './combat/events';
 export * from './combat/state';
 export * from './combat/reducer';
+export * from './combat/preview';
