@@ -8,8 +8,10 @@
 
 | 문서 | 내용 |
 |---|---|
-| [docs/PRD.md](docs/PRD.md) | 제품 요구사항 (v0.3) — 코인/스킬/캐릭터 시스템, MVP 범위, UX 요구사항 |
-| [docs/implementation-plan.md](docs/implementation-plan.md) | 구현 계획 (v1.1, 확정) — 아키텍처, 규칙 확정, 전투 파이프라인 명세, 마일스톤 M0~M6, 테스트·밸런스 전략 |
+| [docs/PRD.md](docs/PRD.md) | 제품 요구사항 (v0.4) — 코인/스킬/캐릭터 시스템, 행동 제한 규칙, MVP 범위, UX 요구사항 |
+| [docs/implementation-plan.md](docs/implementation-plan.md) | 구현 계획 (v1.2, 확정) — 아키텍처, 규칙 확정, 전투 파이프라인 명세, 마일스톤 M0~M6, 테스트·밸런스 전략 |
+| [docs/content-design-guide.md](docs/content-design-guide.md) | 콘텐츠 기획 가이드 — 캐릭터/스킬/몬스터 양식, 코스트·기대값 기준, 상점·이벤트 스펙 |
+| [PRD/](PRD/README.md) | 바이브코딩용 문서 세트 (요약 PRD, 데이터 모델, Phase 계획, AI 행동 규칙) |
 
 ## 핵심 루프
 
