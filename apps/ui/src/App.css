@@ -70,55 +70,11 @@ button:focus-visible {
   z-index: 0;
 }
 
-.backdrop .sky {
-  position: absolute;
-  inset: 0 0 55% 0;
-  background: linear-gradient(#6db5e4 0%, #8fd0f0 70%, #c8ecf8 100%);
-}
-
-/* 원경 언덕 — 둥근 실루엣 */
-.backdrop .mountains {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 26%;
-  height: 20%;
-  background:
-    radial-gradient(58% 130% at 12% 100%, #86bfa4 60%, transparent 61%),
-    radial-gradient(52% 110% at 38% 100%, #74af92 60%, transparent 61%),
-    radial-gradient(60% 125% at 66% 100%, #86bfa4 60%, transparent 61%),
-    radial-gradient(55% 115% at 92% 100%, #74af92 60%, transparent 61%);
-}
-
-.backdrop .treeline {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 38%;
-  height: 12%;
-  background: radial-gradient(14px 14px at 10px 8px, #3f7a3c 60%, transparent 61%) 0 0 / 28px 18px repeat-x,
-    radial-gradient(18px 18px at 14px 14px, #356a33 60%, transparent 61%) 8px 4px / 34px 20px repeat-x, #2c5a2b;
-  border-bottom: 4px solid #274f26;
-}
-
-.backdrop .ground {
-  position: absolute;
-  inset: 46% 0 0 0;
-  background: linear-gradient(#8fca72 0%, #7fba62 46%, #6ba24e 100%);
-}
-
-.backdrop .ground::after {
-  content: '';
-  position: absolute;
-  left: 12%;
-  right: 12%;
-  top: 18%;
-  height: 34%;
-  background: #b9905c;
-  border-radius: 48% 52% 50% 50% / 100% 100% 0 0;
-  border: 4px solid #96714a;
-  border-bottom: none;
-  opacity: 0.85;
+.backdrop-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: auto;
 }
 
 .battlefield,
@@ -259,8 +215,20 @@ button:focus-visible {
   border-radius: 50%;
 }
 
-.unit.enemy .sprite {
-  transform: scaleX(-1);
+.sprite-img {
+  display: block;
+  image-rendering: auto;
+  filter: drop-shadow(2px 3px 0 rgba(28, 23, 36, 0.3));
+}
+
+.sprite-img.player {
+  height: 146px;
+  width: auto;
+}
+
+.sprite-img.enemy {
+  height: 158px;
+  width: auto;
 }
 
 .float-text {
@@ -398,13 +366,21 @@ button:focus-visible {
 }
 
 .card-art {
-  width: 108px;
-  height: 76px;
+  width: 134px;
+  height: 92px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(#22402f, #1a3325);
+  overflow: hidden;
+  background: #14261c;
   border: 3px solid var(--out);
+}
+
+.card-art-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: auto;
 }
 
 .skill-card p {
@@ -497,17 +473,17 @@ button:focus-visible {
 }
 
 .pouch-circle {
-  width: 62px;
-  height: 62px;
-  border-radius: 50%;
+  width: 66px;
+  height: 66px;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  font-size: 22px;
+  padding-bottom: 8px;
+  font-size: 20px;
   color: var(--paper);
-  background: radial-gradient(circle at 34% 28%, #9aa0ac, #6b7280 62%, #4b5158 100%);
-  border: 3px solid var(--out);
-  box-shadow: inset 0 -6px 0 rgba(28, 23, 36, 0.35);
+  text-shadow: 1px 1px 0 var(--out), -1px -1px 0 var(--out);
+  background: url('./assets/pouch.png') center / contain no-repeat;
+  image-rendering: auto;
 }
 
 .hand-tray {
@@ -523,49 +499,50 @@ button:focus-visible {
 
 .coin {
   position: relative;
-  width: 56px;
-  height: 56px;
+  width: 58px;
+  height: 58px;
+  border: none;
   border-radius: 50%;
-  border: 3px solid var(--out);
-  background: radial-gradient(circle at 35% 28%, #f8e39a, var(--gold-2) 45%, var(--gold) 80%, #a87c28 100%);
-  color: var(--ink);
+  background: url('./assets/coin-basic.png') center / contain no-repeat transparent;
+  color: #fdf3d0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0;
-  box-shadow: inset 0 -5px 0 rgba(28, 23, 36, 0.3), 0 3px 0 rgba(0, 0, 0, 0.4);
+  filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.35));
   transition: transform 0.1s steps(2);
+  image-rendering: auto;
 }
 
 .coin small {
   font-size: 9px;
   line-height: 1;
-  color: #5c4718;
+  color: #fdf3d0;
+  text-shadow: 1px 1px 0 var(--out);
+  margin-top: 26px;
 }
 
 .coin.fire,
 .coin.granted-fire {
-  background: radial-gradient(circle at 35% 28%, #ffce7a, var(--flame) 50%, #c85a20 85%, #8e3c12 100%);
+  background-image: url('./assets/coin-fire.png');
 }
 
-.coin.fire small,
-.coin.granted-fire small {
-  color: #5e2408;
-}
+
 
 .coin.granted-fire {
-  box-shadow: 0 0 0 3px var(--flame), inset 0 -5px 0 rgba(28, 23, 36, 0.3);
+  outline: 3px solid var(--flame);
+  outline-offset: -1px;
 }
 
 .coin.temporary {
-  border-style: dashed;
-  border-color: #fdf3d0;
+  outline: 2px dashed #fdf3d0;
+  outline-offset: 2px;
 }
 
 .coin.selected {
   transform: translateY(-7px);
-  box-shadow: 0 0 0 3px var(--gold-2), 0 8px 0 rgba(0, 0, 0, 0.35);
+  filter: drop-shadow(0 0 3px var(--gold-2)) drop-shadow(0 8px 0 rgba(0, 0, 0, 0.3));
 }
 
 .coin:disabled {
@@ -578,11 +555,12 @@ button:focus-visible {
 }
 
 .coin-face {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
   font-size: 17px;
-  min-height: 22px;
+  text-shadow: 1px 1px 0 var(--out), -1px -1px 0 var(--out);
 }
 
 @keyframes coin-flip {

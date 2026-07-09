@@ -1,13 +1,31 @@
 import { contentDb } from '@game/content';
 import type { CoinUid, EffectAtom, SlotId } from '@game/core';
-import { effectiveElements } from '@game/core';
 import { createCombat, legalCommands, previewFlip, step } from '@game/core';
 import type { CombatEvent, CombatState, Command } from '@game/core';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import './App.css';
-import { EmberIcon, FlameIcon, GoblinSprite, HeartIcon, ShieldIcon, SkullIcon, SwordIcon, WarriorSprite } from './icons';
+import { EmberIcon, FlameIcon, HeartIcon, ShieldIcon, SkullIcon, SwordIcon } from './icons';
+import bgForest from './assets/bg-forest.webp';
+import spriteWarrior from './assets/sprite-warrior.png';
+import spriteGoblin from './assets/sprite-goblin.png';
+import cardSlash from './assets/card-slash.webp';
+import cardGuard from './assets/card-guard.webp';
+import cardBurningStrike from './assets/card-burning-strike.webp';
+import cardIgnite from './assets/card-ignite.webp';
+import cardIgniteSword from './assets/card-ignite-sword.webp';
+import cardFlameRampage from './assets/card-flame-rampage.webp';
+
+// 생성 에셋 (docs/ui/combat-ui-v2.png 앵커 스타일 — image_gen 산출, 후처리: 크로마 키·리사이즈)
+const CARD_ART: Record<string, string> = {
+  slash: cardSlash,
+  guard: cardGuard,
+  'burning-strike': cardBurningStrike,
+  ignite: cardIgnite,
+  'ignite-sword': cardIgniteSword,
+  'flame-rampage': cardFlameRampage
+};
 
 const WORDS = ['BRAVE', 'EMBER', 'IRON', 'MOSS', 'RIVER', 'DUSK', 'SPARK', 'VALE'];
 
@@ -79,9 +97,9 @@ const effectText = (skillId: string): string => {
     if (atom.kind === 'damage') return `피해 ${atom.amount}`;
     if (atom.kind === 'block') return `방어 ${atom.amount}`;
     if (atom.kind === 'applyStatus' && atom.status === 'burn') return `화상 ${atom.stacks}`;
-    if (atom.kind === 'addCoin') return `임시 ${atom.coin} +${atom.count}`;
+    if (atom.kind === 'addCoin') return `임시 ${elementKo(String(atom.coin))} +${atom.count}`;
     if (atom.kind === 'selfDamage') return `자신 피해 ${atom.amount}`;
-    if (atom.kind === 'grantElement') return `기본 코인 ${atom.element} 취급`;
+    if (atom.kind === 'grantElement') return `기본 코인 ${elementKo(atom.element)} 취급`;
     return '특수';
   };
   if (skill?.type === 'consume') return skill.effects.map(atomText).join(' / ');
@@ -96,11 +114,14 @@ const effectText = (skillId: string): string => {
   return parts.join(' / ');
 };
 
+const ELEMENT_KO: Record<string, string> = { fire: '화염', mana: '마나', frost: '냉기', lightning: '전기', blood: '혈액' };
+const elementKo = (value: string): string => ELEMENT_KO[value] ?? value;
+
 const coinLabel = (state: CombatState, coin: CoinUid): string => {
   const instance = state.coins[Number(coin)];
   const def = instance === undefined ? undefined : contentDb.coins[String(instance.defId)];
   const granted = instance?.grants.includes('fire') === true && def?.element !== 'fire';
-  return granted ? '기본+화염' : def?.element ?? '기본';
+  return granted ? '기본+화염' : def?.element !== null && def?.element !== undefined ? elementKo(def.element) : '기본';
 };
 
 const coinClasses = (state: CombatState, coin: CoinUid, selected: boolean, flipping: boolean): string => {
@@ -224,10 +245,7 @@ export const App = () => {
   return (
     <main className="combat-shell" aria-label="전투 화면">
       <div className="backdrop" aria-hidden="true">
-        <div className="sky" />
-        <div className="mountains" />
-        <div className="treeline" />
-        <div className="ground" />
+        <img alt="" className="backdrop-img" src={bgForest} />
       </div>
       <section className="battlefield">
         <UnitPanel
@@ -301,14 +319,10 @@ export const App = () => {
                 </div>
               ) : null}
               <div className="card-art" aria-hidden="true">
-                {skill?.type === 'consume' ? (
-                  <FlameIcon scale={4.2} />
-                ) : skill?.id !== undefined && String(skill.id) === 'flame-rampage' ? (
-                  <EmberIcon scale={4.2} />
-                ) : skill?.tags.includes('attack') ? (
-                  <SwordIcon scale={4.2} />
+                {skill !== undefined && CARD_ART[String(skill.id)] !== undefined ? (
+                  <img alt="" className="card-art-img" src={CARD_ART[String(skill.id)]} />
                 ) : (
-                  <ShieldIcon scale={4.2} />
+                  <SwordIcon scale={4.2} />
                 )}
               </div>
               <p>{effectText(String(slotState.skillId))}</p>
@@ -344,13 +358,7 @@ export const App = () => {
               onClick={() => setSelectedCoin(selectedCoin === coin ? null : coin)}
             >
               <span className="coin-face">
-                {coinFaces[Number(coin)] !== undefined ? (
-                  coinFaces[Number(coin)] === 'H' ? '앞' : '뒤'
-                ) : effectiveElements(state.coins[Number(coin)]!, contentDb).includes('fire') ? (
-                  <FlameIcon scale={1.8} />
-                ) : (
-                  <SwordIcon scale={1.8} />
-                )}
+                {coinFaces[Number(coin)] !== undefined ? (coinFaces[Number(coin)] === 'H' ? '앞' : '뒤') : null}
               </span>
               <small>{coinLabel(state, coin)}</small>
             </button>
@@ -431,7 +439,7 @@ const UnitPanel = ({ side, name, hp, maxHp, block, statuses, intent, floats }: U
     </div>
     {intent !== undefined ? intent : null}
     <div className="sprite" aria-label={`${name} 스프라이트`}>
-      {side === 'player' ? <WarriorSprite /> : <GoblinSprite />}
+      <img alt="" className={`sprite-img ${side}`} src={side === 'player' ? spriteWarrior : spriteGoblin} />
     </div>
     {floats
       .filter((item) => item.target === side)
