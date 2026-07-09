@@ -4,6 +4,11 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@game/core": ["packages/core/src/index.ts"],
+      "@game/content": ["packages/content/src/index.ts"]
+    },
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
