@@ -381,6 +381,124 @@ const handCount = (page) => page.locator('.hand-tray .coin').count();
   await page.close();
 }
 
+// ---------- 시나리오 9: 카드 겹침 — 장전 상시 확대 금지·검사 승격은 수직 리프트 전용 ----------
+// 겹침 레일은 유지하되: 장전(.lifted)은 절제된 리프트만, 검사 승격(호버/키보드 포커스/드롭
+// 목적지)은 가로 확대 없는 수직 리프트 — 승격 중에도 이웃 카드의 제목·소켓이 가려지지 않는다.
+{
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 1024, height: 720 }]) {
+    const tag = `${viewport.width}x${viewport.height}`;
+    const { page, errors } = await boot(viewport);
+    const cardRect = (index) =>
+      page.evaluate((i) => {
+        const rect = document.querySelectorAll('.skill-card')[i].getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, width: rect.width };
+      }, index);
+    // 승격 중 이웃(불타는 일격, index 2)의 제목 중심·소켓 중심이 자기 카드로 히트되는가
+    const adjacentClear = () =>
+      page.evaluate(() => {
+        const cards = [...document.querySelectorAll('.skill-card')];
+        const target = cards[2];
+        const probe = (el) => {
+          if (el === null) return false;
+          const rect = el.getBoundingClientRect();
+          const under = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+          return under !== null && target.contains(under);
+        };
+        return probe(target.querySelector('.card-title')) && probe(target.querySelector('.socket'));
+      });
+    const detailShown = (index) =>
+      page.evaluate((i) => getComputedStyle(document.querySelectorAll('.skill-card')[i].querySelector('p')).opacity === '1', index);
+    const parkPointer = async () => {
+      await page.mouse.move(640, 260);
+      await page.waitForTimeout(250);
+    };
+
+    await parkPointer();
+    const rest = await cardRect(1);
+    check(`S9 ${tag} 휴식 카드 기본 폭`, rest.width <= 126, `w=${Math.round(rest.width)}`);
+    await page.screenshot({ path: `${outDir}/20-${tag}-rail-rest.png` });
+
+    // 호버 승격 = 수직 리프트 + 상세 노출, 가로 확대 없음
+    await page.locator('.skill-card').nth(1).hover();
+    await page.waitForTimeout(250);
+    const hovered = await cardRect(1);
+    check(
+      `S9 ${tag} 호버 수직 승격 (확대 없음)`,
+      hovered.width <= 126 && hovered.top <= rest.top - 24,
+      `w=${Math.round(hovered.width)} lift=${Math.round(rest.top - hovered.top)}`
+    );
+    check(`S9 ${tag} 호버 상세 텍스트 노출`, await detailShown(1));
+    await page.screenshot({ path: `${outDir}/21-${tag}-hover.png` });
+    await parkPointer();
+
+    // 인접 두 카드 장전: 방어(1) + 불타는 일격(2)
+    await page.locator('.hand-tray .coin').first().click();
+    await page.locator('.skill-card').nth(1).locator('.socket').first().click();
+    await page.locator('.hand-tray .coin').first().click();
+    await page.locator('.skill-card').nth(2).locator('.socket').first().click();
+    await parkPointer();
+    const left = await cardRect(1);
+    const right = await cardRect(2);
+    check(
+      `S9 ${tag} 장전 카드 상시 확대 없음`,
+      left.width <= 126 && right.width <= 126,
+      `w=${Math.round(left.width)},${Math.round(right.width)}`
+    );
+    check(`S9 ${tag} 장전 카드 겹침 ≤20px`, left.right - right.left <= 20, `overlap=${Math.round(left.right - right.left)}`);
+    check(`S9 ${tag} 두 장전 카드 제목·소켓 히트 가능`, await adjacentClear());
+    await page.screenshot({ path: `${outDir}/22-${tag}-multi-loaded.png` });
+
+    // 장전 카드 호버 승격 — 이웃 겹침이 휴식 수준(-14px)을 넘지 않고, 이웃 제목·소켓 무가림
+    await page.locator('.skill-card').nth(1).hover();
+    await page.waitForTimeout(250);
+    const promoted = await cardRect(1);
+    const neighbor = await cardRect(2);
+    check(
+      `S9 ${tag} 장전 카드 호버 수직 승격`,
+      promoted.width <= 126 && promoted.top <= rest.top - 24,
+      `w=${Math.round(promoted.width)} lift=${Math.round(rest.top - promoted.top)}`
+    );
+    check(
+      `S9 ${tag} 승격 중 이웃 겹침 ≤15px`,
+      promoted.right - neighbor.left <= 15,
+      `overlap=${Math.round(promoted.right - neighbor.left)}`
+    );
+    check(`S9 ${tag} 승격 중 이웃 제목·소켓 무가림`, await adjacentClear());
+    check(`S9 ${tag} 승격 카드 상세 노출`, await detailShown(1));
+    await page.screenshot({ path: `${outDir}/23-${tag}-loaded-hover.png` });
+    await parkPointer();
+
+    // 키보드 포커스 = 호버와 동일 승격 — 베기 제목에 앵커 후 실제 Tab 2회
+    // (마지막 이동이 실제 키 입력이라 :focus-visible이 보장된다): 베기 소켓 → 방어 제목
+    await page.locator('.skill-card').nth(0).locator('.card-title').focus();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(250);
+    const focusOn = await page.evaluate(() => document.activeElement?.textContent ?? '');
+    check(`S9 ${tag} 키보드 포커스 대상 = 방어 제목`, focusOn.includes('방어'), focusOn);
+    const kb = await cardRect(1);
+    check(
+      `S9 ${tag} 키보드 포커스 수직 승격`,
+      kb.width <= 126 && kb.top <= rest.top - 24,
+      `w=${Math.round(kb.width)} lift=${Math.round(rest.top - kb.top)}`
+    );
+    check(`S9 ${tag} 키보드 승격 중 이웃 제목·소켓 무가림`, await adjacentClear());
+    await page.screenshot({ path: `${outDir}/24-${tag}-kb-focus.png` });
+    await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+    await parkPointer();
+
+    // 겹침 속에서도 소켓은 개별 타깃 가능 — 오른쪽 카드 회수
+    const handBefore = await handCount(page);
+    await page.locator('.skill-card').nth(2).locator('.socket.loaded').click();
+    check(`S9 ${tag} 겹침 속 소켓 회수 가능`, (await handCount(page)) === handBefore + 1);
+
+    const hScroll = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    check(`S9 ${tag} 가로 스크롤 없음`, !hScroll);
+    check(`S9 ${tag} 에러 0`, errors.length === 0, errors.join(' | '));
+    await page.close();
+  }
+}
+
 // ---------- 시나리오 6: 뷰포트 매트릭스 — 풀블리드·스크롤·HUD·지면선 ----------
 {
   const viewports = [
