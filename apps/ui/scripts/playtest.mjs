@@ -704,9 +704,7 @@ const winCurrentCombat = async (page) => {
     const { page, errors } = await boot(viewport);
     const cardRect = (index) =>
       page.evaluate((i) => {
-        const rect = document
-          .querySelectorAll(".skill-card")
-          [i].getBoundingClientRect();
+        const rect = document.querySelectorAll(".skill-card")[i].getBoundingClientRect();
         return {
           left: rect.left,
           right: rect.right,
@@ -1672,6 +1670,79 @@ const winCurrentCombat = async (page) => {
     }
     await page.close();
   }
+}
+
+// ---------- 시나리오 13: URL 시드 재현성 ----------
+{
+  const fingerprint = (page) =>
+    page.evaluate(() => {
+      const text = (selector) =>
+        document.querySelector(selector)?.textContent?.trim() ?? "";
+      const enemy = document.querySelector(".unit.enemy");
+      return {
+        seedStripText: text(".seed-strip") || text(".run-meta small"),
+        pouchCount: text(".pouch-circle"),
+        handCoins: [...document.querySelectorAll(".hand-tray .coin")].map(
+          (coin) => ({
+            label: coin.textContent?.trim() ?? "",
+            classes: [...coin.classList].sort(),
+          }),
+        ),
+        enemyName: enemy?.querySelector(".unit-name")?.textContent?.trim() ?? "",
+        enemyHpText: enemy?.querySelector(".hp-num")?.textContent?.trim() ?? "",
+        enemyIntentText:
+          enemy?.querySelector(".intent")?.textContent?.trim() ?? "",
+        cards: [...document.querySelectorAll(".skill-card")].map((card) => ({
+          title: card.querySelector(".card-title")?.textContent?.trim() ?? "",
+          ready: card.classList.contains("ready"),
+          spent: card.classList.contains("spent"),
+          lifted: card.classList.contains("lifted"),
+        })),
+      };
+    });
+
+  const first = await boot();
+  const firstInitial = await fingerprint(first.page);
+  await first.page.screenshot({ path: `${outDir}/41-seed-repro-boot-1.png` });
+  check(
+    "S13 boot1 저장 재개 없이 초기 시도",
+    (await first.page.locator(".run-meta").getAttribute("data-attempt")) ===
+      "0",
+  );
+  check("S13 boot1 콘솔/페이지 에러 0", first.errors.length === 0);
+  await first.page.close();
+
+  const second = await boot();
+  const secondInitial = await fingerprint(second.page);
+  await second.page.screenshot({ path: `${outDir}/44-seed-repro-boot-2.png` });
+  const fingerprintsMatch =
+    JSON.stringify(secondInitial) === JSON.stringify(firstInitial);
+  check(
+    "S13 같은 URL 시드 초기 상태 지문 동일",
+    fingerprintsMatch,
+    fingerprintsMatch
+      ? ""
+      : JSON.stringify({ first: firstInitial, second: secondInitial }),
+  );
+  const fingerprintFieldsPresent =
+    secondInitial.seedStripText.includes(SEED) &&
+    secondInitial.pouchCount !== "" &&
+    secondInitial.handCoins.length === 5 &&
+    secondInitial.enemyName !== "" &&
+    secondInitial.enemyHpText !== "" &&
+    secondInitial.enemyIntentText !== "" &&
+    secondInitial.cards.length >= 6;
+  check(
+    "S13 지문 필수 필드 채움",
+    fingerprintFieldsPresent,
+    fingerprintFieldsPresent ? "" : JSON.stringify(secondInitial),
+  );
+
+  await second.page.locator(".hand-tray .coin").first().click();
+  await second.page.locator(".skill-card").first().locator(".socket").click();
+  check("S13 boot2 결정 동작 후 페이지 live", (await handCount(second.page)) === 4);
+  check("S13 boot2 콘솔/페이지 에러 0", second.errors.length === 0);
+  await second.page.close();
 }
 
 await browser.close();

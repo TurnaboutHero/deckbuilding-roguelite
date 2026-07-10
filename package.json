@@ -8,6 +8,7 @@
     "build": "pnpm -r run build",
     "ci:sim": "tsx tools/sim/src/ci-smoke.ts",
     "sim:balance": "tsx tools/sim/src/balance-report.ts",
+    "sim:human": "tsx tools/sim/src/human/human-report.ts",
     "sim": "pnpm --filter @game/sim run cli",
     "dev": "pnpm --filter @game/ui run dev",
     "shot": "pnpm --filter @game/ui run shot"

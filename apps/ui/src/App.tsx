@@ -29,6 +29,7 @@ import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
 import "./App.css";
 import { AtlasSprite } from "./AtlasSprite";
+import { REJECTION_TEXT, rejectionReason } from "./action-feedback";
 import {
   EmberIcon,
   FlameIcon,
@@ -141,6 +142,7 @@ type FloatText = {
   target: "player" | "enemy";
   kind: "damage" | "block" | "status" | "coin";
 };
+type RejectionChip = { id: number; text: string };
 type CombatAction = { type: "set"; state: CombatState };
 type DragState = {
   coin: CoinUid;
@@ -1074,6 +1076,7 @@ const CombatBoard = ({
     coins: CoinUid[];
   } | null>(null);
   const [floats, setFloats] = useState<FloatText[]>([]);
+  const [rejection, setRejection] = useState<RejectionChip | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [shakeCoin, setShakeCoin] = useState<CoinUid | null>(null);
   const [hintStage, setHintStage] = useState<0 | 1 | 2>(0);
@@ -1081,6 +1084,8 @@ const CombatBoard = ({
   const pouchRef = useRef<HTMLDivElement | null>(null);
   const pileCountsRef = useRef<HTMLDivElement | null>(null);
   const nextFloatId = useRef(1);
+  const nextRejectionId = useRef(1);
+  const rejectionTimer = useRef<number | null>(null);
   const initialEventsQueued = useRef(false);
   const completionSent = useRef(false);
   const suppressClick = useRef(false);
@@ -1125,6 +1130,27 @@ const CombatBoard = ({
   const findLegal = (cmd: Command): Command | undefined =>
     legal.find((candidate) => sameCommand(candidate, cmd));
 
+  const showRejection = (text: string) => {
+    if (showResult) return;
+    if (rejectionTimer.current !== null)
+      window.clearTimeout(rejectionTimer.current);
+    const id = nextRejectionId.current;
+    nextRejectionId.current += 1;
+    setRejection({ id, text });
+    rejectionTimer.current = window.setTimeout(() => {
+      setRejection((chip) => (chip?.id === id ? null : chip));
+      rejectionTimer.current = null;
+    }, 1500);
+  };
+
+  useEffect(
+    () => () => {
+      if (rejectionTimer.current !== null)
+        window.clearTimeout(rejectionTimer.current);
+    },
+    [],
+  );
+
   const commit = (nextState: CombatState, events: CombatEvent[]) => {
     dispatchState({ type: "set", state: nextState });
     setSelectedCoin(null);
@@ -1141,35 +1167,66 @@ const CombatBoard = ({
     if (events.some((event) => event.type === "skillUsed")) setHintStage(2);
   };
 
-  const runCommand = (cmd: Command): boolean => {
-    if (locked) return false;
+  const runCommand = (cmd: Command, showFeedback = false): boolean => {
+    if (locked) {
+      if (showFeedback) showRejection(REJECTION_TEXT.notPlayerPhase);
+      return false;
+    }
+    const reason = rejectionReason(state, cmd, contentDb);
+    if (reason !== null) {
+      if (showFeedback) showRejection(reason);
+      return false;
+    }
     const legalCommand = findLegal(cmd);
-    if (legalCommand === undefined) return false;
+    if (legalCommand === undefined) {
+      if (showFeedback) showRejection(REJECTION_TEXT.generic);
+      return false;
+    }
     const result = step(state, legalCommand, contentDb);
-    if (!result.ok) return false;
+    if (!result.ok) {
+      if (showFeedback) showRejection(REJECTION_TEXT.generic);
+      return false;
+    }
     onTelemetryDecision(state, [legalCommand], result.state, result.events);
     commit(result.state, result.events);
     return true;
   };
 
-  const runSequence = (commands: readonly Command[]): boolean => {
-    if (locked || commands.length === 0) return false;
+  const runSequence = (
+    commands: readonly Command[],
+    showFeedback = false,
+  ): boolean => {
+    if (locked || commands.length === 0) {
+      if (showFeedback && locked) showRejection(REJECTION_TEXT.notPlayerPhase);
+      else if (showFeedback) showRejection(REJECTION_TEXT.generic);
+      return false;
+    }
     const result = stepSequence(state, commands, contentDb);
-    if (result === null) return false;
+    if (result === null) {
+      if (showFeedback) {
+        const reason =
+          commands
+            .map((command) => rejectionReason(state, command, contentDb))
+            .find((candidate): candidate is string => candidate !== null) ??
+          REJECTION_TEXT.generic;
+        showRejection(reason);
+      }
+      return false;
+    }
     onTelemetryDecision(state, commands, result.state, result.events);
     commit(result.state, result.events);
     return true;
   };
 
   // 사용 선언 — 플립 스킬은 해결 직전의 장전 코인을 고스트로 붙잡아 연출 대상이 되게 한다
-  const useSkill = (cmd: Command) => {
+  const useSkill = (cmd: Command, showFeedback = true) => {
     if (cmd.type === "useFlipSkill") {
       const ghosts = [...(state.zones.placed[cmd.slot] ?? [])];
-      if (runCommand(cmd) && ghosts.length > 0)
+      if (runCommand(cmd, showFeedback) && ghosts.length > 0)
         setResolving({ slot: Number(cmd.slot), coins: ghosts });
       return;
     }
-    runCommand(cmd);
+    runCommand(cmd, showFeedback);
   };
 
   useEffect(() => {
@@ -1327,9 +1384,10 @@ const CombatBoard = ({
           ? ({ kind: "tray" } as const)
           : ({ kind: "none" } as const);
     const commands = dropCommands(drag.coin, drag.source, target);
-    const committed = commands !== null && runSequence(commands);
+    const committed = commands !== null && runSequence(commands, true);
     // 무효 드롭 피드백 — 손패 코인을 트레이에 되돌린 경우는 자연스러운 취소라 흔들지 않는다
     if (!committed && !(drag.source.kind === "hand" && drag.overTray)) {
+      if (commands === null) showRejection(REJECTION_TEXT.generic);
       setShakeCoin(drag.coin);
       window.setTimeout(() => setShakeCoin(null), 320);
     }
@@ -1474,6 +1532,21 @@ const CombatBoard = ({
               : null;
           const consumeReady =
             skill?.type === "consume" && consumeUse !== undefined;
+          const useAttempt =
+            skill?.type === "consume"
+              ? ({
+                  type: "useConsumeSkill",
+                  slot: slot(index),
+                  coins: consumeUse?.coins ?? [],
+                  target: skill.targetType === "single-enemy" ? 0 : undefined,
+                } as const)
+              : skill?.type === "flip"
+                ? ({
+                    type: "useFlipSkill",
+                    slot: slot(index),
+                    target: skill.targetType === "single-enemy" ? 0 : undefined,
+                  } as const)
+                : null;
           const lockedOnce =
             skill?.oncePerCombat === true && slotState.usedThisCombat;
           const isResolving = resolving !== null && resolving.slot === index;
@@ -1489,14 +1562,27 @@ const CombatBoard = ({
                 // (연속 장전 중 오클릭이 스킬을 발동시키는 오발 방지). 사용은 선택 해제 후 클릭 또는 제목 버튼
                 if (selectedCoin !== null) {
                   if (canPlaceSelected)
-                    runCommand({
-                      type: "placeCoin",
-                      coin: selectedCoin,
-                      slot: slot(index),
-                    });
+                    runCommand(
+                      {
+                        type: "placeCoin",
+                        coin: selectedCoin,
+                        slot: slot(index),
+                      },
+                      true,
+                    );
+                  else
+                    runCommand(
+                      {
+                        type: "placeCoin",
+                        coin: selectedCoin,
+                        slot: slot(index),
+                      },
+                      true,
+                    );
                   return;
                 }
                 if (use !== undefined) useSkill(use);
+                else if (useAttempt !== null) runCommand(useAttempt, true);
               }}
             >
               {/* 접근성: 카드의 키보드 진입점은 이 실제 버튼 하나 — 소켓 버튼과 형제 관계라
@@ -1511,6 +1597,7 @@ const CombatBoard = ({
                   event.stopPropagation();
                   if (clickGuard()) return;
                   if (use !== undefined) useSkill(use);
+                  else if (useAttempt !== null) runCommand(useAttempt, true);
                 }}
               >
                 {skill?.name ?? "빈 슬롯"}
@@ -1543,13 +1630,17 @@ const CombatBoard = ({
                           if (clickGuard()) return;
                           if (isResolving) return;
                           if (coin !== undefined)
-                            runCommand({ type: "unplaceCoin", coin });
+                            runCommand({ type: "unplaceCoin", coin }, true);
                           else if (selectedCoin !== null)
-                            runCommand({
-                              type: "placeCoin",
-                              coin: selectedCoin,
-                              slot: slot(index),
-                            });
+                            runCommand(
+                              {
+                                type: "placeCoin",
+                                coin: selectedCoin,
+                                slot: slot(index),
+                              },
+                              true,
+                            );
+                          else showRejection(REJECTION_TEXT.generic);
                         }}
                         onPointerDown={(event) => {
                           if (coin !== undefined && !isResolving)
@@ -1615,6 +1706,22 @@ const CombatBoard = ({
                   <br />
                   화상 {preview.byAxis.burn.min}~{preview.byAxis.burn.max} (기대{" "}
                   {preview.expected.burn})
+                  {preview.byAxis.selfDamage.max > 0 ? (
+                    <>
+                      <br />
+                      자해 {preview.byAxis.selfDamage.min}~
+                      {preview.byAxis.selfDamage.max} (기대{" "}
+                      {preview.expected.selfDamage})
+                    </>
+                  ) : null}
+                  {preview.byAxis.coinsCreated.max > 0 ? (
+                    <>
+                      <br />
+                      코인 생성 {preview.byAxis.coinsCreated.min}~
+                      {preview.byAxis.coinsCreated.max} (기대{" "}
+                      {preview.expected.coinsCreated})
+                    </>
+                  ) : null}
                 </div>
               ) : null}
             </article>
@@ -1721,11 +1828,17 @@ const CombatBoard = ({
           className="end-turn"
           disabled={locked || findLegal({ type: "endTurn" }) === undefined}
           type="button"
-          onClick={() => runCommand({ type: "endTurn" })}
+          onClick={() => runCommand({ type: "endTurn" }, true)}
         >
           턴 종료
         </button>
       </section>
+
+      {rejection !== null ? (
+        <div aria-live="polite" className="rejection-chip" key={rejection.id}>
+          {rejection.text}
+        </div>
+      ) : null}
 
       {dragging ? (
         <div
