@@ -307,6 +307,7 @@ describe('M4 consume skills, grants, and once per combat', () => {
     expect(result.state.enemies[0]?.statuses.burn).toBe(2);
     expect(result.state.zones.exhausted).toContain(fuel);
     expect(result.state.zones.hand).not.toContain(fuel);
+    expect(result.events).toContainEqual({ type: 'coinsConsumed', coins: [fuel] });
     expect(result.events.filter((event) => event.type === 'coinFlipped')).toHaveLength(0);
   });
 
@@ -550,7 +551,25 @@ describe('draw and win loss', () => {
     expect(ended.ok).toBe(true);
     if (ended.ok) {
       expect(ended.state.zones.hand).toHaveLength(3);
+      expect(ended.events).toContainEqual({ type: 'pileShuffled', count: 3 });
     }
+  });
+
+  it('emits discard lifecycle events for skill costs and unused end-turn coins', () => {
+    const db = testDb();
+    const flipState = replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'discard-event'), [
+      'tails'
+    ]);
+    const cost = firstHandCoin(flipState);
+    const used = useFirstCoin(flipState, 0, 0, db);
+    expect(used.events).toContainEqual({ type: 'coinsDiscarded', coins: [cost], reason: 'skillCost' });
+
+    const turnState = createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'turn-discard-event');
+    const unused = [...turnState.zones.hand];
+    const ended = step(turnState, { type: 'endTurn' }, db);
+    expect(ended.ok).toBe(true);
+    if (!ended.ok) return;
+    expect(ended.events).toContainEqual({ type: 'coinsDiscarded', coins: unused, reason: 'turnEnd' });
   });
 
   it('ends on enemy hp zero, player hp zero, and checks after each atom', () => {
@@ -559,7 +578,12 @@ describe('draw and win loss', () => {
       'heads'
     ]);
     state.enemies[0]!.hp = 10;
-    expect(useFirstCoin(state, 0).state.phase).toBe('victory');
+    const lethalCost = firstHandCoin(state);
+    const victory = useFirstCoin(state, 0);
+    expect(victory.state.phase).toBe('victory');
+    expect(victory.state.zones.placed[slot(0)]).toEqual([]);
+    expect(victory.state.zones.discard).toContain(lethalCost);
+    expect(victory.events).toContainEqual({ type: 'coinsDiscarded', coins: [lethalCost], reason: 'skillCost' });
 
     const losing = createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'loss');
     const lost = step({ ...losing, player: { ...losing.player, hp: 1 } }, { type: 'endTurn' }, db);

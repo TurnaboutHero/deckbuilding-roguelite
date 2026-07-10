@@ -3,7 +3,7 @@ import type { CoinUid, CombatEvent, CombatState, SlotId } from '@game/core';
 import { createCombat, step } from '@game/core';
 import { describe, expect, it } from 'vitest';
 
-import { coinFacesAfterEvent, dragTargetSlots, drawPileComposition, dropCommands, stepSequence } from './interaction';
+import { coinFacesAfterEvent, dragTargetSlots, drawPileComposition, dropCommands, pileComposition, stepSequence } from './interaction';
 
 const slot = (value: number): SlotId => value as SlotId;
 
@@ -79,9 +79,9 @@ describe('drawPileComposition — 뽑을 더미 구성 (종류·매수만, 순�
       zones: { ...base.zones, draw: [3 as CoinUid, 2 as CoinUid, 1 as CoinUid, 4 as CoinUid] }
     };
     expect(drawPileComposition(synthetic, contentDb)).toEqual([
-      { defId: 'basic', element: null, temporary: false, count: 2 },
-      { defId: 'basic', element: null, temporary: true, count: 1 },
-      { defId: 'fire', element: 'fire', temporary: false, count: 1 }
+      { defId: 'basic', element: null, grants: [], temporary: false, count: 2 },
+      { defId: 'basic', element: null, grants: [], temporary: true, count: 1 },
+      { defId: 'fire', element: 'fire', grants: [], temporary: false, count: 1 }
     ]);
   });
 
@@ -92,6 +92,37 @@ describe('drawPileComposition — 뽑을 더미 구성 (종류·매수만, 순�
     const groups = drawPileComposition(ended.state, contentDb);
     expect(ended.state.zones.draw.length).toBe(1);
     expect(groups.reduce((sum, group) => sum + group.count, 0)).toBe(1);
+  });
+});
+
+describe('pileComposition — 버림·소모 영역 구성과 수명주기 표식', () => {
+  it('버림과 소모를 분리 집계하고 취급 속성·영구/임시를 구분한다', () => {
+    const base = boot();
+    const synthetic: CombatState = {
+      ...base,
+      coins: {
+        1: { uid: 1 as CoinUid, defId: 'basic' as never, permanent: true, grants: [] },
+        2: { uid: 2 as CoinUid, defId: 'basic' as never, permanent: true, grants: ['fire'] },
+        3: { uid: 3 as CoinUid, defId: 'fire' as never, permanent: true, grants: [] },
+        4: { uid: 4 as CoinUid, defId: 'fire' as never, permanent: false, grants: [] }
+      },
+      zones: {
+        ...base.zones,
+        draw: [],
+        hand: [],
+        discard: [1 as CoinUid, 2 as CoinUid],
+        exhausted: [3 as CoinUid, 4 as CoinUid]
+      }
+    };
+
+    expect(pileComposition(synthetic, 'discard', contentDb)).toEqual([
+      { defId: 'basic', element: null, grants: [], temporary: false, count: 1 },
+      { defId: 'basic', element: null, grants: ['fire'], temporary: false, count: 1 }
+    ]);
+    expect(pileComposition(synthetic, 'exhausted', contentDb)).toEqual([
+      { defId: 'fire', element: 'fire', grants: [], temporary: false, count: 1 },
+      { defId: 'fire', element: 'fire', grants: [], temporary: true, count: 1 }
+    ]);
   });
 });
 

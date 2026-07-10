@@ -666,14 +666,16 @@ button:focus-visible {
   filter: drop-shadow(0 0 3px var(--gold-2));
 }
 
-/* 뽑을 더미 구성 팝오버 — 종류·매수만. 주머니 위로 열려 중앙 전장을 가리지 않는다 */
-.pouch-pop {
+/* 더미 인스펙터 — 평소에는 닫혀 있고 HUD 가장자리 위로만 열려 전장을 보호한다 */
+.pile-pop {
   position: absolute;
   left: 0;
   bottom: calc(100% + 10px);
   z-index: 12;
   min-width: 168px;
   max-width: min(240px, 60vw);
+  max-height: min(300px, 55vh);
+  overflow-y: auto;
   padding: 9px 12px 10px;
   background: var(--slate);
   border: 3px solid var(--out);
@@ -681,7 +683,7 @@ button:focus-visible {
   animation: hint-in 0.2s steps(3);
 }
 
-.pouch-pop strong {
+.pile-pop strong {
   display: block;
   font-size: 11px;
   font-weight: 400;
@@ -692,7 +694,14 @@ button:focus-visible {
   border-bottom: 2px solid var(--slate-2);
 }
 
-.pouch-pop ul {
+.pile-rule {
+  margin: 0 0 7px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #aeb7cf;
+}
+
+.pile-pop ul {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -703,7 +712,7 @@ button:focus-visible {
   color: var(--paper);
 }
 
-.pouch-pop li {
+.pile-pop li {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -728,9 +737,26 @@ button:focus-visible {
   background-image: url('./assets/coin-fire.png');
 }
 
+.pop-coin.granted-fire {
+  outline: 2px solid var(--flame);
+  outline-offset: 1px;
+}
+
 .pop-coin.temporary {
   outline: 2px dashed #fdf3d0;
   outline-offset: 1px;
+}
+
+.pile-item-copy {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.pile-item-copy small {
+  margin-top: 2px;
+  font-size: 9px;
+  color: #aeb7cf;
 }
 
 .hand-tray {
@@ -849,19 +875,71 @@ button:focus-visible {
 }
 
 .pile-counts {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 3px;
   font-size: 12px;
-  min-width: 68px;
+  min-width: 78px;
   color: #d8d2c0;
 }
 
-.pile-counts span {
+.pile-button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-height: 24px;
+  padding: 1px 3px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.pile-button:hover,
+.pile-button[aria-expanded='true'] {
+  color: var(--gold-2);
+  background: rgba(48, 53, 73, 0.88);
+  border-color: var(--slate-2);
+}
+
+.pile-counts .pile-pop {
+  right: 0;
+  left: auto;
+  min-width: 238px;
+  max-width: min(270px, 72vw);
+}
+
+.pile-flow {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 11;
+  width: max-content;
+  padding: 4px 7px;
+  color: var(--gold-2);
+  background: rgba(28, 23, 36, 0.92);
+  border: 2px solid var(--gold);
+  text-shadow: 1px 1px 0 var(--out);
+  pointer-events: none;
+  animation: hint-in 0.32s steps(4);
+}
+
+.pouch-circle.receiving,
+.pile-button.receiving {
+  animation: pile-receive 0.42s steps(4) 2;
+}
+
+@keyframes pile-receive {
+  0%,
+  100% {
+    filter: none;
+  }
+  50% {
+    filter: brightness(1.55) drop-shadow(0 0 4px var(--gold-2));
+  }
 }
 
 .end-turn {
@@ -981,7 +1059,10 @@ button:focus-visible {
   .socket.accept,
   .float-text,
   .coin.drag-cancel,
-  .hint-strip {
+  .hint-strip,
+  .pile-flow,
+  .pouch-circle.receiving,
+  .pile-button.receiving {
     animation-duration: 0.01s;
     animation-iteration-count: 1;
   }

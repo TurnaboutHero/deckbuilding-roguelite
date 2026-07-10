@@ -272,6 +272,20 @@ export const resolveFlip = (
   if (placed.length !== skill.cost) throw new Error('placed coin count must equal skill cost');
   const skillTarget = targetForSkill(input, skill, target);
   const events: CombatEvent[] = [{ type: 'skillUsed', slot, skill: skill.id, kind: 'flip' }];
+  const finish = (finishedState: CombatState): ResolveResult => {
+    events.push({ type: 'coinsDiscarded', coins: [...placed], reason: 'skillCost' });
+    return {
+      state: {
+        ...finishedState,
+        zones: {
+          ...finishedState.zones,
+          placed: { ...finishedState.zones.placed, [slot]: [] },
+          discard: [...finishedState.zones.discard, ...placed]
+        }
+      },
+      events
+    };
+  };
 
   let state: CombatState = {
     ...input,
@@ -294,7 +308,7 @@ export const resolveFlip = (
 
   for (const atom of collectEffects(skill, faces)) {
     state = applyEffectAtom(state, atom, skillTarget, db, events);
-    if (state.phase === 'victory' || state.phase === 'defeat') return { state, events };
+    if (state.phase === 'victory' || state.phase === 'defeat') return finish(state);
   }
 
   for (let i = 0; i < placed.length; i += 1) {
@@ -308,21 +322,11 @@ export const resolveFlip = (
         const procTarget = targetForElementProc(state, atom, skillTarget);
         if (procTarget === undefined) continue;
         state = applyEffectAtom(state, atom, procTarget, db, events);
-        if (state.phase === 'victory' || state.phase === 'defeat') return { state, events };
+        if (state.phase === 'victory' || state.phase === 'defeat') return finish(state);
       }
     }
   }
 
   state = checkCombatEnd(state, events);
-  if (state.phase === 'player') {
-    state = {
-      ...state,
-      zones: {
-        ...state.zones,
-        placed: { ...state.zones.placed, [slot]: [] },
-        discard: [...state.zones.discard, ...placed]
-      }
-    };
-  }
-  return { state, events };
+  return finish(state);
 };

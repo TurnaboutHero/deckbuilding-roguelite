@@ -1,4 +1,4 @@
-import type { CoinUid, CombatEvent, CombatState, Command, ContentDb, Face, SlotId } from '@game/core';
+import type { CoinUid, CombatEvent, CombatState, Command, ContentDb, Element, Face, SlotId } from '@game/core';
 import { legalCommands, step } from '@game/core';
 
 // 코인 면 기록 — 진실 소스는 코어의 coinFlipped 이벤트(상태에는 면이 없다, P9 소멸).
@@ -28,35 +28,43 @@ export type DragSource = { kind: 'hand' } | { kind: 'socket'; slot: SlotId };
 
 // 뽑을 더미 구성 — 종류·매수만 공개한다. 순서는 시드 파생 비밀이라 절대 노출하지 않는다
 // (PRD §15.1은 잔여 매수 표시만 확정 — 구성 공개는 StS 관례를 따르되 순서 은닉이 긴장감의 전제).
-export interface DrawPileGroup {
+export type CoinPileZone = 'draw' | 'discard' | 'exhausted';
+
+export interface CoinPileGroup {
   defId: string;
   element: string | null;
+  grants: Element[];
   temporary: boolean;
   count: number;
 }
 
-export const drawPileComposition = (state: CombatState, db: ContentDb): DrawPileGroup[] => {
-  const groups = new Map<string, DrawPileGroup>();
-  for (const coin of state.zones.draw) {
+export const pileComposition = (state: CombatState, zone: CoinPileZone, db: ContentDb): CoinPileGroup[] => {
+  const groups = new Map<string, CoinPileGroup>();
+  for (const coin of state.zones[zone]) {
     const instance = state.coins[Number(coin)];
     if (instance === undefined) continue;
     const defId = String(instance.defId);
     const temporary = !instance.permanent;
-    const key = `${defId}|${temporary ? 't' : 'p'}`;
+    const grants = [...instance.grants].sort();
+    const key = `${defId}|${temporary ? 't' : 'p'}|${grants.join(',')}`;
     const existing = groups.get(key);
     if (existing !== undefined) {
       existing.count += 1;
       continue;
     }
-    groups.set(key, { defId, element: db.coins[defId]?.element ?? null, temporary, count: 1 });
+    groups.set(key, { defId, element: db.coins[defId]?.element ?? null, grants, temporary, count: 1 });
   }
   // 결정론 정렬: 기본 코인 먼저, 그다음 defId 사전순, 영구가 임시보다 앞
   return [...groups.values()].sort((left, right) => {
     if ((left.element === null) !== (right.element === null)) return left.element === null ? -1 : 1;
     if (left.defId !== right.defId) return left.defId.localeCompare(right.defId);
-    return left.temporary === right.temporary ? 0 : left.temporary ? 1 : -1;
+    if (left.temporary !== right.temporary) return left.temporary ? 1 : -1;
+    return left.grants.join(',').localeCompare(right.grants.join(','));
   });
 };
+
+export const drawPileComposition = (state: CombatState, db: ContentDb): CoinPileGroup[] =>
+  pileComposition(state, 'draw', db);
 
 // 드래그 중 하이라이트할 합법 목적지 — 규칙 판정은 전부 코어(legalCommands/step)에 위임.
 // 소켓 출발이면 "회수 후 장전"이 둘 다 합법일 때만 목적지로 인정한다.

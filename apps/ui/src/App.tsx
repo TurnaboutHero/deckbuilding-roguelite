@@ -21,8 +21,8 @@ import warriorAtlas from './assets/generated/sprites/warrior/sprite-sheet-alpha.
 import warriorManifestJson from './assets/generated/sprites/warrior/manifest.json';
 import { spriteMotionForEvent } from './sprite-motion';
 import type { SpriteManifest } from './AtlasSprite';
-import { coinFacesAfterEvent, dragTargetSlots, drawPileComposition, dropCommands, sameCommand, stepSequence } from './interaction';
-import type { CoinFaces, DragSource } from './interaction';
+import { coinFacesAfterEvent, dragTargetSlots, dropCommands, pileComposition, sameCommand, stepSequence } from './interaction';
+import type { CoinFaces, CoinPileGroup, CoinPileZone, DragSource } from './interaction';
 
 // 생성 에셋 (docs/ui/combat-ui-v2.png 앵커 스타일 — image_gen 산출, 후처리: 크로마 키·리사이즈)
 const CARD_ART: Record<string, string> = {
@@ -142,6 +142,75 @@ const coinVisualClasses = (state: CombatState, coin: CoinUid): string => {
     .join(' ');
 };
 
+const PILE_COPY: Record<CoinPileZone, { label: string; title: string; rule: string; empty: string }> = {
+  draw: {
+    label: '뽑을 더미',
+    title: '주머니 속 — 순서는 비밀',
+    rule: '종류와 매수만 공개 · 위에서부터의 순서는 비공개',
+    empty: '비었음 · 드로우할 때 버림 더미를 무작위로 섞는다'
+  },
+  discard: {
+    label: '버림 더미',
+    title: '버림 더미 — 다시 쓰는 동전',
+    rule: '주머니가 비면 전부 무작위로 섞여 뽑을 더미로 돌아간다',
+    empty: '아직 버린 동전이 없다'
+  },
+  exhausted: {
+    label: '소모 영역',
+    title: '소모 영역 — 이번 전투에서 제외',
+    rule: '영구 동전은 전투 후 복귀 · 임시 동전은 전투 후 소멸',
+    empty: '이번 전투에서 소모된 동전이 없다'
+  }
+};
+
+const PilePopover = ({ zone, groups }: { zone: CoinPileZone; groups: CoinPileGroup[] }) => {
+  const copy = PILE_COPY[zone];
+  return (
+    <div
+      aria-label={`${copy.label} 구성`}
+      className={`pile-pop ${zone === 'draw' ? 'pouch-pop' : ''} ${zone}`}
+      id={`${zone}-pile-pop`}
+      role="dialog"
+    >
+      <strong>{copy.title}</strong>
+      <p className="pile-rule">{copy.rule}</p>
+      {groups.length === 0 ? (
+        <p className="pop-empty">{copy.empty}</p>
+      ) : (
+        <ul>
+          {groups.map((group) => {
+            const granted = group.grants.filter((element) => element !== group.element);
+            const lifecycle =
+              zone === 'exhausted'
+                ? group.temporary
+                  ? '전투 후 소멸'
+                  : '전투 후 복귀'
+                : zone === 'discard'
+                  ? '리셔플 대상'
+                  : group.temporary
+                    ? '전투 후 소멸'
+                    : '영구 동전';
+            return (
+              <li key={`${group.defId}-${String(group.temporary)}-${group.grants.join('-')}`}>
+                <span
+                  aria-hidden="true"
+                  className={`pop-coin ${group.element === 'fire' ? 'fire' : ''} ${granted.includes('fire') ? 'granted-fire' : ''} ${group.temporary ? 'temporary' : ''}`}
+                />
+                <span className="pile-item-copy">
+                  {group.element === null ? '기본' : elementKo(group.element)}
+                  {granted.length > 0 ? ` · ${granted.map(elementKo).join('+')} 취급` : ''}
+                  {group.temporary ? ' (임시)' : ''} ×{group.count}
+                  <small>{lifecycle}</small>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+};
+
 // 소켓·고스트·드래그 프록시가 공유하는 동전 원판 — 면(face)은 플립 결과가 있을 때만 노출
 const CoinDisc = ({
   state,
@@ -177,8 +246,9 @@ export const App = () => {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [shakeCoin, setShakeCoin] = useState<CoinUid | null>(null);
   const [hintStage, setHintStage] = useState<0 | 1 | 2>(0);
-  const [pouchOpen, setPouchOpen] = useState(false);
+  const [openPile, setOpenPile] = useState<CoinPileZone | null>(null);
   const pouchRef = useRef<HTMLDivElement | null>(null);
+  const pileCountsRef = useRef<HTMLDivElement | null>(null);
   const resultPrimaryRef = useRef<HTMLButtonElement | null>(null);
   const nextFloatId = useRef(1);
   const initialEventsQueued = useRef(false);
@@ -193,16 +263,17 @@ export const App = () => {
     }
   }, [state.events]);
 
-  // 주머니 팝오버 — Escape·바깥 클릭으로 닫힘
+  // 더미 인스펙터 — 한 번에 하나만 열고 Escape·바깥 클릭으로 닫는다
   useEffect(() => {
-    if (!pouchOpen) return undefined;
+    if (openPile === null) return undefined;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setPouchOpen(false);
+      if (event.key === 'Escape') setOpenPile(null);
     };
     const onPointerDown = (event: PointerEvent) => {
-      if (pouchRef.current !== null && event.target instanceof Node && !pouchRef.current.contains(event.target)) {
-        setPouchOpen(false);
-      }
+      if (!(event.target instanceof Node)) return;
+      const insidePouch = pouchRef.current?.contains(event.target) === true;
+      const insidePileCounts = pileCountsRef.current?.contains(event.target) === true;
+      if (!insidePouch && !insidePileCounts) setOpenPile(null);
     };
     document.addEventListener('keydown', onKey);
     document.addEventListener('pointerdown', onPointerDown);
@@ -210,7 +281,9 @@ export const App = () => {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('pointerdown', onPointerDown);
     };
-  }, [pouchOpen]);
+  }, [openPile]);
+
+  const togglePile = (zone: CoinPileZone) => setOpenPile((open) => (open === zone ? null : zone));
 
   const findLegal = (cmd: Command): Command | undefined => legal.find((candidate) => sameCommand(candidate, cmd));
 
@@ -304,6 +377,12 @@ export const App = () => {
     } else if (event?.type === 'coinCreated') {
       showFloat('임시 코인', 'player', 'coin');
       delay = 320;
+    } else if (event?.type === 'coinsDiscarded') {
+      delay = 320;
+    } else if (event?.type === 'coinsConsumed') {
+      delay = 380;
+    } else if (event?.type === 'pileShuffled') {
+      delay = 520;
     } else if (event?.type === 'intentRevealed') {
       delay = 260;
     }
@@ -326,7 +405,7 @@ export const App = () => {
     setFloats([]);
     setDrag(null);
     setShakeCoin(null);
-    setPouchOpen(false);
+    setOpenPile(null);
     suppressClick.current = false;
     initialEventsQueued.current = true;
     const nextState = createState(nextSeed);
@@ -419,6 +498,20 @@ export const App = () => {
   const ended = state.phase === 'victory' || state.phase === 'defeat';
   const showResult = ended && !locked && queue.length === 0 && resolving === null && floats.length === 0;
   const activeEvent = queue[0];
+  const discardReceiving =
+    activeEvent?.type === 'coinsDiscarded' || (activeEvent?.type === 'coinCreated' && activeEvent.zone === 'discard');
+  const exhaustReceiving = activeEvent?.type === 'coinsConsumed';
+  const pouchReceiving = activeEvent?.type === 'pileShuffled';
+  const pileFlowText =
+    activeEvent?.type === 'coinsDiscarded'
+      ? `버림 +${activeEvent.coins.length}`
+      : activeEvent?.type === 'coinsConsumed'
+        ? `소모 +${activeEvent.coins.length}`
+        : activeEvent?.type === 'pileShuffled'
+          ? `버림 ${activeEvent.count} → 주머니`
+          : activeEvent?.type === 'coinCreated' && activeEvent.zone === 'discard'
+            ? '임시 동전 → 버림'
+            : null;
   const spritePlayKey = activeEvent?.type === 'damageDealt' ? queue.length : 0;
   const playerMotion = spriteMotionForEvent('player', activeEvent);
   const enemyMotion = spriteMotionForEvent('enemy', activeEvent);
@@ -427,6 +520,10 @@ export const App = () => {
   useEffect(() => {
     if (showResult) resultPrimaryRef.current?.focus();
   }, [showResult]);
+
+  useEffect(() => {
+    if (ended) setOpenPile(null);
+  }, [ended]);
 
   return (
     <main className="combat-shell" aria-label="전투 화면">
@@ -597,37 +694,17 @@ export const App = () => {
       <section className="bottom-hud">
         <div className="pouch" ref={pouchRef}>
           <button
-            aria-controls="pouch-pop"
-            aria-expanded={pouchOpen}
+            aria-controls="draw-pile-pop"
+            aria-expanded={openPile === 'draw'}
             aria-label={`코인 주머니 — 남은 동전 ${state.zones.draw.length}닢, 구성 보기`}
-            className="pouch-circle"
+            className={`pouch-circle ${pouchReceiving ? 'receiving' : ''}`}
             type="button"
-            onClick={() => setPouchOpen((open) => !open)}
+            onClick={() => togglePile('draw')}
           >
             {state.zones.draw.length}
           </button>
           <span>주머니</span>
-          {pouchOpen ? (
-            <div aria-label="뽑을 더미 구성" className="pouch-pop" id="pouch-pop" role="dialog">
-              <strong>주머니 속 — 순서는 비밀</strong>
-              {state.zones.draw.length === 0 ? (
-                <p className="pop-empty">비었음 · 드로우 때 버림 더미를 섞어 채운다</p>
-              ) : (
-                <ul>
-                  {drawPileComposition(state, contentDb).map((group) => (
-                    <li key={`${group.defId}-${String(group.temporary)}`}>
-                      <span
-                        aria-hidden="true"
-                        className={`pop-coin ${group.element === 'fire' ? 'fire' : ''} ${group.temporary ? 'temporary' : ''}`}
-                      />
-                      {group.element === null ? '기본' : elementKo(group.element)}
-                      {group.temporary ? ' (임시)' : ''} ×{group.count}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ) : null}
+          {openPile === 'draw' ? <PilePopover groups={pileComposition(state, 'draw', contentDb)} zone="draw" /> : null}
         </div>
         <div className="hand-tray" aria-label="손패 동전 트레이">
           {state.zones.hand.map((coin) => (
@@ -653,13 +730,34 @@ export const App = () => {
             </button>
           ))}
         </div>
-        <div className="pile-counts">
-          <span aria-label={`버림 더미 ${state.zones.discard.length}`}>
+        <div className="pile-counts" ref={pileCountsRef}>
+          <button
+            aria-controls="discard-pile-pop"
+            aria-expanded={openPile === 'discard'}
+            aria-label={`버림 더미 ${state.zones.discard.length}개, 구성 보기`}
+            className={`pile-button discard ${discardReceiving ? 'receiving' : ''}`}
+            type="button"
+            onClick={() => togglePile('discard')}
+          >
             <SkullIcon scale={1.6} /> 버림 {state.zones.discard.length}
-          </span>
-          <span aria-label={`소모 더미 ${state.zones.exhausted.length}`}>
+          </button>
+          <button
+            aria-controls="exhausted-pile-pop"
+            aria-expanded={openPile === 'exhausted'}
+            aria-label={`소모 영역 ${state.zones.exhausted.length}개, 구성 보기`}
+            className={`pile-button exhausted ${exhaustReceiving ? 'receiving' : ''}`}
+            type="button"
+            onClick={() => togglePile('exhausted')}
+          >
             <EmberIcon scale={1.6} /> 소모 {state.zones.exhausted.length}
-          </span>
+          </button>
+          {openPile === 'discard' ? <PilePopover groups={pileComposition(state, 'discard', contentDb)} zone="discard" /> : null}
+          {openPile === 'exhausted' ? <PilePopover groups={pileComposition(state, 'exhausted', contentDb)} zone="exhausted" /> : null}
+          {pileFlowText !== null ? (
+            <div aria-live="polite" className="pile-flow">
+              {pileFlowText}
+            </div>
+          ) : null}
         </div>
         <button aria-label="턴 종료" className="end-turn" disabled={locked || findLegal({ type: 'endTurn' }) === undefined} type="button" onClick={() => runCommand({ type: 'endTurn' })}>
           턴 종료

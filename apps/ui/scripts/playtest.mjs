@@ -117,12 +117,12 @@ const handCount = (page) => page.locator('.hand-tray .coin').count();
   check('S2 2/2 장전 후 프리뷰 표시', (await strike.locator('.preview-tip').count()) === 1);
   await page.screenshot({ path: `${outDir}/07-strike-loaded.png` });
 
-  const discardBefore = await page.locator('.pile-counts span').first().innerText();
+  const discardBefore = await page.locator('.pile-button.discard').innerText();
   await strike.locator('.card-title').click();
   await page.waitForFunction(() => document.querySelector('.end-turn:not(:disabled)') !== null, undefined, { timeout: 15000 });
   await page.screenshot({ path: `${outDir}/08-strike-resolved.png` });
   check('S2 사용 후 화면 생존', await shellAlive(page));
-  const discardAfter = await page.locator('.pile-counts span').first().innerText();
+  const discardAfter = await page.locator('.pile-button.discard').innerText();
   check('S2 버림 더미 증가 (코인2+임시화염1)', discardBefore !== discardAfter, `${discardBefore} → ${discardAfter}`);
   check('S2 에러 0', errors.length === 0, errors.join(' | '));
   await page.close();
@@ -303,7 +303,7 @@ const handCount = (page) => page.locator('.hand-tray .coin').count();
   // 8. 턴2에 스트라이크 완충·사용 — 소켓 코인 전부 플립·면 공개가 피해 피드백보다 먼저
   await placeInto(2, 0);
   await placeInto(2, 1);
-  const discardBefore = await page.locator('.pile-counts span').first().innerText();
+  const discardBefore = await page.locator('.pile-button.discard').innerText();
   await card(2).locator('.card-title').click();
   const sawFlipAnim = await page
     .waitForFunction(() => document.querySelector('.socket-coin.flipping') !== null, undefined, { timeout: 5000 })
@@ -325,7 +325,7 @@ const handCount = (page) => page.locator('.hand-tray .coin').count();
     undefined,
     { timeout: 20000 }
   );
-  const discardAfter = await page.locator('.pile-counts span').first().innerText();
+  const discardAfter = await page.locator('.pile-button.discard').innerText();
   check('S7 해결 후 버림 반영', discardBefore !== discardAfter, `${discardBefore} → ${discardAfter}`);
   check('S7 해결 후 화면 생존', await shellAlive(page));
   await page.screenshot({ path: `${outDir}/17-post-resolution.png` });
@@ -497,6 +497,120 @@ const handCount = (page) => page.locator('.hand-tray .coin').count();
     check(`S9 ${tag} 에러 0`, errors.length === 0, errors.join(' | '));
     await page.close();
   }
+}
+
+// ---------- 시나리오 11: 버림·소모 인스펙터 + 이동·리셔플 수명주기 피드백 ----------
+{
+  const { page, errors } = await boot();
+  const pileSum = async (selector) => {
+    const text = await page.locator(selector).innerText();
+    return [...text.matchAll(/×(\d+)/g)].reduce((sum, match) => sum + Number(match[1]), 0);
+  };
+  const pileSettled = (selector) =>
+    page.waitForFunction((target) => {
+      const pop = document.querySelector(target);
+      return pop !== null && getComputedStyle(pop).opacity === '1';
+    }, selector);
+
+  check('S11 버림·소모 버튼 2개', (await page.locator('.pile-button').count()) === 2);
+  const pileHitBoxes = await page.locator('.pile-button').evaluateAll((buttons) =>
+    buttons.map((button) => {
+      const box = button.getBoundingClientRect();
+      return { width: Math.round(box.width), height: Math.round(box.height) };
+    })
+  );
+  check(
+    'S11 더미 버튼 히트 영역 ≥70×24px',
+    pileHitBoxes.every((box) => box.width >= 70 && box.height >= 24),
+    pileHitBoxes.map((box) => `${box.width}x${box.height}`).join(',')
+  );
+
+  await page.locator('.pile-button.discard').click();
+  const emptyDiscardText = await page.locator('.pile-pop.discard').innerText();
+  check('S11 빈 버림 인스펙터 열림', emptyDiscardText.includes('아직 버린 동전이 없다'));
+  check('S11 버림 리셔플 규칙 설명', emptyDiscardText.includes('무작위로 섞여'));
+
+  await page.locator('.pile-button.exhausted').click();
+  check('S11 인스펙터 상호 배타적', (await page.locator('.pile-pop').count()) === 1 && (await page.locator('.pile-pop.exhausted').count()) === 1);
+  const emptyExhaustText = await page.locator('.pile-pop.exhausted').innerText();
+  check('S11 소모 수명주기 설명', emptyExhaustText.includes('영구 동전은 전투 후 복귀') && emptyExhaustText.includes('임시 동전은 전투 후 소멸'));
+  await page.keyboard.press('Escape');
+  check('S11 Escape 인스펙터 닫기', (await page.locator('.pile-pop').count()) === 0);
+
+  // 기본 동전으로 베기 → 비용 동전이 버림으로 이동하고 HUD가 이를 알려야 한다.
+  const basicCoin = page.locator('.hand-tray .coin:not(.fire):not(.granted-fire)').first();
+  await basicCoin.click();
+  await page.locator('.skill-card').nth(0).locator('.socket').first().click();
+  await page.locator('.skill-card').nth(0).locator('.card-title').click();
+  const sawDiscardFeedback = await page
+    .waitForFunction(
+      () =>
+        document.querySelector('.pile-button.discard.receiving') !== null &&
+        document.querySelector('.pile-flow')?.textContent?.includes('버림 +1') === true,
+      undefined,
+      { timeout: 8000 }
+    )
+    .then(() => true)
+    .catch(() => false);
+  check('S11 스킬 비용 → 버림 피드백', sawDiscardFeedback);
+  await page.waitForFunction(() => document.querySelector('.end-turn:not(:disabled)') !== null, undefined, { timeout: 15000 });
+
+  await page.locator('.pile-button.discard').click();
+  await pileSettled('.pile-pop.discard');
+  const discardText = await page.locator('.pile-pop.discard').innerText();
+  check('S11 버림 구성 합계 = 카운터', (await pileSum('.pile-pop.discard')) === 1);
+  check('S11 버림 동전 종류·수명 표시', discardText.includes('기본 ×1') && discardText.includes('리셔플 대상'));
+  await page.screenshot({ path: `${outDir}/26-discard-inspector.png` });
+  await page.keyboard.press('Escape');
+
+  // 시작 손패의 영구 화염 동전을 점화 검술로 소비 → 전투 중 제외, 전투 후 복귀 안내.
+  check('S11 소비 전 화염 동전 보유', (await page.locator('.hand-tray .coin.fire').count()) >= 1);
+  await page.locator('.skill-card').nth(4).locator('.card-title').click();
+  const sawExhaustFeedback = await page
+    .waitForFunction(
+      () =>
+        document.querySelector('.pile-button.exhausted.receiving') !== null &&
+        document.querySelector('.pile-flow')?.textContent?.includes('소모 +1') === true,
+      undefined,
+      { timeout: 8000 }
+    )
+    .then(() => true)
+    .catch(() => false);
+  check('S11 소비 동전 → 소모 영역 피드백', sawExhaustFeedback);
+  await page.waitForFunction(() => document.querySelector('.end-turn:not(:disabled)') !== null, undefined, { timeout: 15000 });
+
+  await page.locator('.pile-button.exhausted').click();
+  await pileSettled('.pile-pop.exhausted');
+  const exhaustText = await page.locator('.pile-pop.exhausted').innerText();
+  check('S11 소모 구성 합계 = 카운터', (await pileSum('.pile-pop.exhausted')) === 1);
+  check('S11 소모 동전 종류 표시', exhaustText.includes('화염 ×1'));
+  check('S11 영구 소모 동전 복귀 안내', exhaustText.includes('전투 후 복귀'));
+  await page.screenshot({ path: `${outDir}/27-exhaust-inspector.png` });
+  await page.keyboard.press('Escape');
+
+  // 두 번 턴 종료하면 남은 1개를 뽑은 뒤 버림 9개가 리셔플된다.
+  await page.locator('.end-turn').click();
+  await page.waitForFunction(() => document.querySelector('.end-turn:not(:disabled)') !== null, undefined, { timeout: 30000 });
+  await page.locator('.end-turn').click();
+  const sawShuffleFeedback = await page
+    .waitForFunction(
+      () =>
+        document.querySelector('.pouch-circle.receiving') !== null &&
+        document.querySelector('.pile-flow')?.textContent?.includes('→ 주머니') === true,
+      undefined,
+      { timeout: 15000 }
+    )
+    .then(() => true)
+    .catch(() => false);
+  check('S11 버림 → 주머니 리셔플 피드백', sawShuffleFeedback);
+  await page.waitForFunction(() => document.querySelector('.end-turn:not(:disabled)') !== null, undefined, { timeout: 30000 });
+  check('S11 리셔플 후 버림 카운터 0', (await page.locator('.pile-button.discard').innerText()).includes('0'));
+  await page.locator('.pile-button.discard').click();
+  await pileSettled('.pile-pop.discard');
+  check('S11 리셔플 후 버림 인스펙터 비움', (await page.locator('.pile-pop.discard').innerText()).includes('아직 버린 동전이 없다'));
+  await page.screenshot({ path: `${outDir}/28-after-reshuffle.png` });
+  check('S11 전 구간 에러 0', errors.length === 0, errors.join(' | '));
+  await page.close();
 }
 
 // ---------- 시나리오 10: 패배 연출 완료 후 결과 표시 + 같은 시드 재시작 정리 ----------

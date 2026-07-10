@@ -37,6 +37,7 @@ const drawCards = (input: CombatState, count: number): { state: CombatState; eve
   while (remaining > 0) {
     if (draw.length === 0) {
       if (discard.length === 0) break;
+      events.push({ type: 'pileShuffled', count: discard.length });
       draw = rng.shuffle(discard);
       discard = [];
     }
@@ -204,11 +205,13 @@ const endTurn = (input: CombatState, db: ContentDb): StepResult => {
   const clearedCoins = Object.fromEntries(
     Object.entries(state.coins).map(([key, coin]) => [key, { ...coin, grants: [] }])
   );
+  const discarded = [...state.zones.hand];
   state = {
     ...state,
     coins: clearedCoins,
-    zones: { ...state.zones, discard: [...state.zones.discard, ...state.zones.hand], hand: [] }
+    zones: { ...state.zones, discard: [...state.zones.discard, ...discarded], hand: [] }
   };
+  if (discarded.length > 0) events.push({ type: 'coinsDiscarded', coins: discarded, reason: 'turnEnd' });
 
   const enemy = runEnemyPhase(state, db);
   state = enemy.state;
