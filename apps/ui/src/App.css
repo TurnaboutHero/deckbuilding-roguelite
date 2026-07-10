@@ -690,6 +690,10 @@ button:focus-visible {
   color: var(--ink);
 }
 
+.consume-condition.selecting {
+  box-shadow: 0 0 0 2px var(--gold-2);
+}
+
 .spent-label,
 .locked-label {
   position: absolute;
@@ -932,6 +936,20 @@ button:focus-visible {
   transform: translateY(-7px);
   filter: drop-shadow(0 0 3px var(--gold-2))
     drop-shadow(0 8px 0 rgba(0, 0, 0, 0.3));
+}
+
+.coin.fuel-valid {
+  box-shadow: 0 0 0 3px var(--gold-2);
+}
+
+.coin.fuel-selected {
+  transform: translateY(-7px);
+  filter: drop-shadow(0 0 5px var(--flame))
+    drop-shadow(0 8px 0 rgba(0, 0, 0, 0.3));
+}
+
+.coin.fuel-invalid {
+  opacity: 0.72;
 }
 
 .coin:disabled {

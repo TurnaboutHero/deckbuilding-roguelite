@@ -31,6 +31,13 @@ import "./App.css";
 import { AtlasSprite } from "./AtlasSprite";
 import { REJECTION_TEXT, rejectionReason } from "./action-feedback";
 import {
+  autoSuggestFuel,
+  fuelCommand,
+  requiresFuelSelection,
+  toggleFuel,
+} from "./fuel-selection";
+import type { FuelSelection } from "./fuel-selection";
+import {
   EmberIcon,
   FlameIcon,
   HeartIcon,
@@ -1067,6 +1074,9 @@ const CombatBoard = ({
 }: CombatBoardProps) => {
   const [state, dispatchState] = useReducer(combatReducer, combat);
   const [selectedCoin, setSelectedCoin] = useState<CoinUid | null>(null);
+  const [fuelSelection, setFuelSelection] = useState<FuelSelection | null>(
+    null,
+  );
   const [queue, setQueue] = useState<CombatEvent[]>([]);
   const [locked, setLocked] = useState(false);
   const [coinFaces, setCoinFaces] = useState<CoinFaces>({});
@@ -1090,6 +1100,8 @@ const CombatBoard = ({
   const completionSent = useRef(false);
   const suppressClick = useRef(false);
   const legal = useMemo(() => legalCommands(state, contentDb), [state]);
+
+  const selectCoin = (coin: CoinUid | null) => setSelectedCoin(coin);
 
   useEffect(() => {
     onTelemetryCombatStart(combat);
@@ -1153,7 +1165,8 @@ const CombatBoard = ({
 
   const commit = (nextState: CombatState, events: CombatEvent[]) => {
     dispatchState({ type: "set", state: nextState });
-    setSelectedCoin(null);
+    selectCoin(null);
+    setFuelSelection(null);
     // 장전/회수는 상태 반영이 곧 피드백 — 큐·잠금 없이 즉답해 연속 장전이 끊기지 않는다
     const animated = events.filter(
       (event) => event.type !== "coinPlaced" && event.type !== "coinUnplaced",
@@ -1192,6 +1205,21 @@ const CombatBoard = ({
     return true;
   };
 
+  const runSelectedFuel = (cmd: Command, showFeedback = false): boolean => {
+    if (locked) {
+      if (showFeedback) showRejection(REJECTION_TEXT.notPlayerPhase);
+      return false;
+    }
+    const result = step(state, cmd, contentDb);
+    if (!result.ok) {
+      if (showFeedback) showRejection(REJECTION_TEXT.generic);
+      return false;
+    }
+    onTelemetryDecision(state, [cmd], result.state, result.events);
+    commit(result.state, result.events);
+    return true;
+  };
+
   const runSequence = (
     commands: readonly Command[],
     showFeedback = false,
@@ -1220,6 +1248,7 @@ const CombatBoard = ({
 
   // 사용 선언 — 플립 스킬은 해결 직전의 장전 코인을 고스트로 붙잡아 연출 대상이 되게 한다
   const useSkill = (cmd: Command, showFeedback = true) => {
+    setFuelSelection(null);
     if (cmd.type === "useFlipSkill") {
       const ghosts = [...(state.zones.placed[cmd.slot] ?? [])];
       if (runCommand(cmd, showFeedback) && ghosts.length > 0)
@@ -1227,6 +1256,83 @@ const CombatBoard = ({
       return;
     }
     runCommand(cmd, showFeedback);
+  };
+
+  const activateConsumeSkill = (
+    slotId: SlotId,
+    skill: NonNullable<(typeof contentDb.skills)[string]>,
+    autoCommand: Extract<Command, { type: "useConsumeSkill" }> | undefined,
+    showFeedback = true,
+  ) => {
+    if (skill.type !== "consume") return;
+    // count==1 deliberately keeps the existing App path: use the single
+    // legalCommands auto suggestion immediately, without fuel-selection state.
+    if (!requiresFuelSelection(state, slotId, contentDb)) {
+      if (autoCommand !== undefined) useSkill(autoCommand, showFeedback);
+      else
+        runCommand(
+          {
+            type: "useConsumeSkill",
+            slot: slotId,
+            coins: [],
+            target: skill.targetType === "single-enemy" ? 0 : undefined,
+          },
+          showFeedback,
+        );
+      return;
+    }
+    if (fuelSelection?.slot !== slotId) {
+      const coins = autoSuggestFuel(state, slotId, contentDb);
+      if (coins.length === 0 && showFeedback) {
+        const reason = rejectionReason(
+          state,
+          {
+            type: "useConsumeSkill",
+            slot: slotId,
+            coins: [],
+            target: skill.targetType === "single-enemy" ? 0 : undefined,
+          },
+          contentDb,
+        );
+        showRejection(reason ?? REJECTION_TEXT.generic);
+      }
+      selectCoin(null);
+      setFuelSelection({ slot: slotId, coins });
+      return;
+    }
+    const command = fuelCommand(fuelSelection, state, contentDb);
+    if (command === null) {
+      if (showFeedback) showRejection(REJECTION_TEXT.coinCost);
+      return;
+    }
+    runSelectedFuel(command, showFeedback);
+  };
+
+  const onFuelCoinClick = (coin: CoinUid): boolean => {
+    if (fuelSelection === null) return false;
+    const next = toggleFuel(fuelSelection, coin, state, contentDb);
+    if (next === fuelSelection) {
+      const slotState = state.slots[Number(fuelSelection.slot)];
+      const skill =
+        slotState === undefined
+          ? undefined
+          : contentDb.skills[String(slotState.skillId)];
+      const reason = rejectionReason(
+        state,
+        {
+          type: "useConsumeSkill",
+          slot: fuelSelection.slot,
+          coins: [...fuelSelection.coins, coin],
+          target: skill?.targetType === "single-enemy" ? 0 : undefined,
+        },
+        contentDb,
+      );
+      showRejection(reason ?? REJECTION_TEXT.generic);
+      return true;
+    }
+    selectCoin(null);
+    setFuelSelection(next);
+    return true;
   };
 
   useEffect(() => {
@@ -1398,6 +1504,15 @@ const CombatBoard = ({
     setDrag(null);
   };
 
+  useEffect(() => {
+    if (fuelSelection === null) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFuelSelection(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [fuelSelection]);
+
   const clickGuard = (): boolean => {
     if (suppressClick.current) {
       suppressClick.current = false;
@@ -1444,6 +1559,7 @@ const CombatBoard = ({
 
   useEffect(() => {
     if (ended) setOpenPile(null);
+    if (ended) setFuelSelection(null);
   }, [ended]);
 
   return (
@@ -1531,7 +1647,13 @@ const CombatBoard = ({
               ? previewFlip(state, slot(index), contentDb)
               : null;
           const consumeReady =
-            skill?.type === "consume" && consumeUse !== undefined;
+            skill?.type === "consume" &&
+            (skill.consume.count === 1
+              ? consumeUse !== undefined
+              : fuelSelection?.slot === slot(index) &&
+                fuelCommand(fuelSelection, state, contentDb) !== null);
+          const selectingFuel =
+            skill?.type === "consume" && fuelSelection?.slot === slot(index);
           const useAttempt =
             skill?.type === "consume"
               ? ({
@@ -1551,6 +1673,21 @@ const CombatBoard = ({
             skill?.oncePerCombat === true && slotState.usedThisCombat;
           const isResolving = resolving !== null && resolving.slot === index;
           const socketCoins = isResolving ? resolving.coins : placed;
+          const placeSelectedFromCardArt = (
+            event: ReactPointerEvent<HTMLElement>,
+          ) => {
+            if (selectedCoin === null) return;
+            event.preventDefault();
+            event.stopPropagation();
+            runCommand(
+              {
+                type: "placeCoin",
+                coin: selectedCoin,
+                slot: slot(index),
+              },
+              true,
+            );
+          };
           return (
             <article
               className={`skill-card ${use !== undefined ? "ready" : ""} ${slotState.usedThisTurn ? "spent" : ""} ${lockedOnce ? "combat-locked" : ""} ${placed.length > 0 || isResolving ? "lifted" : ""} ${isResolving ? "resolving" : ""} ${dropTarget && drag?.over === index ? "drop-target" : ""}`}
@@ -1581,7 +1718,9 @@ const CombatBoard = ({
                     );
                   return;
                 }
-                if (use !== undefined) useSkill(use);
+                if (skill?.type === "consume")
+                  activateConsumeSkill(slot(index), skill, consumeUse, true);
+                else if (use !== undefined) useSkill(use);
                 else if (useAttempt !== null) runCommand(useAttempt, true);
               }}
             >
@@ -1596,7 +1735,9 @@ const CombatBoard = ({
                 onClick={(event) => {
                   event.stopPropagation();
                   if (clickGuard()) return;
-                  if (use !== undefined) useSkill(use);
+                  if (skill?.type === "consume")
+                    activateConsumeSkill(slot(index), skill, consumeUse, true);
+                  else if (use !== undefined) useSkill(use);
                   else if (useAttempt !== null) runCommand(useAttempt, true);
                 }}
               >
@@ -1673,13 +1814,23 @@ const CombatBoard = ({
               {skill?.type === "consume" ? (
                 <div
                   aria-label={`화염 코인 ${skill.consume.count}개 소비`}
-                  className={`consume-condition ${consumeReady ? "met" : ""}`}
+                  className={`consume-condition ${consumeReady ? "met" : ""} ${selectingFuel ? "selecting" : ""}`}
                 >
                   <FlameIcon scale={1.6} />
-                  <span>×{skill.consume.count} 소비</span>
+                  <span>
+                    ×
+                    {selectingFuel
+                      ? `${fuelSelection.coins.length}/${skill.consume.count}`
+                      : skill.consume.count}{" "}
+                    소비
+                  </span>
                 </div>
               ) : null}
-              <div className="card-art" aria-hidden="true">
+              <div
+                className="card-art"
+                aria-hidden="true"
+                onPointerDown={placeSelectedFromCardArt}
+              >
                 {skill !== undefined &&
                 CARD_ART[String(skill.id)] !== undefined ? (
                   <img
@@ -1688,7 +1839,9 @@ const CombatBoard = ({
                     src={CARD_ART[String(skill.id)]}
                   />
                 ) : (
-                  <SwordIcon scale={4.2} />
+                  <span>
+                    <SwordIcon scale={4.2} />
+                  </span>
                 )}
               </div>
               <p>{effectText(String(slotState.skillId))}</p>
@@ -1757,32 +1910,51 @@ const CombatBoard = ({
           ) : null}
         </div>
         <div className="hand-tray" aria-label="손패 동전 트레이">
-          {state.zones.hand.map((coin) => (
-            <button
-              aria-label={`${coinLabel(state, coin)} 동전 선택`}
-              aria-pressed={selectedCoin === coin}
-              className={`coin ${coinVisualClasses(state, coin)} ${selectedCoin === coin ? "selected" : ""} ${
-                drag !== null && drag.started && drag.coin === coin
-                  ? "drag-origin"
-                  : ""
-              } ${shakeCoin === coin ? "drag-cancel" : ""}`}
-              disabled={locked}
-              key={coin}
-              type="button"
-              onClick={() => {
-                if (clickGuard()) return;
-                setSelectedCoin(selectedCoin === coin ? null : coin);
-              }}
-              onPointerDown={(event) =>
-                beginDrag(event, coin, { kind: "hand" })
-              }
-              onPointerMove={moveDrag}
-              onPointerUp={endDrag}
-              onPointerCancel={cancelDrag}
-            >
-              <small>{coinLabel(state, coin)}</small>
-            </button>
-          ))}
+          {state.zones.hand.map((coin) => {
+            const fuelSelected =
+              fuelSelection?.coins.includes(coin) === true;
+            const emptyFuelSelection =
+              fuelSelection === null
+                ? null
+                : { slot: fuelSelection.slot, coins: [] };
+            const fuelValid =
+              fuelSelection !== null &&
+              (fuelSelected ||
+                toggleFuel(emptyFuelSelection!, coin, state, contentDb) !==
+                  emptyFuelSelection);
+            return (
+              <button
+                aria-label={`${coinLabel(state, coin)} 동전 선택`}
+                aria-pressed={fuelSelection !== null ? fuelSelected : selectedCoin === coin}
+                className={`coin ${coinVisualClasses(state, coin)} ${selectedCoin === coin ? "selected" : ""} ${
+                  fuelSelected ? "fuel-selected" : ""
+                } ${fuelValid ? "fuel-valid" : ""} ${
+                  fuelSelection !== null && !fuelValid ? "fuel-invalid" : ""
+                } ${
+                  drag !== null && drag.started && drag.coin === coin
+                    ? "drag-origin"
+                    : ""
+                } ${shakeCoin === coin ? "drag-cancel" : ""}`}
+                disabled={locked}
+                key={coin}
+                type="button"
+                onClick={() => {
+                  if (clickGuard()) return;
+                  if (onFuelCoinClick(coin)) return;
+                  selectCoin(selectedCoin === coin ? null : coin);
+                }}
+                onPointerDown={(event) => {
+                  if (fuelSelection === null)
+                    beginDrag(event, coin, { kind: "hand" });
+                }}
+                onPointerMove={moveDrag}
+                onPointerUp={endDrag}
+                onPointerCancel={cancelDrag}
+              >
+                <small>{coinLabel(state, coin)}</small>
+              </button>
+            );
+          })}
         </div>
         <div className="pile-counts" ref={pileCountsRef}>
           <button
