@@ -109,11 +109,43 @@ const duplicateIds = <T extends { id: string | number }>(items: readonly T[], la
   return errors;
 };
 
+const validateSkillCosts = (skills: readonly SkillDef[]): string[] => {
+  const errors: string[] = [];
+
+  for (const skill of skills) {
+    if (skill.type === 'consume') {
+      if (!Number.isInteger(skill.consume.count) || skill.consume.count < 1 || skill.consume.count > 3) {
+        errors.push(`skill ${String(skill.id)}: consume count must be an integer from 1 to 3`);
+      }
+      continue;
+    }
+
+    if (!Number.isInteger(skill.cost) || skill.cost < 1) {
+      errors.push(`skill ${String(skill.id)}: flip cost must be a positive integer`);
+      continue;
+    }
+
+    if (skill.cost > 5) {
+      errors.push(`skill ${String(skill.id)}: flip cost ${skill.cost} exceeds the maximum of 5`);
+      continue;
+    }
+
+    const isExceptionalCost =
+      skill.rarity === 'rare' && (skill.oncePerCombat === true || skill.tags.includes('ultimate'));
+    if (skill.cost === 5 && !isExceptionalCost) {
+      errors.push(`skill ${String(skill.id)}: flip cost 5 requires rare rarity and oncePerCombat or ultimate`);
+    }
+  }
+
+  return errors;
+};
+
 export const validateContentDb = (db: Omit<ContentDb, 'validate'>): string[] => [
   ...duplicateIds(Object.values(db.coins), 'coin'),
   ...duplicateIds(Object.values(db.skills), 'skill'),
   ...duplicateIds(Object.values(db.enemies), 'enemy'),
-  ...duplicateIds(Object.values(db.characters), 'character')
+  ...duplicateIds(Object.values(db.characters), 'character'),
+  ...validateSkillCosts(Object.values(db.skills))
 ];
 
 export const effectiveElements = (coin: CoinInstance, db: ContentDb): Element[] => {

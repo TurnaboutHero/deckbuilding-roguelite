@@ -179,6 +179,7 @@ export const App = () => {
   const [hintStage, setHintStage] = useState<0 | 1 | 2>(0);
   const [pouchOpen, setPouchOpen] = useState(false);
   const pouchRef = useRef<HTMLDivElement | null>(null);
+  const resultPrimaryRef = useRef<HTMLButtonElement | null>(null);
   const nextFloatId = useRef(1);
   const initialEventsQueued = useRef(false);
   const suppressClick = useRef(false);
@@ -322,7 +323,11 @@ export const App = () => {
     setCoinFaces({});
     setFlipping({});
     setResolving(null);
+    setFloats([]);
     setDrag(null);
+    setShakeCoin(null);
+    setPouchOpen(false);
+    suppressClick.current = false;
     initialEventsQueued.current = true;
     const nextState = createState(nextSeed);
     dispatchState({ type: 'set', state: nextState });
@@ -412,11 +417,16 @@ export const App = () => {
 
   const enemy = state.enemies[0];
   const ended = state.phase === 'victory' || state.phase === 'defeat';
+  const showResult = ended && !locked && queue.length === 0 && resolving === null && floats.length === 0;
   const activeEvent = queue[0];
   const spritePlayKey = activeEvent?.type === 'damageDealt' ? queue.length : 0;
   const playerMotion = spriteMotionForEvent('player', activeEvent);
   const enemyMotion = spriteMotionForEvent('enemy', activeEvent);
   const dragging = drag !== null && drag.started;
+
+  useEffect(() => {
+    if (showResult) resultPrimaryRef.current?.focus();
+  }, [showResult]);
 
   return (
     <main className="combat-shell" aria-label="전투 화면">
@@ -664,13 +674,13 @@ export const App = () => {
         </div>
       ) : null}
 
-      {ended ? (
-        <div className="result-overlay" role="dialog" aria-label="전투 결과">
+      {showResult ? (
+        <div aria-label="전투 결과" aria-modal="true" className="result-overlay" role="dialog">
           <div className="result-panel">
             <h1>{state.phase === 'victory' ? '승리' : '패배'}</h1>
             <p>턴 수 {state.turn}</p>
             <p>시드 {seed}</p>
-            <button aria-label="같은 시드로 재시작" type="button" onClick={() => restart(seed)}>
+            <button ref={resultPrimaryRef} aria-label="같은 시드로 재시작" type="button" onClick={() => restart(seed)}>
               같은 시드로 재시작
             </button>
             <button aria-label="새 시드" type="button" onClick={() => restart(randomSeed())}>

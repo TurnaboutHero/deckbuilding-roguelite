@@ -499,6 +499,66 @@ const handCount = (page) => page.locator('.hand-tray .coin').count();
   }
 }
 
+// ---------- 시나리오 10: 패배 연출 완료 후 결과 표시 + 같은 시드 재시작 정리 ----------
+{
+  const { page, errors } = await boot();
+
+  // 약탈자 고정 패턴(11, 4×2, 11)으로 아무 행동 없이 6턴을 넘기면 HP 10이 남는다.
+  for (let attack = 0; attack < 6; attack += 1) {
+    await page.locator('.end-turn').click();
+    await page.waitForFunction(() => document.querySelector('.end-turn:not(:disabled)') !== null, undefined, {
+      timeout: 30000
+    });
+  }
+  check('S10 최종 공격 직전 HP 10', (await page.locator('.unit.player .hp-num').innerText()) === '10/70');
+
+  // 재시작 시 전투 외 UI 상태도 초기화되는지 보기 위해 주머니를 열린 채로 패배한다.
+  await page.locator('.pouch-circle').click();
+  check('S10 패배 직전 주머니 팝오버 열림', (await page.locator('.pouch-pop').count()) === 1);
+
+  await page.locator('.end-turn').click();
+  await page.waitForTimeout(100);
+  const terminalTransition = await page.evaluate(() => ({
+    overlay: document.querySelector('.result-overlay') !== null,
+    locked: document.querySelector('.end-turn:disabled') !== null,
+    feedback: document.querySelector('.float-text') !== null
+  }));
+  check(
+    'S10 최종 피해 연출 중 결과 화면 지연',
+    !terminalTransition.overlay && (terminalTransition.locked || terminalTransition.feedback),
+    JSON.stringify(terminalTransition)
+  );
+
+  await page.waitForFunction(() => document.querySelector('.result-overlay') !== null, undefined, { timeout: 30000 });
+  await page.screenshot({ path: `${outDir}/25-defeat-result.png` });
+  check('S10 결과 대화상자 aria-modal', (await page.locator('.result-overlay').getAttribute('aria-modal')) === 'true');
+  check('S10 결과 표시 시 잔여 피해 텍스트 0', (await page.locator('.float-text').count()) === 0);
+  check('S10 결과 표시 시 플립 중 코인 0', (await page.locator('.flipping').count()) === 0);
+  const primaryFocused = await page
+    .waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '같은 시드로 재시작', undefined, {
+      timeout: 2000
+    })
+    .then(() => true)
+    .catch(() => false);
+  check('S10 결과 기본 동작에 키보드 포커스', primaryFocused);
+
+  const seedBefore = new globalThis.URL(page.url()).searchParams.get('seed');
+  await page.getByRole('button', { name: '같은 시드로 재시작' }).click();
+  await page.waitForFunction(
+    () => document.querySelector('.end-turn:not(:disabled)') !== null && document.querySelector('.float-text') === null,
+    undefined,
+    { timeout: 15000 }
+  );
+  check('S10 재시작 후 결과 화면 닫힘', (await page.locator('.result-overlay').count()) === 0);
+  check('S10 같은 시드 유지', new globalThis.URL(page.url()).searchParams.get('seed') === seedBefore, String(seedBefore));
+  check('S10 재시작 후 HP 초기화', (await page.locator('.unit.player .hp-num').innerText()) === '70/70');
+  check('S10 재시작 후 손패 5개', (await handCount(page)) === 5);
+  check('S10 재시작 후 주머니 팝오버 닫힘', (await page.locator('.pouch-pop').count()) === 0);
+  check('S10 재시작 후 낡은 얼굴 0', (await page.locator('.coin-face-mark').count()) === 0);
+  check('S10 전 구간 에러 0', errors.length === 0, errors.join(' | '));
+  await page.close();
+}
+
 // ---------- 시나리오 6: 뷰포트 매트릭스 — 풀블리드·스크롤·HUD·지면선 ----------
 {
   const viewports = [
