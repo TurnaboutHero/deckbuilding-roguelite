@@ -19,6 +19,7 @@ Phase 1 보류 항목을 명시적으로 유지한 채 Phase 2를 진행한다. 
 
 ## 완료
 
+- [x] **사람 게이트 실행 도구 (human-gate-enablement)** (2026-07-11, Pumasi 3워커+Fable, 배포 `41bab3e`) — ① `pnpm sim:human`: human-run-trace JSON 디렉토리를 **코어 리플레이 대조**(runSeed+커맨드 재시뮬 → HP/플립/결과 사실 일치, contentVersion 드리프트 거부)로 검증하고 §8.3 사람 지표(N·평균 턴·스킬/턴·낭비율·속성 활용률·소비/2코인 기회 정규화·보상 선택·계산 가능 무효 태그)를 결정론 리포트로 집계. sim→core+content 의존 방향 유지, UI import 없음. 후속 수정 2건: pnpm 전달 `--` 토큰 허용, 스킬/턴을 %가 아닌 개수 표기(감시자 발견 `281.6%` → `2.82 (276/98)`). ② 거부 행동 사유 한국어 피드백 + ③ 프리뷰 자해·코인 생성 축 + ④ URL 시드 재현성 S13 + CI playtest 필수 잡 — PHASE1_HOLDS 4행 닫힘(증거 링크 포함). ⑤ `PRD/PLAYTEST_KIT.md` — 테스터 안내·M2/M4/M5/M6 통합 설문·진행자 집계 절차 (Fable 직접 작성). 검증: typecheck·lint·test 195/195·build, ci:sim 4게이트, seed42 골든 불변, playtest 260어서션(로컬+원격 CI), feedback-check, sim:human 2회 byte-identical(결정론 픽스처 N=5 — **도구 검증용이며 사람 증거 아님**). CI/Deploy `29110395064`/`29110395102` green, 라이브 `index-D7PQXBtO.js` 200. 수치 콘텐츠 무변경(T6.4 유지), 사람 게이트·Phase 3 보류 유지
 - [x] **M6 정책·지표·CRN·CI·로컬 텔레메트리** (2026-07-11, Pumasi+Fable) — Random/Aggro/Turtle/GreedyEV는 합법 명령과 공개 프리뷰만 사용하며 정책 RNG를 분리했다. `m6-trace-v1` 순수 fold, 정책×적 리포트, A=A 바이트 동일·fire-first/basic-first CRN, 정렬 이상 시드, 결과 화면 `플레이 로그 저장`을 구현했다. CI는 4정책×125=500런의 terminal/crash/invariant/seed42 네 게이트만 사용하고 밸런스는 report-only다. `sim:balance` 2회 11,023 bytes 완전 동일(SHA-256 `af430ad…34cbc`), 500/500 terminal·274승/226패·crash/invariant 0. Fable 판정에 따라 numeric change=none, Gatekeeper 수렴 70건과 소비/플립은 사람 질문으로 유지한다.
 - [x] **M5 5연전 런 + 보상 + 저장 + 전투 UI 통합** (2026-07-10, Pumasi) — 독립 reward 스트림의 기본·화염·마나 3종 보상, 코인 제거 취소, 스킬 획득/교체/거절, 풀 소진 시 독립 fallback 코인 보상, attempt salt, HP·주머니·장착 스킬 이월, 콘텐츠 버전 검증형 localStorage 저장/재개를 구현했다. 마나 코인과 주술사·수문장 스프라이트는 gongnyang 프롬프트 검증 후 sprite-gen 파이프라인으로 제작했다. 검증: typecheck 4/4·lint·build 4/4·Vitest 142/142·`sim run --seed 42 --auto` 승리(5전투 4/3/4/4/5턴, 최종 HP 41)·퍼즈 1,000판·Chrome S1~S12 전 시나리오 통과(5 viewport, 콘솔 오류 0)·독립 시각 판정 91점 pass. Fable의 화상/소비 조건부 판정은 사람 검증 대기이며 자동 통과로 세지 않는다.
 - [x] **독립 완성도 감사 4차 — 결과 전환·A18 lint·버림/소모 수명주기** (2026-07-10, 배포 `04c7b21` + `e48d113`) — ① 최종 피해/플립 연출 전에 결과 화면이 전장을 덮던 문제를 이벤트 큐·고스트·피해 텍스트가 모두 끝난 뒤 표시하도록 수정, `aria-modal`·기본 포커스·재시작 임시 UI 초기화 추가. ② 문서상 필수였지만 구현되지 않았던 A18 콘텐츠 lint(장전형 1~4, 5는 희귀+일회성/궁극, 6+ 금지, 소비 1~3)를 실제 `contentDb.validate()` 테스트로 결선. ③ 버림·소모 카운터를 클릭 가능한 인스펙터로 변경해 종류/매수·영구/임시·취급 속성·리셔플/복귀/소멸 규칙을 표시하고, 더미 간 상호 배타·Escape/바깥 닫기·78×24px 히트 영역 보장. ④ `coinsDiscarded`·`pileShuffled` 이벤트와 HUD 펄스/이동 문구를 추가하고, 치명타로 전투가 끝나도 장전 비용이 버림으로 정산되도록 수정. 검증: typecheck 4/4·lint·build 4/4·Vitest 62/62·sim seed 42 승리 9턴·퍼즈 1,000판·브라우저 11시나리오 163어서션 전부 통과, HUD 76px 유지, 시각 판정 94점 pass. CI `29082598961`·Deploy `29082599065` 성공, 라이브 번들 `index-LJsdZBv3.js`/`index-DoPuRbqS.css` 및 URL 200 확인
@@ -58,7 +59,7 @@ M6 `23ad82b` — Pumasi 자동화·독립 감사 PASS, CI `29106628445`·Deploy 
 
 ## 다음 단계
 
-정식 배포 URL로 사람 N≥5 플레이테스트를 진행하고 `플레이 로그 저장` JSON과 정성 설문을 함께 수집한다. 그 전에는 봇 참고 대역 이탈을 근거로 수치를 조정하지 않고 Phase 3도 시작하지 않는다.
+`PRD/PLAYTEST_KIT.md`대로 사람 N≥5 플레이테스트를 실행한다: 테스터에게 정식 URL과 설문을 전달하고, 결과 화면의 `플레이 로그 저장` JSON을 모아 `pnpm sim:human -- --dir <디렉토리>`로 집계한 뒤 §8.3 지표와 정성 설문으로 사람이 판정한다. 이것이 남은 유일한 차단 항목이며, 그 전에는 봇 지표를 근거로 수치를 조정하지 않고 Phase 3도 시작하지 않는다.
 
 ## 리스크 / 블로커
 
