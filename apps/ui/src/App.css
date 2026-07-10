@@ -203,6 +203,16 @@ button:focus-visible {
   margin-top: 2px;
 }
 
+.unit.player .sprite {
+  width: 250px;
+  height: 197px;
+}
+
+.unit.enemy .sprite {
+  width: 250px;
+  height: 158px;
+}
+
 .sprite::after {
   content: '';
   position: absolute;
@@ -215,20 +225,20 @@ button:focus-visible {
   border-radius: 50%;
 }
 
-.sprite-img {
+.sprite-frame {
   display: block;
-  image-rendering: auto;
+  image-rendering: pixelated;
   filter: drop-shadow(2px 3px 0 rgba(28, 23, 36, 0.3));
 }
 
-.sprite-img.player {
-  height: 146px;
-  width: auto;
-}
-
-.sprite-img.enemy {
-  height: 158px;
-  width: auto;
+.sprite-frame.player,
+.sprite-frame.enemy {
+  position: absolute;
+  left: 50%;
+  bottom: -23px;
+  width: 250px;
+  height: 250px;
+  transform: translateX(-50%);
 }
 
 .float-text {

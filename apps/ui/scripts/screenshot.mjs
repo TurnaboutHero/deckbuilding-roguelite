@@ -20,7 +20,11 @@ const server = await preview({
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('http://127.0.0.1:4173/deckbuilding-roguelite/?seed=BRAVE-EMBER-42', { waitUntil: 'networkidle' });
+  await page.waitForFunction(
+    () => document.querySelector('.end-turn:not(:disabled)') !== null && document.querySelector('.float-text') === null
+  );
   await mkdir(dirname(output), { recursive: true });
   await page.screenshot({ path: output, fullPage: false });
 } finally {

@@ -6,16 +6,21 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import './App.css';
+import { AtlasSprite } from './AtlasSprite';
 import { EmberIcon, FlameIcon, HeartIcon, ShieldIcon, SkullIcon, SwordIcon } from './icons';
 import bgForest from './assets/bg-forest.webp';
-import spriteWarrior from './assets/sprite-warrior.png';
-import spriteGoblin from './assets/sprite-goblin.png';
 import cardSlash from './assets/card-slash.webp';
 import cardGuard from './assets/card-guard.webp';
 import cardBurningStrike from './assets/card-burning-strike.webp';
 import cardIgnite from './assets/card-ignite.webp';
 import cardIgniteSword from './assets/card-ignite-sword.webp';
 import cardFlameRampage from './assets/card-flame-rampage.webp';
+import goblinAtlas from './assets/generated/sprites/goblin/sprite-sheet-alpha.png';
+import goblinManifestJson from './assets/generated/sprites/goblin/manifest.json';
+import warriorAtlas from './assets/generated/sprites/warrior/sprite-sheet-alpha.png';
+import warriorManifestJson from './assets/generated/sprites/warrior/manifest.json';
+import { spriteMotionForEvent } from './sprite-motion';
+import type { SpriteManifest } from './AtlasSprite';
 
 // 생성 에셋 (docs/ui/combat-ui-v2.png 앵커 스타일 — image_gen 산출, 후처리: 크로마 키·리사이즈)
 const CARD_ART: Record<string, string> = {
@@ -28,6 +33,11 @@ const CARD_ART: Record<string, string> = {
 };
 
 const WORDS = ['BRAVE', 'EMBER', 'IRON', 'MOSS', 'RIVER', 'DUSK', 'SPARK', 'VALE'];
+
+const SPRITES = {
+  player: { atlasUrl: warriorAtlas, manifest: warriorManifestJson as SpriteManifest },
+  enemy: { atlasUrl: goblinAtlas, manifest: goblinManifestJson as SpriteManifest }
+};
 
 type FloatText = { id: number; text: string; target: 'player' | 'enemy'; kind: 'damage' | 'block' | 'status' | 'coin' };
 type CombatAction = { type: 'set'; state: CombatState } | { type: 'restart'; seed: string };
@@ -241,6 +251,10 @@ export const App = () => {
 
   const enemy = state.enemies[0];
   const ended = state.phase === 'victory' || state.phase === 'defeat';
+  const activeEvent = queue[0];
+  const spritePlayKey = activeEvent?.type === 'damageDealt' ? queue.length : 0;
+  const playerMotion = spriteMotionForEvent('player', activeEvent);
+  const enemyMotion = spriteMotionForEvent('enemy', activeEvent);
 
   return (
     <main className="combat-shell" aria-label="전투 화면">
@@ -256,6 +270,8 @@ export const App = () => {
           block={state.player.block}
           statuses={state.player.statuses}
           floats={floats}
+          motion={playerMotion}
+          playKey={playerMotion === 'idle' ? 0 : spritePlayKey}
         />
         {enemy !== undefined ? (
           <UnitPanel
@@ -267,6 +283,8 @@ export const App = () => {
             statuses={enemy.statuses}
             intent={<IntentBadge enemy={enemy} />}
             floats={floats}
+            motion={enemyMotion}
+            playKey={enemyMotion === 'idle' ? 0 : spritePlayKey}
           />
         ) : null}
       </section>
@@ -407,9 +425,11 @@ interface UnitPanelProps {
   statuses: CombatState['player']['statuses'];
   intent?: ReactNode;
   floats: FloatText[];
+  motion: 'idle' | 'attack' | 'hurt';
+  playKey: number;
 }
 
-const UnitPanel = ({ side, name, hp, maxHp, block, statuses, intent, floats }: UnitPanelProps) => (
+const UnitPanel = ({ side, name, hp, maxHp, block, statuses, intent, floats, motion, playKey }: UnitPanelProps) => (
   <div className={`unit ${side}`}>
     <div className="unit-plate">
       <div className="plate-row">
@@ -439,7 +459,14 @@ const UnitPanel = ({ side, name, hp, maxHp, block, statuses, intent, floats }: U
     </div>
     {intent !== undefined ? intent : null}
     <div className="sprite" aria-label={`${name} 스프라이트`}>
-      <img alt="" className={`sprite-img ${side}`} src={side === 'player' ? spriteWarrior : spriteGoblin} />
+      <AtlasSprite
+        atlasUrl={SPRITES[side].atlasUrl}
+        key={`${side}-${motion}-${playKey}`}
+        manifest={SPRITES[side].manifest}
+        motion={motion}
+        playKey={playKey}
+        side={side}
+      />
     </div>
     {floats
       .filter((item) => item.target === side)

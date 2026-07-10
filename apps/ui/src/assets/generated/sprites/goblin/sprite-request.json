@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "kind": "sprite-gen-request",
+  "engine": "component-row",
+  "character": {
+    "id": "goblin",
+    "description": "olive-green goblin raider with skull shoulder guard and curved sword, facing left",
+    "base_image": "base-source.png"
+  },
+  "cell": {
+    "shape": "square",
+    "width": 256,
+    "height": 256,
+    "safe_margin_x": 24,
+    "safe_margin_y": 24,
+    "size": 256,
+    "safe_margin": 24
+  },
+  "chroma_key": {
+    "name": "magenta",
+    "hex": "#FF00FF",
+    "rgb": [
+      255,
+      0,
+      255
+    ],
+    "selection": "manual"
+  },
+  "states": {
+    "idle": {
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "action": "subtle combat breathing and one blink; keep both feet planted and the curved sword stable; final frame returns close to the first"
+    },
+    "attack": {
+      "frames": 4,
+      "fps": 8,
+      "loop": false,
+      "action": "readable curved-sword attack: compact windup, horizontal slash, follow-through, recovery toward combat idle; body and sword only, no detached effects"
+    },
+    "hurt": {
+      "frames": 4,
+      "fps": 8,
+      "loop": false,
+      "action": "brief impact recoil: flinch backward, stagger, regain footing, settle toward combat idle; no counterattack and no detached effects"
+    }
+  },
+  "style": "match the accepted idle anchor exactly: crisp 16-bit-inspired pixel art, identical proportions, outline weight, detail density, palette, green skin, tusks, skull shoulder guard, leather gear, and curved sword",
+  "motion_phase_guides": false,
+  "fit": {
+    "align_x": "foot-centroid",
+    "align_y": "bottom",
+    "pixel_perfect": true,
+    "logical_height": 86,
+    "palette_size": 32
+  },
+  "chroma": {
+    "unmix_reach": 4,
+    "spill_max_fraction": 0.005
+  }
+}
