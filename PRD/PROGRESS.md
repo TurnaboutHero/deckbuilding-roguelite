@@ -44,6 +44,7 @@ typecheck 4/4 ✓ · lint ✓ · test 180/180 ✓ · build 4/4 ✓
 · sim:balance 2회 byte-identical, 정책×적/소비·플립/Gatekeeper 수렴 리포트 ✓
 · Windows Chrome S1~S12 통과, 플레이 로그 버튼 포함 결과 패널 1280/1920 무겹침·오류 0 ✓
 · Fable T6.4: numeric change=none, 사람 데이터 전 수치 변경·Phase 3 금지
+· 원격 CI `29106628445`·Deploy `29106627867` green, 라이브 `index-QUN1fjyP.js`·URL 200 ✓
 ```
 
 ## 실패 시도
@@ -53,7 +54,7 @@ typecheck 4/4 ✓ · lint ✓ · test 180/180 ✓ · build 4/4 ✓
 
 ## 현재 가장 안정적인 상태
 
-M5 `608134f` — CI `29099866922`·Deploy `29099866984` 성공, 라이브 M5 번들·URL 200 확인. M6는 로컬 acceptance candidate이며 원격 증거는 이번 푸시 뒤 확인한다.
+M6 `23ad82b` — Pumasi 자동화·독립 감사 PASS, CI `29106628445`·Deploy `29106627867` 성공, 라이브 번들에서 로컬 플레이 로그 기능과 URL 200 확인 완료.
 
 ## 다음 단계
 
