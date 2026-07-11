@@ -10,6 +10,12 @@ export type Command =
   | { type: 'useConsumeSkill'; slot: SlotId; coins: CoinUid[]; target?: number }
   | { type: 'endTurn' };
 
+const livingEnemyTargets = (state: CombatState): number[] =>
+  state.enemies.flatMap((enemy, index) => (enemy.hp > 0 ? [index] : []));
+
+const targetsForSkill = (state: CombatState, targetType: 'single-enemy' | 'all-enemies' | 'self' | 'none'): (number | undefined)[] =>
+  targetType === 'single-enemy' ? livingEnemyTargets(state) : [undefined];
+
 export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
   if (state.phase !== 'player') return [];
   const commands: Command[] = [{ type: 'endTurn' }];
@@ -23,7 +29,9 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
 
     if (skill.type === 'flip') {
       if ((state.zones.placed[slot]?.length ?? 0) === skill.cost) {
-        commands.push({ type: 'useFlipSkill', slot, target: skill.targetType === 'single-enemy' ? 0 : undefined });
+        for (const target of targetsForSkill(state, skill.targetType)) {
+          commands.push({ type: 'useFlipSkill', slot, target });
+        }
       }
       if ((state.zones.placed[slot]?.length ?? 0) < skill.cost) {
         for (const coin of state.zones.hand) {
@@ -44,7 +52,9 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
         })
         .slice(0, skill.consume.count);
       if (usable.length === skill.consume.count) {
-        commands.push({ type: 'useConsumeSkill', slot, coins: usable, target: skill.targetType === 'single-enemy' ? 0 : undefined });
+        for (const target of targetsForSkill(state, skill.targetType)) {
+          commands.push({ type: 'useConsumeSkill', slot, coins: usable, target });
+        }
       }
     }
   }

@@ -6,6 +6,7 @@ import type { Rng, RngSnapshot } from '../rng';
 import { legalCommands } from './commands';
 import type { Command } from './commands';
 import { createCombat, step } from './reducer';
+import { statusStacks } from './state';
 import type { CombatState } from './state';
 
 const id = <T extends string>(value: string) => value as T;
@@ -194,10 +195,11 @@ describe('multi-enemy combat harness', () => {
     const changed = {
       ...state,
       enemies: state.enemies.map((enemy, index) =>
-        index === 0 ? { ...enemy, hp: 7, block: 2, statuses: { burn: 1 } } : enemy
+        index === 0 ? { ...enemy, hp: 7, block: 2, statuses: { burn: { kind: 'stack' as const, stacks: 1 } } } : enemy
       )
     };
-    expect(changed.enemies[0]).toMatchObject({ hp: 7, block: 2, statuses: { burn: 1 } });
+    expect(changed.enemies[0]).toMatchObject({ hp: 7, block: 2 });
+    expect(statusStacks(changed.enemies[0]?.statuses ?? {}, 'burn')).toBe(1);
     expect(changed.enemies[1]).toMatchObject({ hp: 30, block: 0, statuses: {} });
   });
 
@@ -233,8 +235,8 @@ describe('multi-enemy combat harness', () => {
     const focused = useFirstCoin(enemy0Dead, 2, undefined, db);
     expect(focused.ok).toBe(true);
     if (!focused.ok) return;
-    expect(focused.state.enemies[0]?.statuses.burn ?? 0).toBe(0);
-    expect(focused.state.enemies[1]?.statuses.burn).toBe(1);
+    expect(statusStacks(focused.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(0);
+    expect(statusStacks(focused.state.enemies[1]?.statuses ?? {}, 'burn')).toBe(1);
     expect(focused.events).toContainEqual({
       type: 'statusApplied',
       target: { type: 'enemy', index: 1 },
@@ -248,8 +250,8 @@ describe('multi-enemy combat harness', () => {
     const state = {
       ...twoEnemyCombat(db, 'enemy-phase-order'),
       enemies: [
-        { ...twoEnemyCombat(db, 'enemy-phase-order').enemies[0]!, hp: 1, block: 7, statuses: { burn: 2 } },
-        { ...twoEnemyCombat(db, 'enemy-phase-order').enemies[1]!, hp: 10, block: 9, statuses: { burn: 3 } }
+        { ...twoEnemyCombat(db, 'enemy-phase-order').enemies[0]!, hp: 1, block: 7, statuses: { burn: { kind: 'stack' as const, stacks: 2 } } },
+        { ...twoEnemyCombat(db, 'enemy-phase-order').enemies[1]!, hp: 10, block: 9, statuses: { burn: { kind: 'stack' as const, stacks: 3 } } }
       ]
     };
 
@@ -258,8 +260,10 @@ describe('multi-enemy combat harness', () => {
     if (!ended.ok) return;
 
     expect(ended.state.player.hp).toBe(62);
-    expect(ended.state.enemies[0]).toMatchObject({ hp: 0, block: 0, statuses: { burn: 1 } });
-    expect(ended.state.enemies[1]).toMatchObject({ hp: 7, block: 0, statuses: { burn: 2 }, intent: { id: 'right-next' } });
+    expect(ended.state.enemies[0]).toMatchObject({ hp: 0, block: 0 });
+    expect(statusStacks(ended.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(1);
+    expect(ended.state.enemies[1]).toMatchObject({ hp: 7, block: 0, intent: { id: 'right-next' } });
+    expect(statusStacks(ended.state.enemies[1]?.statuses ?? {}, 'burn')).toBe(2);
     expect(ended.state.phase).toBe('player');
 
     expect(ended.events.filter((event) => event.type === 'blockCleared')).toEqual([
@@ -303,7 +307,7 @@ describe('multi-enemy combat harness', () => {
     const lethalForBothAfterEnemyAction = {
       ...twoEnemyCombat(db, 'defeat-priority'),
       player: { ...twoEnemyCombat(db, 'defeat-priority').player, hp: 1 },
-      enemies: twoEnemyCombat(db, 'defeat-priority').enemies.map((enemy) => ({ ...enemy, hp: 1, statuses: { burn: 1 } }))
+      enemies: twoEnemyCombat(db, 'defeat-priority').enemies.map((enemy) => ({ ...enemy, hp: 1, statuses: { burn: { kind: 'stack' as const, stacks: 1 } } }))
     };
     const defeated = step(lethalForBothAfterEnemyAction, { type: 'endTurn' }, db);
     expect(defeated.ok).toBe(true);
@@ -335,15 +339,16 @@ describe('multi-enemy combat harness', () => {
     expect(run()).toEqual(run());
   });
 
-  it('documents legalCommands target behavior for multi-enemy single-target skills', () => {
+  it('lists every living enemy target for multi-enemy single-target skills', () => {
     const db = testDb();
     const state = placeFirstCoin(twoEnemyCombat(db, 'legal-targets'), 0, db);
     const offered = legalCommands(state, db).filter(
       (command): command is Extract<Command, { type: 'useFlipSkill' }> => command.type === 'useFlipSkill' && command.slot === slot(0)
     );
 
-    // PROGRESS M1 deferred "다중 적 타겟 UI (M5+)": command generation currently exposes only target 0.
-    expect(offered).toEqual([{ type: 'useFlipSkill', slot: slot(0), target: 0 }]);
-    expect(offered.some((command) => command.target === 1)).toBe(false);
+    expect(offered).toEqual([
+      { type: 'useFlipSkill', slot: slot(0), target: 0 },
+      { type: 'useFlipSkill', slot: slot(0), target: 1 }
+    ]);
   });
 });

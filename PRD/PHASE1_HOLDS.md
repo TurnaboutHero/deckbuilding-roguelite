@@ -5,8 +5,9 @@
 
 ## 오너 오버라이드 (2026-07-11) — 공학 트랙 진행권
 
-제품 오너가 사람 게이트를 **개발 선행 조건에서 제거**했다 (지시서: `.omx/prompts/fable-phase3-plus-autonomy.md`).
-이것은 게이트 통과가 아니다 — 아래 원칙으로 기록·유지한다:
+제품 오너가 사람 게이트를 **개발 선행 조건에서 제거**했다 — 오너 지시는 2026-07-11 세션에서
+전달됐고 이 원장 기록(커밋 `7fbd9b7`)이 그 결정의 영구 기록이다. 이것은 게이트 통과가 아니다 —
+아래 원칙으로 기록·유지한다:
 
 - 사람 게이트는 절대 `passed`로 표기하지 않는다. 차단 효력만 `waived-for-progression`으로 바꾸고 검증 상태는 `experience-unverified`로 남긴다.
 - 모든 공학 결론은 `engineering-safe / balance-provisional / experience-unverified` 3축으로 구분한다.

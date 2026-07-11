@@ -16,8 +16,8 @@ export type CombatEvent =
     }
   | { type: 'blockGained'; target: TargetRef; amount: number }
   | { type: 'blockCleared'; target: TargetRef; amount: number }
-  | { type: 'statusApplied'; target: TargetRef; status: StatusId; stacks: number }
-  | { type: 'statusTicked'; target: TargetRef; status: StatusId; amount: number; remaining: number }
+  | { type: 'statusApplied'; target: TargetRef; status: StatusId; stacks: number; turns?: number }
+  | { type: 'statusTicked'; target: TargetRef; status: StatusId; amount: number; remaining: number; turns?: number }
   | { type: 'coinCreated'; coin: CoinUid; defId: string; zone: 'draw' | 'discard' | 'hand' }
   | { type: 'traitTriggered'; trait: string }
   | { type: 'coinsDiscarded'; coins: CoinUid[]; reason: 'skillCost' | 'turnEnd' }

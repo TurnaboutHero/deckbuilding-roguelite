@@ -3,11 +3,25 @@ import type { CoinUid, EnemyDefId, SkillId, SlotId } from '../ids';
 import type { Rng, RngSnapshot } from '../rng';
 import type { CombatEvent } from './events';
 
+export type StatusState =
+  | { kind: 'stack'; stacks: number }
+  | { kind: 'duration'; turns: number };
+
+export const statusStacks = (statuses: Partial<Record<StatusId, StatusState>>, id: StatusId): number => {
+  const status = statuses[id];
+  return status?.kind === 'stack' ? status.stacks : 0;
+};
+
+export const statusTurns = (statuses: Partial<Record<StatusId, StatusState>>, id: StatusId): number => {
+  const status = statuses[id];
+  return status?.kind === 'duration' ? status.turns : 0;
+};
+
 export interface UnitState {
   hp: number;
   maxHp: number;
   block: number;
-  statuses: Partial<Record<StatusId, number>>;
+  statuses: Partial<Record<StatusId, StatusState>>;
 }
 
 export interface PlayerState extends UnitState {

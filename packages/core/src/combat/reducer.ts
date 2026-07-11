@@ -6,14 +6,14 @@ import { initialIntent, runEnemyPhase } from './enemy';
 import type { CombatEvent } from './events';
 import { resolveConsume } from './resolve/consume';
 import { applyDamage, applyEffectAtom, checkCombatEnd, resolveFlip } from './resolve/flip';
-import { cloneState } from './state';
+import { cloneState, statusStacks } from './state';
 import type { CombatState, CombatZones } from './state';
 
 export type StepResult = { ok: true; state: CombatState; events: CombatEvent[] } | { ok: false; error: string };
 
 export interface CreateCombatConfig {
   character: CharacterId;
-  enemies: EnemyDefId[];
+  enemies: readonly EnemyDefId[];
   bag?: readonly CoinDefId[];
   equippedSkills?: readonly SkillId[];
   currentHp?: number;
@@ -175,6 +175,31 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
 
 const removeCoin = (coins: readonly CoinUid[], coin: CoinUid): CoinUid[] => coins.filter((candidate) => candidate !== coin);
 
+const validateSingleEnemyTarget = (input: CombatState, target: number | undefined): StepResult | undefined => {
+  if (target === undefined || input.enemies[target]?.hp === undefined || input.enemies[target]!.hp <= 0) {
+    return { ok: false, error: 'target enemy is not alive' };
+  }
+  return undefined;
+};
+
+const tickPlayerDurations = (input: CombatState, events: CombatEvent[]): CombatState => {
+  let statuses = input.player.statuses;
+  for (const status of ['frostbite', 'shock'] as const) {
+    const current = statuses[status];
+    if (current?.kind !== 'duration') continue;
+    const turns = Math.max(0, current.turns - 1);
+    const nextStatuses = { ...statuses };
+    if (turns === 0) {
+      delete nextStatuses[status];
+    } else {
+      nextStatuses[status] = { kind: 'duration', turns };
+    }
+    statuses = nextStatuses;
+    events.push({ type: 'statusTicked', target: { type: 'player' }, status, amount: 0, remaining: 0, turns });
+  }
+  return statuses === input.player.statuses ? input : { ...input, player: { ...input.player, statuses } };
+};
+
 const placeCoin = (input: CombatState, coin: CoinUid, slotId: SlotId, db: ContentDb): StepResult => {
   if (!input.zones.hand.includes(coin)) return { ok: false, error: 'coin is not in hand' };
   const slotState = input.slots[Number(slotId)];
@@ -222,15 +247,16 @@ const endTurn = (input: CombatState, db: ContentDb): StepResult => {
     zones: { ...state.zones, hand: [...state.zones.hand, ...returned], placed }
   };
 
-  const burn = state.player.statuses.burn ?? 0;
+  const burn = statusStacks(state.player.statuses, 'burn');
   if (burn > 0) {
     state = applyDamage(state, { type: 'player' }, burn, 'burn', events);
     state = {
       ...state,
-      player: { ...state.player, statuses: { ...state.player.statuses, burn: Math.max(0, burn - 1) } }
+      player: { ...state.player, statuses: { ...state.player.statuses, burn: { kind: 'stack', stacks: Math.max(0, burn - 1) } } }
     };
     events.push({ type: 'statusTicked', target: { type: 'player' }, status: 'burn', amount: burn, remaining: Math.max(0, burn - 1) });
   }
+  state = tickPlayerDurations(state, events);
   state = checkCombatEnd(state, events);
   if (state.phase === 'defeat') return { ok: true, state, events };
 
@@ -268,6 +294,10 @@ export const step = (state: CombatState, cmd: Command, db: ContentDb): StepResul
       if (slotState === undefined) return { ok: false, error: 'slot does not exist' };
       const skill = db.skills[String(slotState.skillId)];
       if (skill === undefined || skill.type !== 'flip') return { ok: false, error: 'slot is not a flip skill' };
+      if (skill.targetType === 'single-enemy') {
+        const targetError = validateSingleEnemyTarget(input, cmd.target);
+        if (targetError !== undefined) return targetError;
+      }
       return { ok: true, ...resolveFlip(input, cmd.slot, skill, cmd.target, db) };
     }
     if (cmd.type === 'useConsumeSkill') {
@@ -275,6 +305,10 @@ export const step = (state: CombatState, cmd: Command, db: ContentDb): StepResul
       if (slotState === undefined) return { ok: false, error: 'slot does not exist' };
       const skill = db.skills[String(slotState.skillId)];
       if (skill === undefined || skill.type !== 'consume') return { ok: false, error: 'slot is not a consume skill' };
+      if (skill.targetType === 'single-enemy') {
+        const targetError = validateSingleEnemyTarget(input, cmd.target);
+        if (targetError !== undefined) return targetError;
+      }
       return { ok: true, ...resolveConsume(input, cmd.slot, skill, cmd.coins, cmd.target, db) };
     }
     return { ok: false, error: 'unknown command' };

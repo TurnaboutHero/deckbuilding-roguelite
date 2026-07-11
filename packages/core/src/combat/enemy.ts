@@ -2,6 +2,7 @@ import type { ContentDb, EnemyIntent } from '../content-types';
 import { rngFrom } from '../rng';
 import type { CombatEvent } from './events';
 import { applyBlock, applyDamage, checkCombatEnd } from './resolve/flip';
+import { statusStacks } from './state';
 import type { CombatState } from './state';
 
 export const nextIntent = (state: CombatState, enemyIndex: number, db: ContentDb): { intent: EnemyIntent; index: number } => {
@@ -20,6 +21,30 @@ export const initialIntent = (defId: string, db: ContentDb): { intent: EnemyInte
   const intent = def?.intents[0];
   if (def === undefined || intent === undefined) throw new Error('enemy has no initial intent');
   return { intent, index: 0 };
+};
+
+const tickEnemyDurations = (input: CombatState, enemyIndex: number, events: CombatEvent[]): CombatState => {
+  const enemy = input.enemies[enemyIndex];
+  if (enemy === undefined) return input;
+  let statuses = enemy.statuses;
+  for (const status of ['frostbite', 'shock'] as const) {
+    const current = statuses[status];
+    if (current?.kind !== 'duration') continue;
+    const turns = Math.max(0, current.turns - 1);
+    const nextStatuses = { ...statuses };
+    if (turns === 0) {
+      delete nextStatuses[status];
+    } else {
+      nextStatuses[status] = { kind: 'duration', turns };
+    }
+    statuses = nextStatuses;
+    events.push({ type: 'statusTicked', target: { type: 'enemy', index: enemyIndex }, status, amount: 0, remaining: 0, turns });
+  }
+  if (statuses === enemy.statuses) return input;
+  return {
+    ...input,
+    enemies: input.enemies.map((candidate, index) => (index === enemyIndex ? { ...candidate, statuses } : candidate))
+  };
 };
 
 export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: CombatState; events: CombatEvent[] } => {
@@ -42,7 +67,7 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
       if (action.kind === 'attack') {
         const hits = action.hits ?? 1;
         for (let hit = 0; hit < hits; hit += 1) {
-          state = applyDamage(state, { type: 'player' }, action.damage, 'enemy', events);
+          state = applyDamage(state, { type: 'player' }, action.damage, 'enemy', events, { type: 'enemy', index: enemyIndex });
           if (state.phase === 'defeat') return { state, events };
         }
       } else if (action.kind === 'block') {
@@ -58,14 +83,14 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
 
   for (let enemyIndex = 0; enemyIndex < state.enemies.length; enemyIndex += 1) {
     const enemy = state.enemies[enemyIndex];
-    const burn = enemy?.statuses.burn ?? 0;
+    const burn = enemy === undefined ? 0 : statusStacks(enemy.statuses, 'burn');
     if (enemy === undefined || enemy.hp <= 0 || burn <= 0) continue;
     state = applyDamage(state, { type: 'enemy', index: enemyIndex }, burn, 'burn', events);
     const updated = state.enemies[enemyIndex];
     if (updated !== undefined) {
       const enemies = state.enemies.map((candidate, index) =>
         index === enemyIndex
-          ? { ...candidate, statuses: { ...candidate.statuses, burn: Math.max(0, burn - 1) } }
+          ? { ...candidate, statuses: { ...candidate.statuses, burn: { kind: 'stack' as const, stacks: Math.max(0, burn - 1) } } }
           : candidate
       );
       state = { ...state, enemies };
@@ -73,6 +98,12 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
     }
     state = checkCombatEnd(state, events);
     if (state.phase === 'victory') return { state, events };
+  }
+
+  for (let enemyIndex = 0; enemyIndex < state.enemies.length; enemyIndex += 1) {
+    const enemy = state.enemies[enemyIndex];
+    if (enemy === undefined || enemy.hp <= 0) continue;
+    state = tickEnemyDurations(state, enemyIndex, events);
   }
 
   const ai = state.rngImpl?.ai ?? rngFrom(state.rng.ai);

@@ -6,6 +6,7 @@ import type { ContentDb, FlipSkillDef } from '../content-types';
 import { createCombat, step, zoneCoinCount } from './reducer';
 import { legalCommands } from './commands';
 import type { Command } from './commands';
+import { statusStacks } from './state';
 import type { CombatState } from './state';
 
 const id = <T extends string>(value: string) => value as T;
@@ -214,7 +215,7 @@ describe('combat golden traces', () => {
     );
     const heads = useFirstCoin(headsState, 0);
     expect(heads.state.enemies[0]?.hp).toBe(65);
-    expect(heads.state.enemies[0]?.statuses.burn).toBe(1);
+    expect(statusStacks(heads.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(1);
 
     const tailsState = withHandDefs(
       replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'slash-fire'), ['tails']),
@@ -222,7 +223,7 @@ describe('combat golden traces', () => {
     );
     const tails = useFirstCoin(tailsState, 0);
     expect(tails.state.enemies[0]?.hp).toBe(69);
-    expect(tails.state.enemies[0]?.statuses.burn ?? 0).toBe(0);
+    expect(statusStacks(tails.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(0);
   });
 
   it('guard gains 5 on heads and 8 on tails', () => {
@@ -270,7 +271,7 @@ describe('combat golden traces', () => {
     );
     const result = useHandCoins(state, 2, state.zones.hand.slice(0, 2));
     expect(result.state.enemies[0]?.hp).toBe(61);
-    expect(result.state.enemies[0]?.statuses.burn).toBe(2);
+    expect(statusStacks(result.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(2);
   });
 
   it('ignite applies base burn, face effects, and fire coin proc', () => {
@@ -280,14 +281,14 @@ describe('combat golden traces', () => {
       ['fire']
     );
     const heads = useFirstCoin(headsState, 3);
-    expect(heads.state.enemies[0]?.statuses.burn).toBe(3);
+    expect(statusStacks(heads.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(3);
 
     const tailsState = withHandDefs(
       replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'ignite'), ['tails']),
       ['fire']
     );
     const tails = useFirstCoin(tailsState, 3);
-    expect(tails.state.enemies[0]?.statuses.burn).toBe(1);
+    expect(statusStacks(tails.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(1);
     expect(tails.state.enemies[0]?.hp).toBe(72);
   });
 });
@@ -304,7 +305,7 @@ describe('M4 consume skills, grants, and once per combat', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.state.enemies[0]?.hp).toBe(65);
-    expect(result.state.enemies[0]?.statuses.burn).toBe(2);
+    expect(statusStacks(result.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(2);
     expect(result.state.zones.exhausted).toContain(fuel);
     expect(result.state.zones.hand).not.toContain(fuel);
     expect(result.events).toContainEqual({ type: 'coinsConsumed', coins: [fuel] });
@@ -598,13 +599,13 @@ describe('draw and win loss', () => {
       intents: [{ id: 'brace', actions: [{ kind: 'block', amount: 99 }] }]
     };
     const state = createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'burn-tick');
-    state.enemies[0] = { ...state.enemies[0]!, statuses: { burn: 3 } };
+    state.enemies[0] = { ...state.enemies[0]!, statuses: { burn: { kind: 'stack', stacks: 3 } } };
     const ended = step(state, { type: 'endTurn' }, db);
     expect(ended.ok).toBe(true);
     if (ended.ok) {
       expect(ended.state.enemies[0]?.hp).toBe(72);
       expect(ended.state.enemies[0]?.block).toBe(99);
-      expect(ended.state.enemies[0]?.statuses.burn).toBe(2);
+      expect(statusStacks(ended.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(2);
     }
   });
 

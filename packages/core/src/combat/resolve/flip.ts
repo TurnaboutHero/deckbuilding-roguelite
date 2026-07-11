@@ -3,7 +3,8 @@ import { effectiveElements } from '../../content-types';
 import type { CoinUid, Face, SlotId } from '../../ids';
 import { rngFrom } from '../../rng';
 import type { CombatEvent } from '../events';
-import type { CombatState } from '../state';
+import { statusTurns } from '../state';
+import type { CombatState, StatusState } from '../state';
 
 export interface ResolveResult {
   state: CombatState;
@@ -34,17 +35,31 @@ export const checkCombatEnd = (state: CombatState, events: CombatEvent[]): Comba
   return state;
 };
 
+const statusCarrier = (state: CombatState, target: TargetRef) =>
+  target.type === 'player' ? state.player : state.enemies[target.index];
+
+const modifiedDamage = (state: CombatState, target: TargetRef, amount: number, attacker?: TargetRef): number => {
+  if (attacker === undefined) return amount;
+  const attackerStatuses = statusCarrier(state, attacker)?.statuses;
+  const targetStatuses = statusCarrier(state, target)?.statuses;
+  const frostbiteMultiplier = attackerStatuses !== undefined && statusTurns(attackerStatuses, 'frostbite') > 0 ? 0.75 : 1;
+  const shockMultiplier = targetStatuses !== undefined && statusTurns(targetStatuses, 'shock') > 0 ? 1.5 : 1;
+  return Math.floor(amount * frostbiteMultiplier * shockMultiplier);
+};
+
 export const applyDamage = (
   state: CombatState,
   target: TargetRef,
   amount: number,
   source: 'skill' | 'burn' | 'enemy' | 'self',
-  events: CombatEvent[]
+  events: CombatEvent[],
+  attacker?: TargetRef
 ): CombatState => {
   if (amount < 0) throw new Error('damage amount cannot be negative');
+  const finalAmount = source === 'burn' ? amount : modifiedDamage(state, target, amount, attacker);
   if (target.type === 'player') {
-    const blocked = source === 'burn' ? 0 : Math.min(state.player.block, amount);
-    const hpDamage = amount - blocked;
+    const blocked = source === 'burn' ? 0 : Math.min(state.player.block, finalAmount);
+    const hpDamage = finalAmount - blocked;
     const player = {
       ...state.player,
       block: state.player.block - blocked,
@@ -56,8 +71,8 @@ export const applyDamage = (
 
   const enemy = state.enemies[target.index];
   if (enemy === undefined || enemy.hp <= 0) return state;
-  const blocked = source === 'burn' ? 0 : Math.min(enemy.block, amount);
-  const hpDamage = amount - blocked;
+  const blocked = source === 'burn' ? 0 : Math.min(enemy.block, finalAmount);
+  const hpDamage = finalAmount - blocked;
   const enemies = state.enemies.map((candidate, index) =>
     index === target.index
       ? { ...candidate, block: candidate.block - blocked, hp: Math.max(0, candidate.hp - hpDamage) }
@@ -82,6 +97,13 @@ export const applyBlock = (
     index === target.index ? { ...enemy, block: enemy.block + amount } : enemy
   );
   return { ...state, enemies };
+};
+
+const addStatus = (current: StatusState | undefined, status: EffectAtom & { kind: 'applyStatus' }): StatusState => {
+  if (status.status === 'burn') {
+    return { kind: 'stack', stacks: (current?.kind === 'stack' ? current.stacks : 0) + status.stacks };
+  }
+  return { kind: 'duration', turns: (current?.kind === 'duration' ? current.turns : 0) + status.stacks };
 };
 
 const addTemporaryCoin = (
@@ -174,7 +196,7 @@ export const applyEffectAtom = (
   if (state.phase === 'victory' || state.phase === 'defeat') return state;
   switch (atom.kind) {
     case 'damage':
-      return applyDamage(state, target, atom.amount, 'skill', events);
+      return applyDamage(state, target, atom.amount, 'skill', events, { type: 'player' });
     case 'block':
       return applyBlock(state, { type: 'player' }, atom.amount, events);
     case 'selfDamage':
@@ -182,18 +204,26 @@ export const applyEffectAtom = (
     case 'applyStatus': {
       const statusTarget = atom.to === 'self' ? { type: 'player' as const } : target;
       if (statusTarget.type === 'enemy' && !isAliveEnemy(state, statusTarget.index)) return state;
-      if (atom.status !== 'burn') throw new Error(`unsupported status: ${atom.status}`);
+      const event =
+        atom.status === 'burn'
+          ? { type: 'statusApplied' as const, target: statusTarget, status: atom.status, stacks: atom.stacks }
+          : { type: 'statusApplied' as const, target: statusTarget, status: atom.status, stacks: atom.stacks, turns: atom.stacks };
       if (statusTarget.type === 'player') {
-        const next = (state.player.statuses.burn ?? 0) + atom.stacks;
-        events.push({ type: 'statusApplied', target: statusTarget, status: atom.status, stacks: atom.stacks });
-        return { ...state, player: { ...state.player, statuses: { ...state.player.statuses, burn: next } } };
+        events.push(event);
+        return {
+          ...state,
+          player: {
+            ...state.player,
+            statuses: { ...state.player.statuses, [atom.status]: addStatus(state.player.statuses[atom.status], atom) }
+          }
+        };
       }
       const enemies = state.enemies.map((enemy, index) =>
         index === statusTarget.index
-          ? { ...enemy, statuses: { ...enemy.statuses, burn: (enemy.statuses.burn ?? 0) + atom.stacks } }
+          ? { ...enemy, statuses: { ...enemy.statuses, [atom.status]: addStatus(enemy.statuses[atom.status], atom) } }
           : enemy
       );
-      events.push({ type: 'statusApplied', target: statusTarget, status: atom.status, stacks: atom.stacks });
+      events.push(event);
       return { ...state, enemies };
     }
     case 'addCoin':

@@ -21,6 +21,7 @@ import {
   settleRunCombat,
   skipSkillReward,
   startRunCombat,
+  statusStacks,
   step,
 } from "@game/core";
 import type { CombatEvent, CombatState, Command } from "@game/core";
@@ -2170,14 +2171,14 @@ const UnitPanel = ({
             </em>
           </Keyword>
         ) : null}
-        {(statuses.burn ?? 0) > 0 ? (
+        {statusStacks(statuses, "burn") > 0 ? (
           <Keyword term="burn" className="chip-keyword">
             <em
-              aria-label={`화상 ${statuses.burn}`}
+              aria-label={`화상 ${statusStacks(statuses, "burn")}`}
               className={`burn-chip ${vfx.has(`burn-${side}`) ? "vfx-pulse" : ""}`}
             >
               <EmberIcon scale={1.4} />
-              {statuses.burn}
+              {statusStacks(statuses, "burn")}
             </em>
           </Keyword>
         ) : null}
