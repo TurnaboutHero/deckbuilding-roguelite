@@ -1,3 +1,4 @@
+import { LEGACY_CONTENT_VERSIONS } from "@game/content";
 import {
   LEGACY_RUN_SAVE_VERSIONS,
   RUN_ENCOUNTER_COUNT,
@@ -174,11 +175,13 @@ const normalizeRunSave = (
     ? RUN_SAVE_VERSION
     : value.version;
   if (version !== RUN_SAVE_VERSION) return null;
-  if (
-    !isNonEmptyString(value.contentVersion) ||
-    value.contentVersion !== expectedContentVersion
-  )
-    return null;
+  if (!isNonEmptyString(value.contentVersion)) return null;
+  // 레거시 콘텐츠 버전(m5)은 현 콘텐츠의 부분집합·수치 불변이라 안전 마이그레이션 —
+  // 반환 저장의 contentVersion은 현 버전으로 정규화되어 다음 저장부터 새 표기를 쓴다.
+  const contentVersionAccepted =
+    value.contentVersion === expectedContentVersion ||
+    LEGACY_CONTENT_VERSIONS.includes(value.contentVersion);
+  if (!contentVersionAccepted) return null;
   if (!isNonEmptyString(value.runSeed) || !isNonEmptyString(value.character))
     return null;
   if (!isRunPhase(value.phase)) return null;
@@ -266,7 +269,7 @@ const normalizeRunSave = (
 
   const save: RunSave = {
     version: RUN_SAVE_VERSION,
-    contentVersion: value.contentVersion,
+    contentVersion: expectedContentVersion,
     runSeed: value.runSeed,
     character: value.character as CharacterId,
     currentHp: value.currentHp,

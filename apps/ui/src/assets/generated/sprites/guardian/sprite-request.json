@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "kind": "sprite-gen-request",
+  "engine": "component-row",
+  "character": {
+    "id": "guardian",
+    "description": "",
+    "base_image": "base-source.png"
+  },
+  "cell": {
+    "shape": "square",
+    "width": 256,
+    "height": 256,
+    "safe_margin_x": 24,
+    "safe_margin_y": 24,
+    "size": 256,
+    "safe_margin": 24
+  },
+  "chroma_key": {
+    "name": "green",
+    "hex": "#00FF00",
+    "rgb": [
+      0,
+      255,
+      0
+    ],
+    "selection": "auto",
+    "score": 210.77,
+    "min_subject_distance": 208.24,
+    "background": {
+      "mode": "flat",
+      "hex": "#15EB1C",
+      "rgb": [
+        21,
+        235,
+        28
+      ],
+      "opaque_border_fraction": 1.0,
+      "border_coverage": 1.0,
+      "enclosed_background_pixels": 20,
+      "enclosed_material_pixels": 0,
+      "subject_pixels": 7313
+    },
+    "candidates": [
+      {
+        "name": "magenta",
+        "hex": "#FF00FF",
+        "score": 204.0,
+        "min_subject_distance": 201.81,
+        "clears_erase_radius": true
+      },
+      {
+        "name": "green",
+        "hex": "#00FF00",
+        "score": 210.77,
+        "min_subject_distance": 208.24,
+        "clears_erase_radius": true
+      },
+      {
+        "name": "cyan",
+        "hex": "#00FFFF",
+        "score": 137.44,
+        "min_subject_distance": 130.76,
+        "clears_erase_radius": true
+      },
+      {
+        "name": "blue",
+        "hex": "#004DFF",
+        "score": 80.48,
+        "min_subject_distance": 70.07,
+        "clears_erase_radius": false
+      }
+    ],
+    "selection_reason": "highest 1st-percentile subject distance among the 3 candidate(s) clearing the 96 erase radius"
+  },
+  "states": {
+    "idle": {
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "action": "near-static combat idle loop: frame 4 must be a visually identical duplicate of frame 1, with the exact same planted feet, shield face coordinate, shield size and angle, mace head coordinate, guard, hand, cape silhouette, body height, and pose; frame 2 changes only the eyes for one blink, frame 3 changes only the chest by one subtle breathing step; never resize or reposition the weapon"
+    },
+    "attack": {
+      "frames": 4,
+      "fps": 8,
+      "loop": false,
+      "action": "readable mace strike: compact windup, forward mace swing, follow-through, recovery toward combat idle; shield stays on the left arm; body, shield, and mace only, no detached effects"
+    },
+    "hurt": {
+      "frames": 4,
+      "fps": 8,
+      "loop": false,
+      "action": "brief impact recoil behind the raised shield: flinch backward, stagger, regain footing, settle toward combat idle; shield stays on the left arm; no counterattack and no detached effects"
+    }
+  },
+  "style": "match the accepted idle anchor exactly: crisp 16-bit-inspired pixel art, identical proportions, outline weight, detail density, palette, silver armor, blue cape and scarf, round shield with blue sigil, mace, face, silver hair",
+  "motion_phase_guides": false,
+  "fit": {
+    "align_x": "bbox-center",
+    "align_y": "bottom",
+    "pixel_perfect": true,
+    "logical_height": 86,
+    "palette_size": 32
+  },
+  "chroma": {
+    "unmix_reach": 4,
+    "spill_max_fraction": 0.005
+  }
+}

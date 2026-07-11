@@ -2,7 +2,10 @@ import type { CharacterId, CoinDefId, EnemyDefId, SkillId } from '@game/core';
 import { validateContentDb } from '@game/core';
 import type { CharacterDef, CoinDef, ContentDb, EnemyDef, SkillDef } from '@game/core';
 
-export const CONTENT_VERSION = '0.5.0-m5';
+// P3.2 승격: 수호자·마나 스킬·exclusiveTo 시대. m5 콘텐츠는 현 버전의 부분집합이고
+// 기존 수치가 불변이므로 m5 저장은 안전하게 로드(마이그레이션)할 수 있다.
+export const CONTENT_VERSION = '0.6.0-p3.2';
+export const LEGACY_CONTENT_VERSIONS: readonly string[] = ['0.5.0-m5'];
 
 const coin = (value: string) => value as CoinDefId;
 const skill = (value: string) => value as SkillId;

@@ -2502,8 +2502,9 @@ const winCurrentCombat = async (page) => {
     cardTitles.join(","),
   );
   check(
-    "S21 수호자 스프라이트 폴백 표기",
-    (await page.locator("[data-sprite-fallback]").count()) >= 1,
+    "S21 수호자 전용 스프라이트 (폴백 마커 없음)",
+    (await page.locator("[data-sprite-fallback]").count()) === 0 &&
+      (await page.locator(".unit.player .sprite-frame").count()) >= 1,
   );
   check("S21 선택 플로우 에러 0", errors.length === 0, errors.join(" | "));
   await page.close();

@@ -43,8 +43,13 @@ const boot = async () => {
   const page = await context.newPage();
   await page.addInitScript(() => {
     const nativeTimeout = window.setTimeout.bind(window);
-    window.setTimeout = (callback, delay = 0, ...args) =>
-      nativeTimeout(callback, Math.min(Number(delay), 12), ...args);
+    // 거부 칩 수명(1500ms)만 판독 가능한 250ms로 축소 보존하고 나머지는 12ms 압축 —
+    // 전역 12ms는 칩 해제를 같은 React 커밋 창에 밀어넣어 칩이 DOM에 닿지 못하게 한다
+    window.setTimeout = (callback, delay = 0, ...args) => {
+      const ms = Number(delay);
+      const mapped = ms === 1500 ? 250 : Math.min(ms, 12);
+      return nativeTimeout(callback, mapped, ...args);
+    };
   });
   await page.emulateMedia({ reducedMotion: "reduce" });
   const errors = [];

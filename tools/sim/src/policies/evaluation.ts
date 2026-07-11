@@ -233,6 +233,11 @@ const isLegal = (
   );
 };
 
+const hasLegalCommandKey = (
+  legalCommandKeys: ReadonlySet<string>,
+  command: Command,
+): boolean => legalCommandKeys.has(commandKey(command));
+
 const applyPlannedPlacement = (
   state: CombatState,
   command: Extract<Command, { type: "placeCoin" }>,
@@ -279,8 +284,9 @@ const placementOutcomes = (
   state: CombatState,
   command: Extract<Command, { type: "placeCoin" }>,
   db: ContentDb,
+  legalCommandKeys: ReadonlySet<string>,
 ): PublicOutcome[] => {
-  if (!isLegal(state, db, command)) return [];
+  if (!hasLegalCommandKey(legalCommandKeys, command)) return [];
   const slotState = state.slots[Number(command.slot)];
   const skill =
     slotState === undefined ? undefined : db.skills[String(slotState.skillId)];
@@ -325,6 +331,7 @@ const outcomesForCommand = (
   state: CombatState,
   command: Command,
   db: ContentDb,
+  legalCommandKeys: ReadonlySet<string>,
 ): PublicOutcome[] => {
   switch (command.type) {
     case "useFlipSkill":
@@ -332,7 +339,7 @@ const outcomesForCommand = (
     case "useConsumeSkill":
       return [consumeOutcome(state, command, db)];
     case "placeCoin": {
-      const planned = placementOutcomes(state, command, db);
+      const planned = placementOutcomes(state, command, db, legalCommandKeys);
       return planned.length > 0 ? planned : [neutralOutcome(state)];
     }
     case "unplaceCoin":
@@ -362,6 +369,7 @@ export const chooseEvaluatedCommand = (
   compare: OutcomeComparator,
 ): Command => {
   const commands = stableCommandOrder(legalCommands(state, db));
+  const legalCommandKeys = new Set(commands.map(commandKey));
   const first = commands[0];
   if (first === undefined) {
     throw new PolicyDecisionError("NO_LEGAL_COMMANDS", policyId, state.phase);
@@ -369,12 +377,12 @@ export const chooseEvaluatedCommand = (
 
   let selected = first;
   let selectedOutcome = bestOutcome(
-    outcomesForCommand(state, first, db),
+    outcomesForCommand(state, first, db, legalCommandKeys),
     compare,
   );
   for (const command of commands.slice(1)) {
     const outcome = bestOutcome(
-      outcomesForCommand(state, command, db),
+      outcomesForCommand(state, command, db, legalCommandKeys),
       compare,
     );
     if (compare(outcome, selectedOutcome) > 0) {

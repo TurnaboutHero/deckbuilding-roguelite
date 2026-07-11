@@ -1,0 +1,33 @@
+{
+  "ok": false,
+  "format": "A",
+  "tier": 0,
+  "errors": [
+    {
+      "code": "E-AR-END",
+      "msg": "끝에 `AR 3:4` 형태의 종횡비 토큰이 없음(반드시 프롬프트 맨 끝)."
+    },
+    {
+      "code": "E-CAT-LANG",
+      "msg": "첫 절에 매체/카테고리(결과물 장르)가 드러나지 않음."
+    },
+    {
+      "code": "E-CAM-LANG",
+      "msg": "카메라·구도·레이아웃 언어가 없음."
+    },
+    {
+      "code": "E-LIGHT-LANG",
+      "msg": "명시적 조명 지시가 없음."
+    },
+    {
+      "code": "E-TEX-LANG",
+      "msg": "재질·질감·매체 디테일이 없음."
+    },
+    {
+      "code": "E-NEG-001",
+      "msg": "화이트리스트 밖 영어 부정문 금지(do not use base, never as a, do not simply copy, do not expand it, no counterattack and…) — 전부 긍정형으로.",
+      "hint": "긍정형 재작성 제안: \"do not use base\" → 빼려는 요소 대신 원하는 결과 상태를 구체 명사로 서술"
+    }
+  ],
+  "warnings": []
+}

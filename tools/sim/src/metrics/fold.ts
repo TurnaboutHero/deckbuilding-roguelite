@@ -181,6 +181,12 @@ const validateRun = (trace: M6RunTrace, path: string): void => {
   ] as const) {
     assertNonEmpty(value, `${path}.${field}`);
   }
+  if (trace.characterId !== undefined) {
+    assertNonEmpty(trace.characterId, `${path}.characterId`);
+  }
+  if (trace.buildPolicyId !== undefined) {
+    assertNonEmpty(trace.buildPolicyId, `${path}.buildPolicyId`);
+  }
   assertNonNegativeInteger(trace.episodeIndex, `${path}.episodeIndex`);
   assertNonNegativeInteger(trace.expectedCombatCount, `${path}.expectedCombatCount`);
   if ((trace.result === "crash") !== (trace.crash !== null)) {

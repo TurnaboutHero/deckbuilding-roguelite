@@ -78,6 +78,13 @@ import cardBurningStrike from "./assets/card-burning-strike.webp";
 import cardIgnite from "./assets/card-ignite.webp";
 import cardIgniteSword from "./assets/card-ignite-sword.webp";
 import cardFlameRampage from "./assets/card-flame-rampage.webp";
+import cardWardingStrike from "./assets/card-warding-strike.webp";
+import cardManaBulwark from "./assets/card-mana-bulwark.webp";
+import cardShieldReprisal from "./assets/card-shield-reprisal.webp";
+import cardManaWell from "./assets/card-mana-well.webp";
+import cardSmash from "./assets/card-smash.webp";
+import cardFireInfusion from "./assets/card-fire-infusion.webp";
+import cardFurnace from "./assets/card-furnace.webp";
 import goblinAtlas from "./assets/generated/sprites/goblin/sprite-sheet-alpha.png";
 import goblinManifestJson from "./assets/generated/sprites/goblin/manifest.json";
 import gatekeeperAtlas from "./assets/generated/sprites/gatekeeper/sprite-sheet-alpha.png";
@@ -86,6 +93,8 @@ import shamanAtlas from "./assets/generated/sprites/shaman/sprite-sheet-alpha.pn
 import shamanManifestJson from "./assets/generated/sprites/shaman/manifest.json";
 import warriorAtlas from "./assets/generated/sprites/warrior/sprite-sheet-alpha.png";
 import warriorManifestJson from "./assets/generated/sprites/warrior/manifest.json";
+import guardianAtlas from "./assets/generated/sprites/guardian/sprite-sheet-alpha.png";
+import guardianManifestJson from "./assets/generated/sprites/guardian/manifest.json";
 import { spriteMotionForEvent } from "./sprite-motion";
 import type { SpriteManifest } from "./AtlasSprite";
 import {
@@ -123,6 +132,13 @@ const CARD_ART: Record<string, string> = {
   ignite: cardIgnite,
   "ignite-sword": cardIgniteSword,
   "flame-rampage": cardFlameRampage,
+  "warding-strike": cardWardingStrike,
+  "mana-bulwark": cardManaBulwark,
+  "shield-reprisal": cardShieldReprisal,
+  "mana-well": cardManaWell,
+  smash: cardSmash,
+  "fire-infusion": cardFireInfusion,
+  furnace: cardFurnace,
 };
 
 const WORDS = [
@@ -143,12 +159,16 @@ interface SpriteAsset {
 }
 
 const SPRITES: Record<
-  "player" | "raider" | "shaman" | "gatekeeper",
+  "player" | "guardian" | "raider" | "shaman" | "gatekeeper",
   SpriteAsset
 > = {
   player: {
     atlasUrl: warriorAtlas,
     manifest: warriorManifestJson as SpriteManifest,
+  },
+  guardian: {
+    atlasUrl: guardianAtlas,
+    manifest: guardianManifestJson as SpriteManifest,
   },
   raider: {
     atlasUrl: goblinAtlas,
@@ -171,9 +191,7 @@ const enemySprite = (enemyId: string): SpriteAsset => {
 };
 
 const playerSprite = (character: CharacterId): SpriteAsset => {
-  // TODO(P3.2 asset lane): guardian 전용 스프라이트가 들어오면 warrior 폴백을 제거한다.
-  if (String(character) === "guardian")
-    return { ...SPRITES.player, fallbackFor: character };
+  if (String(character) === "guardian") return SPRITES.guardian;
   return SPRITES.player;
 };
 

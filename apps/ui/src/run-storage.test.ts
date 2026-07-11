@@ -1,4 +1,4 @@
-import { contentDb } from "@game/content";
+import { CONTENT_VERSION as CURRENT_CONTENT_VERSION, contentDb } from "@game/content";
 import {
   RUN_SAVE_VERSION,
   chooseCoinReward,
@@ -21,7 +21,8 @@ import {
   type StorageLike,
 } from "./run-storage";
 
-const CONTENT_VERSION = "0.5.0-m5";
+const CONTENT_VERSION = CURRENT_CONTENT_VERSION;
+const LEGACY_CONTENT_VERSION = "0.5.0-m5";
 const STARTING_BAG = [...(contentDb.characters.warrior?.startingBag ?? [])];
 const STARTING_SKILLS = [
   ...(contentDb.characters.warrior?.startingSkills ?? []),
@@ -247,6 +248,14 @@ describe("run save serialization boundary", () => {
       loadRun(unavailable, CONTENT_VERSION, contentDb),
     ).not.toThrow();
     expect(loadRun(unavailable, CONTENT_VERSION, contentDb)).toBeNull();
+  });
+
+  it("migrates legacy m5 content-version saves and normalizes to current", () => {
+    // m5 콘텐츠는 현 버전의 부분집합·수치 불변 — 레거시 저장은 안전 로드 + 현 버전으로 정규화
+    const legacy = parse(rawWith({ contentVersion: LEGACY_CONTENT_VERSION }));
+    expect(legacy).toEqual(readySave());
+    expect(legacy?.contentVersion).toBe(CURRENT_CONTENT_VERSION);
+    expect(parse(rawWith({ contentVersion: "9.9.9-unknown" }))).toBeNull();
   });
 
   it("migrates v1 saves explicitly and rejects unknown versions", () => {

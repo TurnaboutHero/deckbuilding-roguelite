@@ -4,6 +4,8 @@ import { simulatePolicyRun } from "../run-sim";
 import { deriveEpisodeSeed, episodeIdFor, fingerprintText } from "./seed";
 import {
   M6_BULK_REPORT_SCHEMA_VERSION,
+  M6_BUILD_POLICY_IDS,
+  SIM_CHARACTER_IDS,
   M6_VARIANT_IDS,
   type M6AnomalySeed,
   type M6AaIdentityProof,
@@ -11,6 +13,8 @@ import {
   type M6BulkResult,
   type M6EpisodeFingerprint,
   type M6EpisodeTranscript,
+  type M6BuildPolicyId,
+  type SimCharacterId,
   type M6VariantId,
 } from "./types";
 
@@ -53,6 +57,12 @@ const validateOptions = (options: M6BulkOptions): void => {
   }
   validateIds(options.policyIds, POLICY_IDS, "policyIds");
   validateIds(options.variantIds ?? ["baseline"], M6_VARIANT_IDS, "variantIds");
+  validateIds(options.characterIds ?? ["warrior"], SIM_CHARACTER_IDS, "characterIds");
+  validateIds(
+    options.buildPolicyIds ?? ["fire-build"],
+    M6_BUILD_POLICY_IDS,
+    "buildPolicyIds",
+  );
 };
 
 const anomalyTraceId = (anomaly: M6AnomalyFlag): string | undefined => {
@@ -188,6 +198,14 @@ const executeBulk = (
   const policyIds = [...options.policyIds].sort(compareText) as PolicyId[];
   const variantIds = [...(options.variantIds ?? ["baseline"])]
     .sort(compareText) as M6VariantId[];
+  const characterIds =
+    options.characterIds === undefined
+      ? [undefined]
+      : ([...options.characterIds].sort(compareText) as SimCharacterId[]);
+  const buildPolicyIds =
+    options.buildPolicyIds === undefined
+      ? [undefined]
+      : ([...options.buildPolicyIds].sort(compareText) as M6BuildPolicyId[]);
   const traces: M6RunTrace[] = [];
   const transcripts: M6EpisodeTranscript[] = [];
   const episodes: M6EpisodeFingerprint[] = [];
@@ -197,8 +215,10 @@ const executeBulk = (
   for (let episodeIndex = 0; episodeIndex < options.games; episodeIndex += 1) {
     const runSeed = deriveEpisodeSeed(options.baseSeed, episodeIndex);
     const episodeId = episodeIdFor(options.baseSeed, episodeIndex);
-    for (const variantId of variantIds) {
-      for (const policyId of policyIds) {
+    for (const characterId of characterIds) {
+      for (const buildPolicyId of buildPolicyIds) {
+        for (const variantId of variantIds) {
+          for (const policyId of policyIds) {
         const simulation = simulatePolicyRun({
           baseSeed: options.baseSeed,
           runSeed,
@@ -206,6 +226,8 @@ const executeBulk = (
           episodeIndex,
           policyId,
           variantId,
+          characterId,
+          buildPolicyId,
         });
         if (verifyAaIdentity) {
           const replay = simulatePolicyRun({
@@ -215,6 +237,8 @@ const executeBulk = (
             episodeIndex,
             policyId,
             variantId,
+            characterId,
+            buildPolicyId,
           });
           const simulationBytes = JSON.stringify(simulation);
           const replayBytes = JSON.stringify(replay);
@@ -252,6 +276,8 @@ const executeBulk = (
           })),
         });
       }
+    }
+    }
     }
   }
 

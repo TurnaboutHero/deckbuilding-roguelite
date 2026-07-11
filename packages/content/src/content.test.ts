@@ -167,7 +167,7 @@ describe('content cost lint (A18)', () => {
 
 describe('M5 shipped content', () => {
   it('ships the M5 version, mana coin, skills, and fixed enemy definitions', () => {
-    expect(CONTENT_VERSION).toBe('0.5.0-m5');
+    expect(CONTENT_VERSION).toBe('0.6.0-p3.2');
     expect(coins.mana).toEqual({
       id: coinId('mana'),
       element: 'mana',

@@ -6,13 +6,25 @@ import type { PolicyId } from "../policies";
 export const M6_BULK_REPORT_SCHEMA_VERSION = "m6-bulk-v1" as const;
 export const M6_CRN_REPORT_SCHEMA_VERSION = "m6-crn-v1" as const;
 export const M6_TRANSCRIPT_SCHEMA_VERSION = "m6-transcript-v1" as const;
+export const SIM_CHARACTER_IDS = ["warrior", "guardian"] as const;
+export type SimCharacterId = (typeof SIM_CHARACTER_IDS)[number];
 
 export const M6_VARIANT_IDS = ["baseline", "basic-first"] as const;
 export type M6VariantId = (typeof M6_VARIANT_IDS)[number];
 
+export const M6_BUILD_POLICY_IDS = ["fire-build", "mana-build"] as const;
+export type M6BuildPolicyId = (typeof M6_BUILD_POLICY_IDS)[number];
+
 export interface M6VariantConfig {
   readonly id: M6VariantId;
   readonly coinRewardPriority: readonly string[];
+}
+
+export interface M6BuildPolicyConfig {
+  readonly id: M6BuildPolicyId;
+  readonly coinRewardPriority: readonly string[];
+  readonly skillRewardPriority: readonly string[];
+  readonly replacementPriority: readonly string[];
 }
 
 export interface M6OpportunitySnapshot {
@@ -73,6 +85,8 @@ export interface M6EpisodeTranscript {
   readonly episodeIndex: number;
   readonly policyId: PolicyId;
   readonly variantId: M6VariantId;
+  readonly characterId?: SimCharacterId;
+  readonly buildPolicyId?: M6BuildPolicyId;
   readonly combats: readonly M6CombatTranscript[];
   readonly rewards: readonly M6RewardDecisionTrace[];
 }
@@ -128,6 +142,8 @@ export interface M6BulkOptions {
   readonly games: number;
   readonly policyIds: readonly PolicyId[];
   readonly variantIds?: readonly M6VariantId[];
+  readonly characterIds?: readonly SimCharacterId[];
+  readonly buildPolicyIds?: readonly M6BuildPolicyId[];
   /** Raw command/event transcripts are opt-in for large CLI matrices. */
   readonly captureTranscripts?: boolean;
 }

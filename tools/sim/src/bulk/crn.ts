@@ -5,9 +5,11 @@ import {
   M6_CRN_REPORT_SCHEMA_VERSION,
   type M6AaIdentityProof,
   type M6AnomalySeed,
+  type M6BuildPolicyId,
   type M6BulkResult,
   type M6CrnPairedOutcome,
   type M6CrnReport,
+  type SimCharacterId,
   type M6VariantId,
 } from "./types";
 
@@ -20,6 +22,10 @@ export interface M6CrnOptions {
   readonly policyId: PolicyId;
   readonly variantA?: M6VariantId;
   readonly variantB?: M6VariantId;
+  readonly characterA?: SimCharacterId;
+  readonly characterB?: SimCharacterId;
+  readonly buildPolicyA?: M6BuildPolicyId;
+  readonly buildPolicyB?: M6BuildPolicyId;
 }
 
 interface AaRun {
@@ -32,12 +38,16 @@ const proveAa = (
   games: number,
   policyId: PolicyId,
   variantId: M6VariantId,
+  characterId?: SimCharacterId,
+  buildPolicyId?: M6BuildPolicyId,
 ): AaRun => {
   const options = {
     baseSeed,
     games,
     policyIds: [policyId],
     variantIds: [variantId],
+    ...(characterId === undefined ? {} : { characterIds: [characterId] }),
+    ...(buildPolicyId === undefined ? {} : { buildPolicyIds: [buildPolicyId] }),
   } as const;
   const verified = runBulkWithAaIdentity(options);
   return {
@@ -214,12 +224,20 @@ export const runCrnComparison = (options: M6CrnOptions): M6CrnReport => {
     options.games,
     options.policyId,
     variantA,
+    options.characterA,
+    options.buildPolicyA,
   );
   const b = runBulk({
     baseSeed: options.baseSeed,
     games: options.games,
     policyIds: [options.policyId],
     variantIds: [variantB],
+    ...(options.characterB === undefined
+      ? {}
+      : { characterIds: [options.characterB] }),
+    ...(options.buildPolicyB === undefined
+      ? {}
+      : { buildPolicyIds: [options.buildPolicyB] }),
   });
   assertStreamIsolation(aa.result, b);
 

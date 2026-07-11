@@ -32,6 +32,9 @@ import {
   type M6CombatTranscript,
   type M6EpisodeTranscript,
   type M6RewardDecisionTrace,
+  type M6BuildPolicyConfig,
+  type M6BuildPolicyId,
+  type SimCharacterId,
   type M6VariantConfig,
   type M6VariantId,
 } from "./bulk/types";
@@ -59,6 +62,40 @@ const REPLACEMENT_PRIORITY = [
   "fire-infusion",
   "slash",
 ];
+
+export const M6_BUILD_POLICIES: Readonly<
+  Record<M6BuildPolicyId, M6BuildPolicyConfig>
+> = Object.freeze({
+  "fire-build": Object.freeze({
+    id: "fire-build",
+    coinRewardPriority: Object.freeze(["fire", "mana", "basic"]),
+    skillRewardPriority: Object.freeze(REWARD_SKILL_PRIORITY),
+    replacementPriority: Object.freeze(REPLACEMENT_PRIORITY),
+  }),
+  "mana-build": Object.freeze({
+    id: "mana-build",
+    coinRewardPriority: Object.freeze(["mana", "basic", "fire"]),
+    skillRewardPriority: Object.freeze([
+      "mana-bulwark",
+      "mana-well",
+      "shield-reprisal",
+      "warding-strike",
+      "guard",
+      "slash",
+      "smash",
+      "fire-infusion",
+      "furnace",
+    ]),
+    replacementPriority: Object.freeze([
+      "flame-rampage",
+      "furnace",
+      "ignite",
+      "fire-infusion",
+      "smash",
+      "slash",
+    ]),
+  }),
+});
 
 export const M6_VARIANTS: Readonly<Record<M6VariantId, M6VariantConfig>> =
   Object.freeze({
@@ -106,7 +143,9 @@ export interface M6PolicyRunOptions {
   readonly episodeId: string;
   readonly episodeIndex: number;
   readonly policyId: PolicyId;
+  readonly characterId?: SimCharacterId;
   readonly variantId?: M6VariantId;
+  readonly buildPolicyId?: M6BuildPolicyId;
   readonly maxCommandsPerCombat?: number;
 }
 
@@ -268,18 +307,21 @@ const playCombat = (initial: CombatState): CombatState => {
 
 const preferredCoinReward = (
   run: RunState,
-  variant: M6VariantConfig,
+  buildPolicy: M6BuildPolicyConfig,
 ): CoinDefId | null => {
   const options = run.pendingRewards?.coinOptions ?? [];
-  for (const coinId of variant.coinRewardPriority) {
+  for (const coinId of buildPolicy.coinRewardPriority) {
     const selected = options.find((coin) => String(coin) === coinId);
     if (selected !== undefined) return selected;
   }
   return options[0] ?? null;
 };
 
-const replacementSlot = (run: RunState): number => {
-  for (const skillId of REPLACEMENT_PRIORITY) {
+const replacementSlot = (
+  run: RunState,
+  buildPolicy: M6BuildPolicyConfig,
+): number => {
+  for (const skillId of buildPolicy.replacementPriority) {
     const index = run.equippedSkills.findIndex(
       (skill) => String(skill) === skillId,
     );
@@ -290,11 +332,11 @@ const replacementSlot = (run: RunState): number => {
 
 const resolveRewardsDetailed = (
   input: RunState,
-  variant: M6VariantConfig,
+  buildPolicy: M6BuildPolicyConfig,
 ): RewardResolution => {
   const completedCombatIndex = input.combatIndex - 1;
   const coinOptions = (input.pendingRewards?.coinOptions ?? []).map(String);
-  const selectedCoin = preferredCoinReward(input, variant);
+  const selectedCoin = preferredCoinReward(input, buildPolicy);
   let run = chooseCoinReward(input, selectedCoin);
   const removableBasic = run.bag.findIndex(
     (coin) => String(coin) === "basic",
@@ -312,7 +354,7 @@ const resolveRewardsDetailed = (
     run.pendingRewards.coinRemovalResolved
   ) {
     fallbackCoinOptions = run.pendingRewards.coinOptions.map(String);
-    selectedFallbackCoin = preferredCoinReward(run, variant);
+    selectedFallbackCoin = preferredCoinReward(run, buildPolicy);
     run = chooseCoinReward(run, selectedFallbackCoin);
   }
 
@@ -325,13 +367,13 @@ const resolveRewardsDetailed = (
   ) {
     const offered = run.pendingRewards.skillOptions;
     selectedSkill =
-      REWARD_SKILL_PRIORITY.map((skillId) =>
+      buildPolicy.skillRewardPriority.map((skillId) =>
         offered.find((skill) => String(skill) === skillId),
       ).find((skill): skill is SkillId => skill !== undefined) ?? null;
     if (selectedSkill === null) {
       run = skipSkillReward(run);
     } else {
-      replacedSlot = replacementSlot(run);
+      replacedSlot = replacementSlot(run, buildPolicy);
       run = chooseSkillReward(run, selectedSkill, replacedSlot);
     }
   }
@@ -355,20 +397,44 @@ const resolveRewardsDetailed = (
   };
 };
 
+// 보상 빌드 해석의 단일 정본 — 명시 지정 > 캐릭터 기본(guardian=mana-build) >
+// 레거시 variant 코인 우선순위(M6 baseline/basic-first 의미·바이트 보존; 감시자 회귀 지적).
+export const resolveBuildPolicy = (
+  characterId: SimCharacterId,
+  variantId: M6VariantId = "baseline",
+  buildPolicyId?: M6BuildPolicyId,
+): M6BuildPolicyConfig => {
+  if (buildPolicyId !== undefined) return M6_BUILD_POLICIES[buildPolicyId];
+  if (characterId === "guardian") return M6_BUILD_POLICIES["mana-build"];
+  const variant = M6_VARIANTS[variantId];
+  return {
+    ...M6_BUILD_POLICIES["fire-build"],
+    coinRewardPriority: variant.coinRewardPriority,
+  };
+};
+
 const resolveRewards = (input: RunState): RunState =>
-  resolveRewardsDetailed(input, M6_VARIANTS.baseline).run;
+  resolveRewardsDetailed(
+    input,
+    resolveBuildPolicy(
+      String(input.character) === "guardian" ? "guardian" : "warrior",
+    ),
+  ).run;
 
 const permanentCoinIds = (combat: CombatState): string[] =>
   Object.values(combat.coins)
     .filter((coin) => coin.permanent)
     .map((coin) => String(coin.defId));
 
-export const simulateRun = (seed: string): RunSimulation => {
+export const simulateRun = (
+  seed: string,
+  characterId: SimCharacterId = "warrior",
+): RunSimulation => {
   let run = createRun(
     {
       contentVersion: CONTENT_VERSION,
       runSeed: seed,
-      character: character("warrior"),
+      character: character(characterId),
     },
     contentDb,
   );
@@ -431,6 +497,12 @@ export const simulatePolicyRun = (
   options: M6PolicyRunOptions,
 ): M6PolicyRunSimulation => {
   const variant = M6_VARIANTS[options.variantId ?? "baseline"];
+  const characterId = options.characterId ?? "warrior";
+  const buildPolicy = resolveBuildPolicy(
+    characterId,
+    variant.id,
+    options.buildPolicyId,
+  );
   const maxCommands = options.maxCommandsPerCombat ?? 500;
   if (!Number.isSafeInteger(options.episodeIndex) || options.episodeIndex < 0) {
     throw new RangeError("episodeIndex must be a non-negative safe integer");
@@ -438,7 +510,12 @@ export const simulatePolicyRun = (
   if (!Number.isSafeInteger(maxCommands) || maxCommands <= 0) {
     throw new RangeError("maxCommandsPerCombat must be a positive safe integer");
   }
-  const traceId = `${variant.id}/${options.policyId}/${String(options.episodeIndex).padStart(8, "0")}`;
+  const traceId =
+    options.buildPolicyId !== undefined
+      ? `${variant.id}/${options.policyId}/${characterId}/${buildPolicy.id}/${String(options.episodeIndex).padStart(8, "0")}`
+      : options.characterId === undefined
+      ? `${variant.id}/${options.policyId}/${String(options.episodeIndex).padStart(8, "0")}`
+      : `${variant.id}/${options.policyId}/${characterId}/${String(options.episodeIndex).padStart(8, "0")}`;
   const combatTraces: M6CombatTrace[] = [];
   const combatTranscripts: M6CombatTranscript[] = [];
   const rewardTraces: M6RewardDecisionTrace[] = [];
@@ -451,7 +528,7 @@ export const simulatePolicyRun = (
       {
         contentVersion: CONTENT_VERSION,
         runSeed: options.runSeed,
-        character: character("warrior"),
+        character: character(characterId),
       },
       contentDb,
     );
@@ -488,7 +565,7 @@ export const simulatePolicyRun = (
       }
       run = settleRunCombat(started.run, combat.state, contentDb);
       if (run.phase === "rewards") {
-        const reward = resolveRewardsDetailed(run, variant);
+        const reward = resolveRewardsDetailed(run, buildPolicy);
         run = reward.run;
         rewardTraces.push(reward.trace);
       }
@@ -523,6 +600,10 @@ export const simulatePolicyRun = (
     contentVersion: CONTENT_VERSION,
     variantId: variant.id,
     policyId: options.policyId,
+    characterId: options.characterId,
+    ...(options.buildPolicyId === undefined
+      ? {}
+      : { buildPolicyId: buildPolicy.id }),
     expectedCombatCount: RUN_ENCOUNTERS.length,
     result,
     crash,
@@ -540,6 +621,10 @@ export const simulatePolicyRun = (
       episodeIndex: options.episodeIndex,
       policyId: options.policyId,
       variantId: variant.id,
+      characterId: options.characterId,
+      ...(options.buildPolicyId === undefined
+        ? {}
+        : { buildPolicyId: buildPolicy.id }),
       combats: combatTranscripts,
       rewards: rewardTraces,
     },

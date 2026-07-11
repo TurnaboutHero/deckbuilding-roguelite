@@ -83,6 +83,8 @@ export interface M6RunTrace {
   readonly contentVersion: string;
   readonly variantId: string;
   readonly policyId: string;
+  readonly characterId?: string;
+  readonly buildPolicyId?: string;
   readonly expectedCombatCount: number;
   readonly result: M6RunResult;
   readonly crash: M6CrashTrace | null;

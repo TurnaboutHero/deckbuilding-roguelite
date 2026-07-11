@@ -163,4 +163,24 @@ describe("M6 deterministic bulk and CRN", () => {
       "turtle",
     ]);
   });
+
+  it("can run the accepted policy matrix for guardian with unique trace ids", () => {
+    const result = runBulk({
+      baseSeed: "P3-GUARDIAN-POLICY-MATRIX",
+      games: 2,
+      policyIds: POLICY_IDS,
+      characterIds: ["guardian"],
+    });
+
+    expect(result.report.metrics.outcomes.runs).toBe(8);
+    expect(result.report.metrics.outcomes.terminalRuns).toBe(8);
+    expect(result.report.metrics.outcomes.crashRuns).toBe(0);
+    expect(result.report.metrics.outcomes.invariantViolationCount).toBe(0);
+    expect(result.traces.every((trace) => trace.characterId === "guardian")).toBe(
+      true,
+    );
+    expect(new Set(result.traces.map((trace) => trace.traceId)).size).toBe(
+      result.traces.length,
+    );
+  });
 });

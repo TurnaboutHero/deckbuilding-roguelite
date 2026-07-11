@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   aggregateGatekeeperConvergence,
+  aggregatePolicyEnemyCharacterRows,
   aggregatePolicyEnemyRows,
   aggregatePolicyResolutionRows,
   buildM6BalanceReport,
-  M6_BALANCE_REPORT_SCHEMA_VERSION,
+  P3_BALANCE_REPORT_SCHEMA_VERSION,
 } from "./balance-report";
 import {
   M6_TRACE_SCHEMA_VERSION,
@@ -146,21 +147,90 @@ describe("M6 balance report aggregation", () => {
     });
   });
 
+  it("adds deterministic policy x enemy x character rows", () => {
+    expect(
+      aggregatePolicyEnemyCharacterRows([
+        traces[0] as M6RunTrace,
+        { ...(traces[1] as M6RunTrace), characterId: "guardian" },
+      ]),
+    ).toEqual([
+      {
+        variantId: "baseline",
+        policyId: "aggro",
+        enemyId: "gatekeeper",
+        characterId: "warrior",
+        buildPolicyId: "fire-build",
+        combatCount: 1,
+        results: { victories: 1, defeats: 0, nonterminal: 0 },
+        turns: { count: 1, mean: 1, p50: 1, p99: 1, max: 1 },
+      },
+      {
+        variantId: "baseline",
+        policyId: "greedy",
+        enemyId: "gatekeeper",
+        characterId: "guardian",
+        buildPolicyId: "mana-build",
+        combatCount: 1,
+        results: { victories: 0, defeats: 1, nonterminal: 0 },
+        turns: { count: 1, mean: 1, p50: 1, p99: 1, max: 1 },
+      },
+    ]);
+  });
+
   it("builds compact deterministic report-only evidence", () => {
     const options = { baseSeed: "1", gamesPerPolicy: 1, crnGames: 1 };
     const first = buildM6BalanceReport(options);
     const second = buildM6BalanceReport(options);
 
     expect(JSON.stringify(second)).toBe(JSON.stringify(first));
-    expect(first.schemaVersion).toBe(M6_BALANCE_REPORT_SCHEMA_VERSION);
+    expect(first.schemaVersion).toBe(P3_BALANCE_REPORT_SCHEMA_VERSION);
     expect(first.configuration.totalPolicyRuns).toBe(4);
     expect(first.tuningDecision.numericContentChange).toBe("none");
     expect(first.mechanicalFacts.crn.aa.identical).toBe(true);
     expect(first.mechanicalFacts.crn.isBalanceGate).toBe(false);
+    expect(first.mechanicalFacts.guardianSafety500.isCiGate).toBe(false);
+    expect(first.mechanicalFacts.characterCrn.isBalanceGate).toBe(false);
+    expect(first.mechanicalFacts.policyEnemyCharacter.length).toBeGreaterThan(0);
+    expect(first.mechanicalFacts.buildPolicies).toEqual([
+      expect.objectContaining({
+        buildPolicyId: "fire-build",
+        coinRewardPriority: ["fire", "mana", "basic"],
+      }),
+      expect.objectContaining({
+        buildPolicyId: "mana-build",
+        coinRewardPriority: ["mana", "basic", "fire"],
+      }),
+    ]);
+    expect(
+      first.mechanicalFacts.rewardSelectionByCharacterBuild.length,
+    ).toBeGreaterThan(0);
+    expect(first.mechanicalFacts.rewardSelectionAudit).toContainEqual(
+      expect.objectContaining({
+        characterId: "guardian",
+        buildPolicyId: "mana-build",
+        optionType: "skill",
+        optionId: "mana-well",
+      }),
+    );
+    expect(first.mechanicalFacts.characterCrn.characters).toEqual([
+      expect.objectContaining({
+        characterId: "warrior",
+        buildPolicyId: "fire-build",
+      }),
+      expect.objectContaining({
+        characterId: "guardian",
+        buildPolicyId: "mana-build",
+      }),
+    ]);
     expect(first.informationalTargetBands.every((band) => !band.isGate)).toBe(
       true,
     );
-    expect(first.phase3.status).toBe("blocked");
+    expect(first.phase3.conclusionLabels).toEqual([
+      "engineering-safe",
+      "balance-provisional",
+      "experience-unverified",
+    ]);
+    expect(JSON.stringify(first)).not.toContain('"status":"blocked"');
     expect(JSON.stringify(first)).not.toContain('"episodes":');
     expect(JSON.stringify(first)).not.toContain('"transcripts":');
   });
