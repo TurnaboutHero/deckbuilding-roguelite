@@ -358,6 +358,50 @@ export const skills = {
       { kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }
     ]
   }
+  ,
+  // ---- P3.4 후속: 비시작 전용 보상 스킬 (도달성 게이트 — 각 캐릭터 보상 풀에 최소 1종) ----
+  // 수치는 기준표 안 임시값, balance-provisional
+  overload: {
+    id: skill('overload'),
+    name: '과부하',
+    exclusiveTo: character('sorcerer'),
+    type: 'flip',
+    rarity: 'advanced',
+    tags: ['attack'],
+    targetType: 'single-enemy',
+    cost: 2,
+    base: [
+      { kind: 'damage', amount: 6 },
+      { kind: 'applyStatus', status: 'shock', stacks: 1, to: 'target' }
+    ],
+    heads: { mode: 'any', effects: [{ kind: 'damage', amount: 4 }] }
+  },
+  'winters-grasp': {
+    id: skill('winters-grasp'),
+    name: '동장군',
+    exclusiveTo: character('frost-knight'),
+    type: 'flip',
+    rarity: 'advanced',
+    tags: ['attack'],
+    targetType: 'single-enemy',
+    cost: 1,
+    base: [
+      { kind: 'damage', amount: 4 },
+      { kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }
+    ],
+    tails: { mode: 'any', effects: [{ kind: 'block', amount: 3 }] }
+  },
+  'aegis-surge': {
+    id: skill('aegis-surge'),
+    name: '수호 파동',
+    exclusiveTo: character('guardian'),
+    type: 'consume',
+    rarity: 'advanced',
+    tags: ['defense'],
+    targetType: 'self',
+    consume: { element: 'mana', count: 2 },
+    effects: [{ kind: 'block', amount: 10 }]
+  }
 } satisfies Record<string, SkillDef>;
 
 

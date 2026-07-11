@@ -12,7 +12,7 @@ import type {
   SkillId,
   SlotId
 } from '@game/core';
-import { createCombat, statusStacks, statusTurns, step, validateContentDb } from '@game/core';
+import { createCombat, rewardEligibleSkillIds, statusStacks, statusTurns, step, validateContentDb } from '@game/core';
 import { describe, expect, it } from 'vitest';
 
 import { characters, coins, CONTENT_VERSION, LEGACY_CONTENT_VERSIONS, contentDb, enemies, skills } from './index';
@@ -357,6 +357,84 @@ describe('P3.4 shipped content goldens', () => {
       expect(String(contentDb.skills[skill]?.exclusiveTo)).toBe('frost-knight');
     }
     expect(contentDb.validate()).toEqual([]);
+  });
+});
+
+describe('P3.4 exclusive reward reachability (dead-option gate)', () => {
+  // 감사 결함 봉인: 시작 장착 전용 스킬만 있으면 보상 도달이 구조적으로 불가능해
+  // 지배/사장 감사가 공회전한다 — 캐릭터마다 비시작 전용 보상 스킬 ≥1을 보장
+  it.each([
+    ['sorcerer', 'overload'],
+    ['frost-knight', 'winters-grasp'],
+    ['guardian', 'aegis-surge']
+  ])('offers %s at least one non-starting exclusive skill (%s)', (character, expected) => {
+    const def = contentDb.characters[character];
+    if (def === undefined) throw new Error('missing character');
+    const eligible = rewardEligibleSkillIds(
+      contentDb.skills,
+      def.id,
+      def.startingSkills
+    ).map(String);
+    expect(eligible).toContain(expected);
+  });
+});
+
+describe('P3.4 reward-skill definitions and resolution goldens', () => {
+  it('pins the three reachable exclusive skills (definition + exclusiveTo)', () => {
+    expect(skills.overload).toMatchObject({
+      name: '과부하',
+      exclusiveTo: 'sorcerer',
+      type: 'flip',
+      cost: 2,
+      base: [
+        { kind: 'damage', amount: 6 },
+        { kind: 'applyStatus', status: 'shock', stacks: 1, to: 'target' }
+      ],
+      heads: { mode: 'any', effects: [{ kind: 'damage', amount: 4 }] }
+    });
+    expect(skills['winters-grasp']).toMatchObject({
+      name: '동장군',
+      exclusiveTo: 'frost-knight',
+      cost: 1,
+      base: [
+        { kind: 'damage', amount: 4 },
+        { kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }
+      ]
+    });
+    expect(skills['aegis-surge']).toMatchObject({
+      name: '수호 파동',
+      exclusiveTo: 'guardian',
+      type: 'consume',
+      consume: { element: 'mana', count: 2 },
+      effects: [{ kind: 'block', amount: 10 }]
+    });
+  });
+
+  // 감전의 해결 내 증폭: base [피해 6 → 감전 1] 뒤 heads 피해 4는 floor(4×1.5)=6으로
+  // 들어와 총 12 — 원자 순차 적용의 일관 귀결이며 술사 '연계 폭딜' 정체성에 부합 (의도 골든)
+  it('resolves overload heads for 12 damage (shock amplifies the same resolution) and shock 1', () => {
+    let state = withEquippedSkill(combat('p34-overload'), 'overload');
+    state = withHandDefs(state, ['basic', 'basic']);
+    const coins = state.zones.hand.slice(0, 2);
+    const result = useFlip(withFaces(state, ['heads', 'heads']), coins, 0);
+
+    expect(
+      result.events
+        .filter((event) => event.type === 'damageDealt' && event.target.type === 'enemy')
+        .reduce((sum, event) => sum + (event.type === 'damageDealt' ? event.amount : 0), 0)
+    ).toBe(12);
+    expect(statusTurns(result.state.enemies[0]?.statuses ?? {}, 'shock')).toBe(1);
+  });
+
+  it('resolves aegis-surge by consuming two mana for 10 block without flipping', () => {
+    let state = withEquippedSkill(combat('p34-aegis'), 'aegis-surge');
+    state = withHandDefs(state, ['mana', 'mana', 'basic']);
+    const fuel = state.zones.hand.slice(0, 2);
+    const result = useConsumeAt(state, 0, fuel);
+
+    expect(result.state.player.block).toBe(10);
+    expect(result.events.some((event) => event.type === 'coinFlipped')).toBe(false);
+    expect(result.state.zones.exhausted).toHaveLength(2);
   });
 });
 
