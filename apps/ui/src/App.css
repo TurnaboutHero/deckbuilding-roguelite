@@ -843,6 +843,132 @@ button:focus-visible {
   pointer-events: auto;
 }
 
+.turn-buff-bar {
+  position: absolute;
+  top: 74px;
+  left: 50%;
+  z-index: 7;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  width: min(560px, calc(100% - 320px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.turn-buff-host {
+  position: relative;
+  pointer-events: auto;
+}
+
+.turn-buff-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 190px;
+  min-height: 30px;
+  padding: 4px 8px;
+  color: #ffe7ba;
+  background: #2c2020;
+  border: 2px solid var(--flame);
+  box-shadow:
+    inset 0 1px 0 #7a4b2e,
+    0 3px 0 rgba(28, 23, 36, 0.55);
+  cursor: pointer;
+}
+
+.turn-buff-chip:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 3px;
+}
+
+.turn-buff-chip__name,
+.turn-buff-chip__effect {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-buff-chip__name {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.turn-buff-chip__effect {
+  font-size: 11px;
+  color: #ffd48a;
+}
+
+.turn-buff-tip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  display: none;
+  width: max-content;
+  max-width: 260px;
+  padding: 7px 9px;
+  color: var(--paper);
+  background: var(--out);
+  border: 2px solid var(--gold);
+  transform: translateX(-50%);
+  z-index: 20;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.turn-buff-tip strong {
+  display: block;
+  color: #ffd48a;
+}
+
+.turn-buff-tip .kw {
+  color: inherit;
+}
+
+.turn-buff-host:hover:not([data-suppressed="true"]) .turn-buff-tip,
+.turn-buff-host:focus-within:not([data-suppressed="true"]) .turn-buff-tip,
+.turn-buff-host[data-open="true"] .turn-buff-tip {
+  display: block;
+}
+
+.turn-buff-chip.vfx-pulse {
+  animation: vfx-turn-trigger-pulse 320ms steps(3) 1;
+}
+
+@keyframes vfx-turn-trigger-pulse {
+  0% {
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+    box-shadow:
+      inset 0 1px 0 #7a4b2e,
+      0 3px 0 rgba(28, 23, 36, 0.55);
+  }
+  45% {
+    transform: translateY(-1px) scale(1.06);
+    filter: brightness(1.35) saturate(1.35);
+    box-shadow:
+      inset 0 0 0 1px #ffd9b0,
+      inset 0 1px 0 #7a4b2e,
+      0 0 0 2px rgba(240, 144, 44, 0.45),
+      0 0 8px rgba(240, 144, 44, 0.72),
+      0 3px 0 rgba(28, 23, 36, 0.55);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+    box-shadow:
+      inset 0 1px 0 #7a4b2e,
+      0 3px 0 rgba(28, 23, 36, 0.55);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-buff-chip.vfx-pulse {
+    animation: none;
+  }
+}
+
 /* ---- 하단 HUD ---- */
 
 /* 컴팩트 HUD — 목표 ≤78px @1280×720. 코인은 1급 의사결정 표면: 5개 동시 표시,

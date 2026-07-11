@@ -43,6 +43,19 @@ const atomSegment = (atom: EffectAtom): { text: string; term?: KeywordTerm } => 
     };
   }
   if (atom.kind === "selfDamage") return { text: `자신 피해 ${atom.amount}` };
+  if (atom.kind === "addTurnTrigger") {
+    // 트리거 정의에서 데이터 주도로 유도 — '특수'는 인과 가독성 원칙 위반 (P3.3 시각 검수)
+    const hookKo =
+      atom.trigger.hook === "onDamageDealt" ? "피해마다" : "공격 스킬마다";
+    const inner = atom.trigger.effects
+      .map((effect) =>
+        effect.kind === "applyStatus" && effect.status === "burn"
+          ? `화상 +${effect.stacks}`
+          : atomSegment(effect).text,
+      )
+      .join(" / ");
+    return { text: `이번 턴 ${hookKo} ${inner}`, term: "trigger" };
+  }
   if (atom.kind === "grantElement") {
     return { text: `기본 코인 ${elementKo(atom.element)} 취급` };
   }

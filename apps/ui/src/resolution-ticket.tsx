@@ -38,6 +38,7 @@ export function ResolutionTicket(props: { summary: ResolutionSummary }): JSX.Ele
       )}
       <Section label="기본" lines={summary.baseLines} />
       <Section label="보너스" lines={summary.bonusLines} />
+      <Section label="트리거" lines={summary.triggerLines} />
       <Section label="상태" lines={summary.statusLines} />
       <div className="resolution-ticket__total">
         <strong>합계</strong> {summary.totalLine}

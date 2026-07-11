@@ -85,6 +85,9 @@ import cardManaWell from "./assets/card-mana-well.webp";
 import cardSmash from "./assets/card-smash.webp";
 import cardFireInfusion from "./assets/card-fire-infusion.webp";
 import cardFurnace from "./assets/card-furnace.webp";
+import cardFlameSword from "./assets/card-flame-sword.webp";
+import cardHeartOfFlame from "./assets/card-heart-of-flame.webp";
+import cardConflagration from "./assets/card-conflagration.webp";
 import goblinAtlas from "./assets/generated/sprites/goblin/sprite-sheet-alpha.png";
 import goblinManifestJson from "./assets/generated/sprites/goblin/manifest.json";
 import gatekeeperAtlas from "./assets/generated/sprites/gatekeeper/sprite-sheet-alpha.png";
@@ -123,6 +126,7 @@ import {
   recordHumanReward,
 } from "./telemetry";
 import type { HumanRunTrace, RecordHumanRewardInput } from "./telemetry";
+import { TurnBuffBar } from "./turn-buff";
 
 // 생성 에셋 (docs/ui/combat-ui-v2.png 앵커 스타일 — image_gen 산출, 후처리: 크로마 키·리사이즈)
 const CARD_ART: Record<string, string> = {
@@ -139,6 +143,9 @@ const CARD_ART: Record<string, string> = {
   smash: cardSmash,
   "fire-infusion": cardFireInfusion,
   furnace: cardFurnace,
+  "flame-sword": cardFlameSword,
+  "heart-of-flame": cardHeartOfFlame,
+  conflagration: cardConflagration,
 };
 
 const WORDS = [
@@ -1616,7 +1623,7 @@ const CombatBoard = ({
     }
     if (fuelSelection?.slot !== slotId) {
       const coins = autoSuggestFuel(state, slotId, contentDb);
-      if (coins.length === 0 && showFeedback) {
+      if (coins.length < skill.consume.count) {
         const reason = rejectionReason(
           state,
           {
@@ -1627,7 +1634,8 @@ const CombatBoard = ({
           },
           contentDb,
         );
-        showRejection(reason ?? REJECTION_TEXT.generic);
+        if (showFeedback) showRejection(reason ?? REJECTION_TEXT.coinCost);
+        return;
       }
       selectCoin(null);
       setCoinChoice(null);
@@ -1853,6 +1861,20 @@ const CombatBoard = ({
     } else if (event?.type === "coinCreated") {
       showFloat("임시 코인", "player", "coin");
       delay = 320;
+    } else if (event?.type === "turnTriggerAdded") {
+      for (const trigger of state.turnTriggers) {
+        if (trigger.trigger.id === event.trigger)
+          triggerVfx(`turn-trigger-${trigger.uid}`, 320);
+      }
+      delay = 260;
+    } else if (event?.type === "turnTriggerFired") {
+      for (const trigger of state.turnTriggers) {
+        if (trigger.trigger.id === event.trigger)
+          triggerVfx(`turn-trigger-${trigger.uid}`, 360);
+      }
+      delay = 320;
+    } else if (event?.type === "turnTriggersExpired") {
+      delay = 260;
     } else if (event?.type === "coinsDiscarded") {
       delay = 320;
     } else if (event?.type === "coinsConsumed") {
@@ -1865,7 +1887,7 @@ const CombatBoard = ({
 
     const timer = window.setTimeout(() => setQueue(rest), delay + 150);
     return () => window.clearTimeout(timer);
-  }, [locked, queue, resolving]);
+  }, [locked, queue, resolving, state.turnTriggers]);
 
   // ---- 드래그 장전 (포인터 공통 — 마우스/터치, 6px 이하 이동은 클릭으로 취급) ----
   const beginDrag = (
@@ -2083,6 +2105,7 @@ const CombatBoard = ({
           TEST duo-raiders
         </span>
       ) : null}
+      <TurnBuffBar triggers={state.turnTriggers} vfx={vfx} />
       <section className="battlefield">
         <UnitPanel
           side="player"

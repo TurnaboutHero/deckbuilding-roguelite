@@ -9,6 +9,7 @@ export type KeywordTerm =
   | "block"
   | "flip"
   | "consume"
+  | "trigger"
   | "temporary"
   | "elementCoin";
 
@@ -39,6 +40,10 @@ export const KEYWORD_GLOSSARY: Record<
     label: "소비",
     description:
       "동전을 던지지 않고 그대로 지불한다. 앞·뒤 효과는 발동하지 않는다.",
+  },
+  trigger: {
+    label: "턴 버프",
+    description: "이번 턴 동안만 유지되는 발동 효과. 턴이 끝나면 사라진다.",
   },
   temporary: {
     label: "임시 코인",

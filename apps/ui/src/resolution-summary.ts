@@ -7,6 +7,7 @@ export interface ResolutionSummary {
   costNote: string | null;
   baseLines: string[];
   bonusLines: string[];
+  triggerLines: string[];
   statusLines: string[];
   totalLine: string;
 }
@@ -28,6 +29,12 @@ const statusKo = (value: string): string =>
   })[value] ?? value;
 
 const faceKo = (face: Face): string => (face === 'heads' ? '앞면' : '뒷면');
+
+const triggerKo = (value: string): string =>
+  ({
+    'flame-sword': '화염검',
+    'heart-of-flame': '불의 심장'
+  })[value] ?? value;
 
 const effectLine = (atom: EffectAtom): string => {
   if (atom.kind === 'damage') return `피해 ${atom.amount}`;
@@ -91,6 +98,21 @@ const statusLines = (events: readonly CombatEvent[]): string[] =>
     })
     .filter(Boolean);
 
+// 트리거 라인은 이벤트 구간 귀속이 아니라 알려진 id의 고정 효과 매핑으로 만든다 —
+// turnTriggerFired 뒤의 statusApplied가 스킬 자체 효과일 수 있어 구간 귀속은 오귀속을
+// 낳는다 (감시자 발견). 코어 이벤트 스키마는 흔들지 않고, 미지 id는 이름만 표시한다.
+const TRIGGER_EFFECT_KO: Record<string, string> = {
+  'flame-sword': '화상 +1',
+  'heart-of-flame': '화상 +2'
+};
+
+const triggerLines = (events: readonly CombatEvent[]): string[] =>
+  events.flatMap((event) => {
+    if (event.type !== 'turnTriggerFired') return [];
+    const effect = TRIGGER_EFFECT_KO[event.trigger];
+    return [effect === undefined ? triggerKo(event.trigger) : `${triggerKo(event.trigger)} → ${effect}`];
+  });
+
 export function buildResolutionSummary(
   skill: SkillDef,
   events: readonly CombatEvent[]
@@ -120,6 +142,7 @@ export function buildResolutionSummary(
       skill.type === 'consume' ? `${elementKo(skill.consume.element)} ×${skill.consume.count} 지불 — 플립 없음` : null,
     baseLines,
     bonusLines: skill.type === 'flip' && bonusLines.length === 0 ? ['면 보너스 없음'] : bonusLines,
+    triggerLines: triggerLines(events),
     statusLines: statusLines(events),
     totalLine: totalLine(events)
   };

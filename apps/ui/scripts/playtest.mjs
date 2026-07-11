@@ -113,6 +113,27 @@ const waitForKeywordTooltip = (page, description, visible) =>
     { expected: description, shouldBeVisible: visible },
   );
 
+const turnBuffTooltipVisible = (page, expected) =>
+  page.evaluate((text) => {
+    const tip = [...document.querySelectorAll(".turn-buff-tip")].find(
+      (node) => node.textContent?.includes(text) === true,
+    );
+    return tip !== undefined && getComputedStyle(tip).display !== "none";
+  }, expected);
+
+const waitForTurnBuffTooltip = (page, expected, visible) =>
+  page.waitForFunction(
+    ({ text, shouldBeVisible }) => {
+      const tip = [...document.querySelectorAll(".turn-buff-tip")].find(
+        (node) => node.textContent?.includes(text) === true,
+      );
+      const isVisible =
+        tip !== undefined && getComputedStyle(tip).display !== "none";
+      return isVisible === shouldBeVisible;
+    },
+    { text: expected, shouldBeVisible: visible },
+  );
+
 const BURN_DESCRIPTION =
   "대상의 턴이 끝날 때 스택만큼 피해를 준다 (방어 무시). 그 뒤 스택이 1 줄어든다.";
 
@@ -148,6 +169,20 @@ const waitForOpaqueSkillCards = async (page) =>
       )
     );
   });
+
+const placeHandCoinInto = async (page, cardIndex, socketIndex) => {
+  const preferred = page
+    .locator(".hand-tray .coin:not(.fire):not(.mana):not(.granted-fire)")
+    .first();
+  if ((await preferred.count()) > 0) await preferred.click();
+  else await page.locator(".hand-tray .coin").first().click();
+  await page
+    .locator(".skill-card")
+    .nth(cardIndex)
+    .locator(".socket")
+    .nth(socketIndex)
+    .click();
+};
 
 const useConsumeIfReady = async (page, slotIndex) => {
   const card = page.locator(".skill-card").nth(slotIndex);
@@ -2546,6 +2581,240 @@ const winCurrentCombat = async (page) => {
   );
   await page.close();
   await direct.page.close();
+}
+
+// ---------- 시나리오 22: P3.3 불의 심장 연료 지정 + 턴 버프 ----------
+{
+  const heartSkills =
+    "heart-of-flame,slash,guard,ignite,ignite-sword,flame-rampage";
+  const heartUrl = urlWith({
+    seed: "P33-R3-35",
+    skills: heartSkills,
+  });
+  const poorHeartUrl = urlWith({
+    seed: "BRAVE-EMBER-42",
+    skills: heartSkills,
+  });
+  const handCoinReport = (page) =>
+    page.locator(".hand-tray .coin").evaluateAll((coins) =>
+      coins.map((coin, index) => ({
+        index,
+        label: coin.textContent?.trim() ?? "",
+        classes: [...coin.classList].sort(),
+        selected: coin.classList.contains("fuel-selected"),
+        valid: coin.classList.contains("fuel-valid"),
+        invalid: coin.classList.contains("fuel-invalid"),
+      })),
+    );
+  const selectedFuelIndexes = async (page) =>
+    (await handCoinReport(page))
+      .filter((coin) => coin.selected)
+      .map((coin) => coin.index);
+  const enterHeartFuel = async (page) => {
+    await waitForOpaqueSkillCards(page);
+    await page.locator(".skill-card").first().click();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".hand-tray .coin.fuel-selected").length > 0,
+    );
+  };
+  const waitForIdle = (page) =>
+    page.waitForFunction(
+      () =>
+        document.querySelector(".end-turn:not(:disabled)") !== null &&
+        document.querySelector(".float-text, .skill-card.resolving") === null,
+    );
+
+  {
+    const { page, errors } = await boot(
+      { width: 1280, height: 720 },
+      { url: poorHeartUrl },
+    );
+    const report = await handCoinReport(page);
+    const fireCount = report.filter((coin) =>
+      coin.classes.includes("fire") || coin.classes.includes("granted-fire"),
+    ).length;
+    await page.locator(".skill-card").first().click();
+    await page.waitForFunction(
+      () => document.querySelector(".rejection-chip") !== null,
+    );
+    check(
+      "S22 부족(화염 <3) 시 진입 거부",
+      fireCount === 2 &&
+        (await page.locator(".hand-tray .coin.fuel-valid").count()) === 0 &&
+        (await page.locator(".rejection-chip").count()) === 1,
+      JSON.stringify(report),
+    );
+    check("S22 부족 경로 에러 0", errors.length === 0, errors.join(" | "));
+    await page.close();
+  }
+
+  {
+    const { page, errors } = await boot(
+      { width: 1280, height: 720 },
+      { url: heartUrl },
+    );
+    const firstReport = await handCoinReport(page);
+    const fireCount = firstReport.filter((coin) =>
+      coin.classes.includes("fire") || coin.classes.includes("granted-fire"),
+    ).length;
+    await enterHeartFuel(page);
+    const suggested = await selectedFuelIndexes(page);
+    check(
+      "S22 선택 3개 사전 제안",
+      fireCount === 3 &&
+        suggested.length === 3 &&
+        (await page.locator(".skill-card").first().locator(".consume-condition.met").count()) === 1,
+      JSON.stringify({ fireCount, suggested, hand: firstReport }),
+    );
+
+    await page.locator(".hand-tray .coin").nth(suggested[0]).click();
+    check(
+      "S22 코인 토글 해제",
+      (await selectedFuelIndexes(page)).length === 2 &&
+        (await page.locator(".skill-card").first().locator(".consume-condition.met").count()) === 0,
+      JSON.stringify(await handCoinReport(page)),
+    );
+    await page.locator(".hand-tray .coin").nth(suggested[0]).click();
+    check(
+      "S22 코인 토글 재선택",
+      (await selectedFuelIndexes(page)).length === 3 &&
+        (await page.locator(".skill-card").first().locator(".consume-condition.met").count()) === 1,
+      JSON.stringify(await handCoinReport(page)),
+    );
+
+    const basicIndex = (await handCoinReport(page)).find(
+      (coin) => !coin.classes.includes("fire") && !coin.classes.includes("granted-fire"),
+    )?.index;
+    if (basicIndex !== undefined)
+      await page.locator(".hand-tray .coin").nth(basicIndex).click();
+    check(
+      "S22 비화염 거부(사유 칩)",
+      (await selectedFuelIndexes(page)).length === 3 &&
+        (await page.locator(".rejection-chip").count()) === 1,
+      JSON.stringify(await handCoinReport(page)),
+    );
+
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(
+      () => document.querySelector(".hand-tray .coin.fuel-valid") === null,
+    );
+    check(
+      "S22 Escape 취소",
+      (await page.locator(".skill-card.spent").count()) === 0 &&
+        (await page.locator(".turn-buff-chip").count()) === 0,
+    );
+
+    await enterHeartFuel(page);
+    check(
+      "S22 재진입",
+      (await selectedFuelIndexes(page)).length === 3 &&
+        (await page.locator(".skill-card").first().locator(".consume-condition.met").count()) === 1,
+    );
+    const exhaustedBefore = await page.locator(".pile-button.exhausted").innerText();
+    await page.keyboard.press("Enter");
+    await waitForIdle(page);
+    check(
+      "S22 확정 → 트리거 칩 등장",
+      (await page.locator(".turn-buff-chip").count()) === 1 &&
+        (await page.locator(".turn-buff-chip").innerText()).includes("불의 심장"),
+    );
+    check(
+      "S22 소모 영역 3장 이동(DOM 카운트)",
+      exhaustedBefore.includes("0") &&
+        (await page.locator(".pile-button.exhausted").innerText()).includes("3"),
+      `${exhaustedBefore} → ${await page.locator(".pile-button.exhausted").innerText()}`,
+    );
+
+    const chip = page.locator(".turn-buff-chip").first();
+    await chip.hover();
+    await waitForTurnBuffTooltip(page, "공격 스킬 해결 후", true);
+    check("S22 턴 버프 툴팁 hover", await turnBuffTooltipVisible(page, "공격 스킬 해결 후"));
+    await page.mouse.move(20, 20);
+    await chip.focus();
+    await waitForTurnBuffTooltip(page, "공격 스킬 해결 후", true);
+    check("S22 턴 버프 툴팁 focus", await turnBuffTooltipVisible(page, "공격 스킬 해결 후"));
+    await chip.click();
+    await waitForTurnBuffTooltip(page, "공격 스킬 해결 후", true);
+    check("S22 턴 버프 툴팁 tap", await turnBuffTooltipVisible(page, "공격 스킬 해결 후"));
+    await page.keyboard.press("Escape");
+    await waitForTurnBuffTooltip(page, "공격 스킬 해결 후", false);
+    check("S22 턴 버프 툴팁 Escape", !(await turnBuffTooltipVisible(page, "공격 스킬 해결 후")));
+
+    const burnBefore = await page.locator(".unit.enemy .burn-chip").count();
+    await placeHandCoinInto(page, 1, 0);
+    await waitForOpaqueSkillCards(page);
+    await page.locator(".skill-card").nth(1).locator(".card-title").click();
+    await waitForCombatOrBoundary(page);
+    const ticketText = await page
+      .locator(".resolution-ticket-anchor .resolution-ticket")
+      .innerText();
+    check(
+      "S22 공격 사용 → 적 화상 +2",
+      burnBefore === 0 &&
+        (await page.locator('.unit.enemy .burn-chip[aria-label="화상 2"]').count()) === 1,
+      ticketText.replace(/\n/g, " / "),
+    );
+    check(
+      "S22 티켓 트리거 라인",
+      ticketText.includes("트리거") &&
+        ticketText.includes("불의 심장") &&
+        ticketText.includes("화상 +2"),
+      ticketText.replace(/\n/g, " / "),
+    );
+    await page.locator(".end-turn").click();
+    await waitForCombatOrBoundary(page, 30000);
+    check(
+      "S22 턴 종료 시 칩 만료",
+      (await page.locator(".turn-buff-chip").count()) === 0,
+    );
+    check("S22 확정 경로 에러 0", errors.length === 0, errors.join(" | "));
+    await page.close();
+  }
+}
+
+// ---------- 시나리오 23: P3.3 화염검 턴 버프 수명 ----------
+{
+  const flameSwordUrl = urlWith({
+    seed: "BRAVE-EMBER-42",
+    skills: "flame-sword,slash,burning-strike,guard,ignite-sword,flame-rampage",
+  });
+  const { page, errors } = await boot(
+    { width: 1280, height: 720 },
+    { url: flameSwordUrl },
+  );
+  await waitForOpaqueSkillCards(page);
+  await page.locator(".skill-card").first().locator(".card-title").click();
+  await waitForCombatOrBoundary(page);
+  check(
+    "S23 화염검 setup → 턴 버프 칩 등장",
+    (await page.locator(".turn-buff-chip").count()) === 1 &&
+      (await page.locator(".turn-buff-chip").innerText()).includes("화염검"),
+  );
+  await placeHandCoinInto(page, 1, 0);
+  await waitForOpaqueSkillCards(page);
+  await page.locator(".skill-card").nth(1).locator(".card-title").click();
+  await waitForCombatOrBoundary(page);
+  await placeHandCoinInto(page, 2, 0);
+  await placeHandCoinInto(page, 2, 1);
+  await waitForOpaqueSkillCards(page);
+  await page.locator(".skill-card").nth(2).locator(".card-title").click();
+  await waitForCombatOrBoundary(page);
+  check(
+    "S23 공격 2회 → 화상 +2",
+    (await page.locator('.unit.enemy .burn-chip[aria-label="화상 2"]').count()) === 1,
+  );
+  check(
+    "S23 공격 후 칩 유지",
+    (await page.locator(".turn-buff-chip").count()) === 1,
+  );
+  await page.locator(".end-turn").click();
+  await waitForCombatOrBoundary(page, 30000);
+  check(
+    "S23 턴 종료 → 화염검 칩 만료",
+    (await page.locator(".turn-buff-chip").count()) === 0,
+  );
+  check("S23 에러 0", errors.length === 0, errors.join(" | "));
+  await page.close();
 }
 
 await browser.close();

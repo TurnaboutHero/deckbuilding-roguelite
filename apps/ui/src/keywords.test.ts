@@ -9,6 +9,7 @@ const TERMS: KeywordTerm[] = [
   "block",
   "flip",
   "consume",
+  "trigger",
   "temporary",
   "elementCoin",
 ];
@@ -29,5 +30,12 @@ describe("KEYWORD_GLOSSARY", () => {
 
   it("uses the canonical wither label", () => {
     expect(KEYWORD_GLOSSARY.wither.label).toBe("위축");
+  });
+
+  it("defines the turn buff glossary copy", () => {
+    expect(KEYWORD_GLOSSARY.trigger).toEqual({
+      label: "턴 버프",
+      description: "이번 턴 동안만 유지되는 발동 효과. 턴이 끝나면 사라진다.",
+    });
   });
 });

@@ -184,4 +184,48 @@ describe('buildResolutionSummary', () => {
     expect(summary.costNote).toBe('화염 ×1 지불 — 플립 없음');
     expect(summary.totalLine).toBe('피해 5 · 화상 1');
   });
+
+  it('adds trigger causality lines from turnTriggerFired events', () => {
+    const skill = skillOf(testDb(), 'slash');
+    const summary = buildResolutionSummary(skill, [
+      { type: 'skillUsed', slot: slot(0), skill: skill.id, kind: 'flip' },
+      { type: 'coinFlipped', coin: coin(1), face: 'tails' },
+      { type: 'damageDealt', target: { type: 'enemy', index: 0 }, amount: 6, blocked: 0, source: 'skill' },
+      { type: 'turnTriggerFired', trigger: 'flame-sword', hook: 'onDamageDealt' },
+      { type: 'statusApplied', target: { type: 'enemy', index: 0 }, status: 'burn', stacks: 1 }
+    ]);
+
+    expect(summary.triggerLines).toEqual(['화염검 → 화상 +1']);
+  });
+
+  // 오귀속 회귀 (감시자 필수): 트리거 직후 스킬 자체 statusApplied가 이어져도
+  // 트리거 라인은 고정 효과만 표시한다 — 구간 귀속 방식이면 이 테스트가 잡는다
+  it('does not attribute the skill own status effects to the trigger line', () => {
+    const skill = skillOf(testDb(), 'consumeFire');
+    const summary = buildResolutionSummary(skill, [
+      { type: 'skillUsed', slot: slot(4), skill: skill.id, kind: 'consume' },
+      { type: 'coinsConsumed', coins: [coin(1)] },
+      { type: 'damageDealt', target: { type: 'enemy', index: 0 }, amount: 5, blocked: 0, source: 'skill' },
+      { type: 'turnTriggerFired', trigger: 'flame-sword', hook: 'onDamageDealt' },
+      { type: 'statusApplied', target: { type: 'enemy', index: 0 }, status: 'burn', stacks: 1 },
+      // 스킬 자체의 후속 화상 3 — 트리거 몫이 아니다
+      { type: 'statusApplied', target: { type: 'enemy', index: 0 }, status: 'burn', stacks: 3 }
+    ]);
+
+    expect(summary.triggerLines).toEqual(['화염검 → 화상 +1']);
+    // 상태 라인·합계에는 둘 다 정상 반영된다 (이벤트 정본)
+    expect(summary.statusLines).toEqual(['화상 +1', '화상 +3']);
+    expect(summary.totalLine).toBe('피해 5 · 화상 4');
+  });
+
+  it('shows only the trigger name for unknown trigger ids', () => {
+    const skill = skillOf(testDb(), 'slash');
+    const summary = buildResolutionSummary(skill, [
+      { type: 'skillUsed', slot: slot(0), skill: skill.id, kind: 'flip' },
+      { type: 'coinFlipped', coin: coin(1), face: 'tails' },
+      { type: 'turnTriggerFired', trigger: 'future-trigger', hook: 'onDamageDealt' }
+    ]);
+
+    expect(summary.triggerLines).toEqual(['future-trigger']);
+  });
 });
