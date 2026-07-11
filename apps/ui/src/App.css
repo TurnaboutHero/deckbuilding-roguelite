@@ -443,6 +443,13 @@ button:focus-visible {
   opacity: 1;
 }
 
+.skill-card:hover .card-effects,
+.skill-card:focus-visible .card-effects,
+.skill-card:has(:focus-visible) .card-effects,
+.skill-card.lifted .card-effects {
+  opacity: 1;
+}
+
 .skill-card.ready {
   border-color: var(--gold-2);
   box-shadow:
@@ -467,6 +474,10 @@ button:focus-visible {
 }
 
 .skill-card.drop-target p {
+  opacity: 1;
+}
+
+.skill-card.drop-target .card-effects {
   opacity: 1;
 }
 
@@ -662,6 +673,24 @@ button:focus-visible {
   transition: opacity 0.14s;
 }
 
+/* 정보 우선 예산 — 효과 행은 절대 눌리지 않고(shrink 0), 부족분은 카드 아트가 양보한다
+   (아트 하한 36px). 카드 폭·HUD 높이는 불변 */
+.skill-card .card-effects {
+  flex: 0 0 auto;
+  max-height: 88px;
+  overflow: hidden;
+  transition: opacity 0.14s;
+}
+
+.skill-card .card-art {
+  flex: 0 1 auto;
+  min-height: 36px;
+}
+
+.skill-card .card-effects .kw {
+  max-width: 100%;
+}
+
 .once-badge {
   position: absolute;
   top: 24px;
@@ -694,6 +723,22 @@ button:focus-visible {
   box-shadow: 0 0 0 2px var(--gold-2);
 }
 
+.consume-condition .kw {
+  color: inherit;
+  border-bottom-color: currentColor;
+}
+
+.chip-keyword .kw {
+  display: inline-flex;
+  padding: 0;
+  color: inherit;
+  border: 0;
+}
+
+.chip-keyword .kw:focus-visible {
+  outline-offset: 3px;
+}
+
 .spent-label,
 .locked-label {
   position: absolute;
@@ -721,7 +766,24 @@ button:focus-visible {
   color: var(--paper);
   border: 2px solid var(--gold);
   z-index: 5;
+  pointer-events: auto;
+}
+
+.preview-tip .kw {
+  color: inherit;
+}
+
+.resolution-ticket-anchor {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 8;
+  transform: translateX(-50%);
   pointer-events: none;
+}
+
+.resolution-ticket-anchor .resolution-ticket {
+  pointer-events: auto;
 }
 
 /* ---- 하단 HUD ---- */

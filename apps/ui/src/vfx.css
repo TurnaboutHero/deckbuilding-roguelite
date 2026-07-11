@@ -1,0 +1,182 @@
+/* ============================================================
+   이벤트 VFX 클래스 계약
+   - .unit.vfx-hit: 피격 순간 .sprite가 짧게 밝아지고 붉게 튄다.
+   - .block-chip.vfx-pop: 방어 획득 칩이 강철빛으로 살짝 솟는다.
+   - .burn-chip.vfx-pulse: 화상 적용/틱 칩이 엠버 글로우로 맥동한다.
+   - .unit-plate.vfx-wither: 위축 적용 시 패널에 보라 펄스가 돈다.
+   - .socket-coin.face-heads.vfx-reveal: 앞면 확정 시 따뜻한 금색으로 드러난다.
+   - .socket-coin.face-tails.vfx-reveal: 뒷면 확정 시 차가운 은색으로 드러난다.
+   모든 애니메이션은 1회 실행, fill 없음. 클래스 제거 후 재부여로 재사용한다.
+   ============================================================ */
+
+.unit.vfx-hit .sprite {
+  animation: vfx-hit-flash 280ms steps(3) 1;
+}
+
+.block-chip.vfx-pop {
+  animation: vfx-block-pop 220ms steps(3) 1;
+}
+
+.burn-chip.vfx-pulse {
+  animation: vfx-burn-pulse 320ms steps(3) 1;
+}
+
+.unit-plate.vfx-wither {
+  animation: vfx-wither-pulse 330ms steps(3) 1;
+}
+
+.socket-coin.face-heads.vfx-reveal {
+  animation: vfx-coin-heads-reveal 300ms steps(3) 1;
+}
+
+.socket-coin.face-tails.vfx-reveal {
+  animation: vfx-coin-tails-reveal 300ms steps(3) 1;
+}
+
+@keyframes vfx-hit-flash {
+  0% {
+    transform: translateX(0);
+    filter: brightness(1) sepia(0) saturate(1)
+      drop-shadow(2px 3px 0 rgba(28, 23, 36, 0.3));
+  }
+  35% {
+    transform: translateX(-3px);
+    filter: brightness(1.75) sepia(0.55) saturate(1.9) hue-rotate(315deg)
+      drop-shadow(0 0 4px rgba(255, 90, 78, 0.85))
+      drop-shadow(2px 3px 0 rgba(28, 23, 36, 0.3));
+  }
+  70% {
+    transform: translateX(2px);
+    filter: brightness(1.25) sepia(0.3) saturate(1.45) hue-rotate(330deg)
+      drop-shadow(0 0 2px rgba(212, 60, 80, 0.65))
+      drop-shadow(2px 3px 0 rgba(28, 23, 36, 0.3));
+  }
+  100% {
+    transform: translateX(0);
+    filter: brightness(1) sepia(0) saturate(1)
+      drop-shadow(2px 3px 0 rgba(28, 23, 36, 0.3));
+  }
+}
+
+@keyframes vfx-block-pop {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+    box-shadow: none;
+  }
+  45% {
+    transform: scale(1.14);
+    filter: brightness(1.45) saturate(1.2);
+    box-shadow:
+      inset 0 0 0 1px #cfe0ff,
+      0 0 0 2px rgba(143, 194, 255, 0.45);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+    box-shadow: none;
+  }
+}
+
+@keyframes vfx-burn-pulse {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+    box-shadow: none;
+  }
+  45% {
+    transform: scale(1.08);
+    filter: brightness(1.35) saturate(1.45);
+    box-shadow:
+      inset 0 0 0 1px #ffd9b0,
+      0 0 0 2px rgba(240, 144, 44, 0.45),
+      0 0 8px rgba(240, 144, 44, 0.75);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+    box-shadow: none;
+  }
+}
+
+@keyframes vfx-wither-pulse {
+  0% {
+    transform: translateY(0);
+    filter: brightness(1);
+    box-shadow:
+      inset 0 0 0 2px #735b34,
+      inset 0 3px 0 #b08a48,
+      inset 0 -2px 0 #0b0d12,
+      0 5px 0 rgba(28, 23, 36, 0.5);
+  }
+  45% {
+    transform: translateY(-1px);
+    filter: brightness(1.25) saturate(1.2);
+    box-shadow:
+      inset 0 0 0 2px #8f62d5,
+      inset 0 3px 0 #c2a0ff,
+      inset 0 -2px 0 #0b0d12,
+      0 0 0 2px rgba(143, 98, 213, 0.45),
+      0 5px 0 rgba(28, 23, 36, 0.5);
+  }
+  100% {
+    transform: translateY(0);
+    filter: brightness(1);
+    box-shadow:
+      inset 0 0 0 2px #735b34,
+      inset 0 3px 0 #b08a48,
+      inset 0 -2px 0 #0b0d12,
+      0 5px 0 rgba(28, 23, 36, 0.5);
+  }
+}
+
+@keyframes vfx-coin-heads-reveal {
+  0% {
+    transform: scale(1);
+    filter: brightness(1) drop-shadow(0 2px 0 rgba(28, 23, 36, 0.4));
+    box-shadow: none;
+  }
+  45% {
+    transform: scale(1.16);
+    filter: brightness(1.45) saturate(1.25)
+      drop-shadow(0 0 5px rgba(242, 207, 91, 0.95))
+      drop-shadow(0 2px 0 rgba(28, 23, 36, 0.4));
+    box-shadow: 0 0 0 3px rgba(242, 207, 91, 0.45);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1) drop-shadow(0 2px 0 rgba(28, 23, 36, 0.4));
+    box-shadow: none;
+  }
+}
+
+@keyframes vfx-coin-tails-reveal {
+  0% {
+    transform: scale(1);
+    filter: brightness(1) drop-shadow(0 2px 0 rgba(28, 23, 36, 0.4));
+    box-shadow: none;
+  }
+  45% {
+    transform: scale(1.16);
+    filter: brightness(1.35) saturate(1.18)
+      drop-shadow(0 0 5px rgba(207, 224, 255, 0.85))
+      drop-shadow(0 2px 0 rgba(28, 23, 36, 0.4));
+    box-shadow: 0 0 0 3px rgba(127, 138, 176, 0.5);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1) drop-shadow(0 2px 0 rgba(28, 23, 36, 0.4));
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unit.vfx-hit .sprite,
+  .block-chip.vfx-pop,
+  .burn-chip.vfx-pulse,
+  .unit-plate.vfx-wither,
+  .socket-coin.face-heads.vfx-reveal,
+  .socket-coin.face-tails.vfx-reveal {
+    animation: none;
+  }
+}

@@ -76,6 +76,32 @@ const boot = async (
 const shellAlive = (page) =>
   page.evaluate(() => document.querySelector("main.combat-shell") !== null);
 const handCount = (page) => page.locator(".hand-tray .coin").count();
+const hpValue = async (locator) =>
+  Number((await locator.innerText()).split("/")[0]);
+
+const keywordTooltipVisible = (page, description) =>
+  page.evaluate((expected) => {
+    const tip = [...document.querySelectorAll('[role="tooltip"]')].find(
+      (node) => node.textContent?.includes(expected) === true,
+    );
+    return tip !== undefined && getComputedStyle(tip).display !== "none";
+  }, description);
+
+const waitForKeywordTooltip = (page, description, visible) =>
+  page.waitForFunction(
+    ({ expected, shouldBeVisible }) => {
+      const tip = [...document.querySelectorAll('[role="tooltip"]')].find(
+        (node) => node.textContent?.includes(expected) === true,
+      );
+      const isVisible =
+        tip !== undefined && getComputedStyle(tip).display !== "none";
+      return isVisible === shouldBeVisible;
+    },
+    { expected: description, shouldBeVisible: visible },
+  );
+
+const BURN_DESCRIPTION =
+  "대상의 턴이 끝날 때 스택만큼 피해를 준다 (방어 무시). 그 뒤 스택이 1 줄어든다.";
 
 const waitForCombatOrBoundary = (page, timeout = 15000) =>
   page.waitForFunction(
@@ -733,10 +759,17 @@ const winCurrentCombat = async (page) => {
       });
     const detailShown = (index) =>
       page.evaluate(
-        (i) =>
-          getComputedStyle(
-            document.querySelectorAll(".skill-card")[i].querySelector("p"),
-          ).opacity === "1",
+        (i) => {
+          const effects =
+            [...document.querySelectorAll(".skill-card")][i]?.querySelector(
+              ".card-effects",
+            ) ?? null;
+          return (
+            effects !== null &&
+            effects.querySelector(".card-effect-badge") !== null &&
+            getComputedStyle(effects).display !== "none"
+          );
+        },
         index,
       );
     const parkPointer = async () => {
@@ -762,7 +795,7 @@ const winCurrentCombat = async (page) => {
       hovered.width <= maxCardWidth && hovered.top <= rest.top - 24,
       `w=${Math.round(hovered.width)} lift=${Math.round(rest.top - hovered.top)}`,
     );
-    check(`S9 ${tag} 호버 상세 텍스트 노출`, await detailShown(1));
+    check(`S9 ${tag} 호버 효과 행 노출`, await detailShown(1));
     await page.screenshot({ path: `${outDir}/21-${tag}-hover.png` });
     await parkPointer();
 
@@ -803,7 +836,7 @@ const winCurrentCombat = async (page) => {
       `overlap=${Math.round(promoted.right - neighbor.left)}`,
     );
     check(`S9 ${tag} 승격 중 이웃 제목·소켓 무가림`, await adjacentClear());
-    check(`S9 ${tag} 승격 카드 상세 노출`, await detailShown(1));
+    check(`S9 ${tag} 승격 카드 효과 행 노출`, await detailShown(1));
     await page.screenshot({ path: `${outDir}/23-${tag}-loaded-hover.png` });
     await parkPointer();
 
@@ -1743,6 +1776,259 @@ const winCurrentCombat = async (page) => {
   check("S13 boot2 결정 동작 후 페이지 live", (await handCount(second.page)) === 4);
   check("S13 boot2 콘솔/페이지 에러 0", second.errors.length === 0);
   await second.page.close();
+}
+
+// ---------- 시나리오 14: UX 키워드 툴팁 접근성 ----------
+{
+  const { page, errors } = await boot();
+  // 화상 키워드 버튼을 텍스트로 전역 선택 — 슬롯 인덱스 가정 금지 (콘텐츠 순서가 바뀌어도 유효)
+  const trigger = page
+    .locator(".card-effects .kw")
+    .filter({ hasText: "화상" })
+    .first();
+  const card = page
+    .locator(".skill-card")
+    .filter({ has: page.locator(".card-effects .kw", { hasText: "화상" }) })
+    .first();
+  const handBefore = await handCount(page);
+  const spentBefore = await page.locator(".skill-card.spent").count();
+
+  check("S14 카드 효과 키워드 트리거 존재", (await trigger.count()) >= 1);
+  await card.hover();
+  await trigger.hover();
+  await waitForKeywordTooltip(page, BURN_DESCRIPTION, true);
+  check(
+    "S14 hover 툴팁 정의 표시",
+    await keywordTooltipVisible(page, BURN_DESCRIPTION),
+  );
+  await page.mouse.move(20, 200);
+  await waitForKeywordTooltip(page, BURN_DESCRIPTION, false);
+  check(
+    "S14 hover 해제 툴팁 닫힘",
+    !(await keywordTooltipVisible(page, BURN_DESCRIPTION)),
+  );
+
+  await trigger.focus();
+  await waitForKeywordTooltip(page, BURN_DESCRIPTION, true);
+  check(
+    "S14 Tab 포커스 툴팁 표시",
+    await keywordTooltipVisible(page, BURN_DESCRIPTION),
+  );
+  await page.keyboard.press("Escape");
+  await waitForKeywordTooltip(page, BURN_DESCRIPTION, false);
+
+  await trigger.click();
+  await waitForKeywordTooltip(page, BURN_DESCRIPTION, true);
+  await page.mouse.move(20, 200);
+  check(
+    "S14 클릭 툴팁 열림 유지",
+    await keywordTooltipVisible(page, BURN_DESCRIPTION),
+  );
+  await page.keyboard.press("Escape");
+  await waitForKeywordTooltip(page, BURN_DESCRIPTION, false);
+  check(
+    "S14 Escape 클릭 툴팁 닫힘",
+    !(await keywordTooltipVisible(page, BURN_DESCRIPTION)),
+  );
+
+  await trigger.click();
+  await waitForKeywordTooltip(page, BURN_DESCRIPTION, true);
+  await page.mouse.click(20, 200);
+  await waitForKeywordTooltip(page, BURN_DESCRIPTION, false);
+  check(
+    "S14 바깥 클릭 툴팁 닫힘",
+    !(await keywordTooltipVisible(page, BURN_DESCRIPTION)),
+  );
+  check(
+    "S14 키워드 클릭이 카드 사용 오발 없음",
+    (await handCount(page)) === handBefore &&
+      (await page.locator(".skill-card.spent").count()) === spentBefore &&
+      (await card.locator(".socket.loaded").count()) === 0,
+  );
+  check("S14 에러 0", errors.length === 0, errors.join(" | "));
+  await page.close();
+}
+
+// ---------- 시나리오 15: 카드 효과 문법 행 + 기하 회귀 ----------
+{
+  const { page, errors } = await boot();
+  const rowsText = (index) =>
+    page.locator(".skill-card").nth(index).locator(".card-effects").innerText();
+  const slash = await rowsText(0);
+  const guard = await rowsText(1);
+  const burningStrike = await rowsText(2);
+  const ignition = await rowsText(4);
+  const cardMetrics = await page.locator(".skill-card").evaluateAll((cards) =>
+    cards.map((card) => {
+      const rect = card.getBoundingClientRect();
+      return {
+        width: Math.round(rect.width),
+        rows: card.querySelectorAll(".card-effect-row").length,
+      };
+    }),
+  );
+
+  check(
+    "S15 모든 스킬 카드 효과 행 존재",
+    cardMetrics.length >= 6 && cardMetrics.slice(0, 6).every((item) => item.rows >= 1),
+    JSON.stringify(cardMetrics),
+  );
+  check(
+    "S15 베기 기본·앞면 행",
+    slash.includes("기본") && slash.includes("앞면"),
+    slash.replace(/\n/g, " / "),
+  );
+  check("S15 방어 뒷면 행", guard.includes("뒷면"), guard.replace(/\n/g, " / "));
+  check(
+    "S15 불타는 일격 앞면 동전마다 표기",
+    burningStrike.includes("앞면") && burningStrike.includes("동전마다"),
+    burningStrike.replace(/\n/g, " / "),
+  );
+  // 회귀 (값 잘림): 앞면 행의 실제 수치가 화면에서 잘리지 않고 보여야 한다 —
+  // innerText는 ellipsis로 가려진 글자도 돌려주므로 기하(클립 박스·가로 넘침)로 판정한다
+  const strikeHeadsVisible = await page
+    .locator(".skill-card")
+    .nth(2)
+    .locator(".card-effect-row.heads")
+    .evaluate((row) => {
+      const wrap = row.closest(".card-effects");
+      const rowRect = row.getBoundingClientRect();
+      const wrapRect = wrap.getBoundingClientRect();
+      const copy = row.querySelector(".card-effect-copy");
+      return {
+        text: row.innerText.replace(/\n/g, " "),
+        inside:
+          rowRect.top >= wrapRect.top - 1 &&
+          rowRect.bottom <= wrapRect.bottom + 1,
+        noClip: copy.scrollWidth <= copy.clientWidth + 1,
+      };
+    });
+  check(
+    "S15 앞면 행 수치 가시 (피해 +3, 잘림 없음)",
+    strikeHeadsVisible.text.includes("피해 +3") &&
+      strikeHeadsVisible.inside &&
+      strikeHeadsVisible.noClip,
+    JSON.stringify(strikeHeadsVisible),
+  );
+  // 회귀 (행 클리핑): 어떤 카드도 효과 행이 세로로 잘리면 안 된다 — 부족분은 아트가 양보
+  const rowClipReport = await page.locator(".skill-card").evaluateAll((cards) =>
+    cards.slice(0, 6).map((card) => {
+      const wrap = card.querySelector(".card-effects");
+      if (wrap === null) return { overflow: true, title: "" };
+      return {
+        title: card.querySelector(".card-title")?.textContent?.trim() ?? "",
+        overflow: wrap.scrollHeight > wrap.clientHeight + 1,
+      };
+    }),
+  );
+  check(
+    "S15 전 카드 효과 행 클리핑 없음",
+    rowClipReport.every((item) => !item.overflow),
+    JSON.stringify(rowClipReport.filter((item) => item.overflow)),
+  );
+  check(
+    "S15 점화 검술 비용 행",
+    ignition.includes("비용") && ignition.includes("소비"),
+    ignition.replace(/\n/g, " / "),
+  );
+  check(
+    "S15 카드 폭 기존 한계 유지",
+    cardMetrics.slice(0, 6).every((item) => item.width <= 126),
+    cardMetrics.map((item) => String(item.width)).join(","),
+  );
+  check("S15 에러 0", errors.length === 0, errors.join(" | "));
+  await page.close();
+}
+
+// ---------- 시나리오 16: 결산 티켓 — 면·기본·합계 인과 ----------
+{
+  const { page, errors } = await boot();
+  const enemyHp = page.locator(".unit.enemy .hp-num");
+  const beforeHp = await hpValue(enemyHp);
+
+  await page.locator(".hand-tray .coin").first().click();
+  await page.locator(".skill-card").first().locator(".socket").first().click();
+  await page.locator(".skill-card").first().locator(".card-title").click();
+  await waitForCombatOrBoundary(page);
+  const afterHp = await hpValue(enemyHp);
+  const damage = beforeHp - afterHp;
+  const ticket = page.locator(".resolution-ticket-anchor .resolution-ticket");
+  const ticketText = await ticket.innerText();
+  const totalText = await ticket.locator(".resolution-ticket__total").innerText();
+
+  check("S16 결산 티켓 표시", (await ticket.count()) === 1);
+  check(
+    "S16 티켓 면 칩 1개",
+    (await ticket.locator(".resolution-ticket__face").count()) === 1,
+  );
+  check("S16 티켓 기본 라인", ticketText.includes("기본"), ticketText.replace(/\n/g, " / "));
+  check("S16 티켓 합계 라인", totalText.includes("합계"), totalText);
+  check(
+    "S16 합계 피해 = 적 HP 감소량",
+    totalText.includes(`피해 ${damage}`),
+    `${totalText} / hp ${beforeHp}→${afterHp}`,
+  );
+
+  await page.locator(".hand-tray .coin").first().click();
+  await page.locator(".skill-card").nth(1).locator(".socket").first().click();
+  check(
+    "S16 다음 커맨드에 티켓 제거",
+    (await page.locator(".resolution-ticket-anchor .resolution-ticket").count()) === 0,
+  );
+  check("S16 에러 0", errors.length === 0, errors.join(" | "));
+  await page.close();
+}
+
+// ---------- 시나리오 17: 위축 정본 어휘 ----------
+{
+  const { page, errors } = await boot();
+  const bodyText = await page.locator("body").innerText();
+  check("S17 페이지 전체에 쇠약 부재", !bodyText.includes("쇠약"));
+  check("S17 에러 0", errors.length === 0, errors.join(" | "));
+  await page.close();
+}
+
+// ---------- 시나리오 18: 이벤트 VFX 새니티 + reduced-motion ----------
+{
+  const { page, errors } = await boot();
+  await page.locator(".hand-tray .coin").first().click();
+  await page.locator(".skill-card").first().locator(".socket").first().click();
+  await page.locator(".skill-card").first().locator(".card-title").click();
+  const sawReveal = await page
+    .waitForFunction(
+      () => document.querySelector(".socket-coin.vfx-reveal") !== null,
+      undefined,
+      { timeout: 5000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  check("S18 socket-coin vfx-reveal 등장", sawReveal);
+  const revealCleared = await page
+    .waitForFunction(
+      () => document.querySelector(".socket-coin.vfx-reveal") === null,
+      undefined,
+      { timeout: 5000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  check("S18 socket-coin vfx-reveal 사라짐", revealCleared);
+  await waitForCombatOrBoundary(page);
+  check("S18 기본 모션 플로우 완료", await shellAlive(page));
+  check("S18 기본 모션 에러 0", errors.length === 0, errors.join(" | "));
+  await page.close();
+
+  const reduced = await boot({ width: 1280, height: 720 }, { fast: true });
+  await reduced.page.locator(".hand-tray .coin").first().click();
+  await reduced.page.locator(".skill-card").first().locator(".socket").first().click();
+  await reduced.page.locator(".skill-card").first().locator(".card-title").click();
+  await waitForCombatOrBoundary(reduced.page);
+  check("S18 reduced-motion 플로우 완료", await shellAlive(reduced.page));
+  check(
+    "S18 reduced-motion 에러 0",
+    reduced.errors.length === 0,
+    reduced.errors.join(" | "),
+  );
+  await reduced.page.close();
 }
 
 await browser.close();

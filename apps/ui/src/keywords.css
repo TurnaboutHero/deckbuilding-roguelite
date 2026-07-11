@@ -1,0 +1,66 @@
+.kw-host {
+  position: relative;
+  display: inline-block;
+  line-height: inherit;
+}
+
+.kw {
+  appearance: none;
+  display: inline;
+  padding: 0;
+  font: inherit;
+  line-height: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dotted var(--gold, #f2cf5b);
+  border-radius: 0;
+  cursor: help;
+}
+
+.kw:focus-visible {
+  outline: 2px solid var(--gold-2, #f7df89);
+  outline-offset: 2px;
+}
+
+.kw-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  z-index: 20;
+  display: none;
+  width: max-content;
+  max-width: 220px;
+  padding: 7px 9px;
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  color: var(--paper, #f3ead2);
+  background: var(--slate, #2f3241);
+  border: 2px solid var(--out, #151019);
+  box-shadow: 0 4px 0 rgba(28, 23, 36, 0.5);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.kw-tip strong {
+  display: block;
+  margin-bottom: 4px;
+  padding-bottom: 3px;
+  font-size: 10px;
+  font-weight: 400;
+  color: #cfc8b8;
+  border-bottom: 1px solid var(--slate-2, #59627f);
+}
+
+.kw-host:hover .kw-tip,
+.kw:focus-visible + .kw-tip,
+.kw-host[data-open="true"] .kw-tip {
+  display: block;
+}
+
+/* Escape 억제 — hover/focus 표시 규칙보다 우선한다 (해제는 hover 이탈·blur에서) */
+.kw-host[data-suppressed="true"] .kw-tip {
+  display: none;
+}

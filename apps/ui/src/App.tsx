@@ -28,8 +28,10 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
 import "./App.css";
+import "./vfx.css";
 import { AtlasSprite } from "./AtlasSprite";
 import { REJECTION_TEXT, rejectionReason } from "./action-feedback";
+import { CardEffectRows } from "./card-effects";
 import {
   autoSuggestFuel,
   fuelCommand,
@@ -45,6 +47,10 @@ import {
   SkullIcon,
   SwordIcon,
 } from "./icons";
+import { Keyword } from "./keywords";
+import { buildResolutionSummary } from "./resolution-summary";
+import { ResolutionTicket } from "./resolution-ticket";
+import type { ResolutionSummary } from "./resolution-summary";
 import bgForest from "./assets/bg-forest.webp";
 import cardSlash from "./assets/card-slash.webp";
 import cardGuard from "./assets/card-guard.webp";
@@ -150,6 +156,10 @@ type FloatText = {
   kind: "damage" | "block" | "status" | "coin";
 };
 type RejectionChip = { id: number; text: string };
+type PendingResolution = {
+  skillId: SkillId;
+  events: CombatEvent[];
+};
 type CombatAction = { type: "set"; state: CombatState };
 type DragState = {
   coin: CoinUid;
@@ -205,7 +215,7 @@ const IntentBadge = ({ enemy }: { enemy: CombatState["enemies"][number] }) => (
         </span>
       ) : (
         <span key={index} aria-label={`다음 드로우 ${action.amount} 감소`}>
-          쇠약 -{action.amount}
+          <Keyword term="wither">위축 -{action.amount}</Keyword>
         </span>
       ),
     )}
@@ -382,16 +392,18 @@ const CoinDisc = ({
   coin,
   face,
   flipping,
+  vfx = false,
 }: {
   state: CombatState;
   coin: CoinUid;
   face?: Face;
   flipping?: boolean;
+  vfx?: boolean;
 }) => (
   <span
     className={`socket-coin ${coinVisualClasses(state, coin)} ${flipping === true ? "flipping" : ""} ${
       face !== undefined ? `face-${face}` : ""
-    }`}
+    } ${vfx ? "vfx-reveal" : ""}`}
   >
     {face !== undefined ? (
       <span className={`coin-face-mark ${face}`}>
@@ -1091,8 +1103,13 @@ const CombatBoard = ({
   const [shakeCoin, setShakeCoin] = useState<CoinUid | null>(null);
   const [hintStage, setHintStage] = useState<0 | 1 | 2>(0);
   const [openPile, setOpenPile] = useState<CoinPileZone | null>(null);
+  const [resolutionTicket, setResolutionTicket] =
+    useState<ResolutionSummary | null>(null);
+  const [vfx, setVfx] = useState<Set<string>>(() => new Set());
   const pouchRef = useRef<HTMLDivElement | null>(null);
   const pileCountsRef = useRef<HTMLDivElement | null>(null);
+  const pendingResolution = useRef<PendingResolution | null>(null);
+  const resolutionTimer = useRef<number | null>(null);
   const nextFloatId = useRef(1);
   const nextRejectionId = useRef(1);
   const rejectionTimer = useRef<number | null>(null);
@@ -1102,6 +1119,43 @@ const CombatBoard = ({
   const legal = useMemo(() => legalCommands(state, contentDb), [state]);
 
   const selectCoin = (coin: CoinUid | null) => setSelectedCoin(coin);
+
+  const clearResolutionTicket = () => {
+    if (resolutionTimer.current !== null) {
+      window.clearTimeout(resolutionTimer.current);
+      resolutionTimer.current = null;
+    }
+    setResolutionTicket(null);
+  };
+
+  const showResolutionTicket = (pending: PendingResolution) => {
+    const skill = contentDb.skills[String(pending.skillId)];
+    if (skill === undefined) return;
+    clearResolutionTicket();
+    setResolutionTicket(buildResolutionSummary(skill, pending.events));
+    resolutionTimer.current = window.setTimeout(() => {
+      setResolutionTicket(null);
+      resolutionTimer.current = null;
+    }, 7000);
+  };
+
+  const triggerVfx = (key: string, duration = 360) => {
+    setVfx((current) => {
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+    window.setTimeout(() => {
+      setVfx((current) => new Set(current).add(key));
+      window.setTimeout(() => {
+        setVfx((current) => {
+          const next = new Set(current);
+          next.delete(key);
+          return next;
+        });
+      }, duration);
+    }, 0);
+  };
 
   useEffect(() => {
     onTelemetryCombatStart(combat);
@@ -1159,6 +1213,8 @@ const CombatBoard = ({
     () => () => {
       if (rejectionTimer.current !== null)
         window.clearTimeout(rejectionTimer.current);
+      if (resolutionTimer.current !== null)
+        window.clearTimeout(resolutionTimer.current);
     },
     [],
   );
@@ -1177,7 +1233,11 @@ const CombatBoard = ({
     }
     if (events.some((event) => event.type === "coinPlaced"))
       setHintStage((stage) => (stage === 0 ? 1 : stage));
-    if (events.some((event) => event.type === "skillUsed")) setHintStage(2);
+    const skillUsed = events.find((event) => event.type === "skillUsed");
+    if (skillUsed !== undefined) {
+      setHintStage(2);
+      pendingResolution.current = { skillId: skillUsed.skill, events };
+    }
   };
 
   const runCommand = (cmd: Command, showFeedback = false): boolean => {
@@ -1200,6 +1260,7 @@ const CombatBoard = ({
       if (showFeedback) showRejection(REJECTION_TEXT.generic);
       return false;
     }
+    clearResolutionTicket();
     onTelemetryDecision(state, [legalCommand], result.state, result.events);
     commit(result.state, result.events);
     return true;
@@ -1215,6 +1276,7 @@ const CombatBoard = ({
       if (showFeedback) showRejection(REJECTION_TEXT.generic);
       return false;
     }
+    clearResolutionTicket();
     onTelemetryDecision(state, [cmd], result.state, result.events);
     commit(result.state, result.events);
     return true;
@@ -1241,6 +1303,7 @@ const CombatBoard = ({
       }
       return false;
     }
+    clearResolutionTicket();
     onTelemetryDecision(state, commands, result.state, result.events);
     commit(result.state, result.events);
     return true;
@@ -1342,9 +1405,17 @@ const CombatBoard = ({
       if (resolving !== null) {
         const hold = window.setTimeout(() => {
           setResolving(null);
+          if (pendingResolution.current !== null) {
+            showResolutionTicket(pendingResolution.current);
+            pendingResolution.current = null;
+          }
           setLocked(false);
         }, 650);
         return () => window.clearTimeout(hold);
+      }
+      if (pendingResolution.current !== null) {
+        showResolutionTicket(pendingResolution.current);
+        pendingResolution.current = null;
       }
       setLocked(false);
       return undefined;
@@ -1372,11 +1443,15 @@ const CombatBoard = ({
       window.setTimeout(() => {
         setCoinFaces((faces) => coinFacesAfterEvent(faces, event));
         setFlipping((items) => ({ ...items, [Number(event.coin)]: false }));
+        triggerVfx(`coin-${Number(event.coin)}`, 330);
       }, 600);
     } else if (event?.type === "coinsDrawn") {
       setCoinFaces((faces) => coinFacesAfterEvent(faces, event));
       delay = 220;
     } else if (event?.type === "damageDealt") {
+      triggerVfx(
+        `unit-${event.target.type === "player" ? "player" : "enemy"}`,
+      );
       showFloat(
         `-${event.amount}`,
         event.target.type === "player" ? "player" : "enemy",
@@ -1384,6 +1459,9 @@ const CombatBoard = ({
       );
       delay = event.source === "enemy" ? 520 : 420;
     } else if (event?.type === "blockGained") {
+      triggerVfx(
+        `block-${event.target.type === "player" ? "player" : "enemy"}`,
+      );
       showFloat(
         `+${event.amount}`,
         event.target.type === "player" ? "player" : "enemy",
@@ -1391,6 +1469,10 @@ const CombatBoard = ({
       );
       delay = 360;
     } else if (event?.type === "statusApplied") {
+      if (event.status === "burn")
+        triggerVfx(
+          `burn-${event.target.type === "player" ? "player" : "enemy"}`,
+        );
       showFloat(
         `화상 +${event.stacks}`,
         event.target.type === "player" ? "player" : "enemy",
@@ -1398,6 +1480,10 @@ const CombatBoard = ({
       );
       delay = 380;
     } else if (event?.type === "statusTicked") {
+      if (event.status === "burn")
+        triggerVfx(
+          `burn-${event.target.type === "player" ? "player" : "enemy"}`,
+        );
       showFloat(
         `화상 -${event.amount}`,
         event.target.type === "player" ? "player" : "enemy",
@@ -1405,6 +1491,7 @@ const CombatBoard = ({
       );
       delay = 460;
     } else if (event?.type === "witherApplied") {
+      triggerVfx("wither-player");
       showFloat(`다음 드로우 -${event.amount}`, "player", "status");
       delay = 460;
     } else if (event?.type === "coinCreated") {
@@ -1589,6 +1676,7 @@ const CombatBoard = ({
           floats={floats}
           motion={playerMotion}
           playKey={playerMotion === "idle" ? 0 : spritePlayKey}
+          vfx={vfx}
         />
         {enemy !== undefined ? (
           <UnitPanel
@@ -1603,6 +1691,7 @@ const CombatBoard = ({
             floats={floats}
             motion={enemyMotion}
             playKey={enemyMotion === "idle" ? 0 : spritePlayKey}
+            vfx={vfx}
           />
         ) : null}
       </section>
@@ -1611,6 +1700,11 @@ const CombatBoard = ({
         className={`skill-row ${locked ? "dimmed" : ""}`}
         aria-label="스킬 카드"
       >
+        <div className="resolution-ticket-anchor" aria-live="polite">
+          {resolutionTicket !== null ? (
+            <ResolutionTicket summary={resolutionTicket} />
+          ) : null}
+        </div>
         {state.slots.slice(0, 6).map((slotState, index) => {
           const skill = contentDb.skills[String(slotState.skillId)];
           const placed = state.zones.placed[slot(index)] ?? [];
@@ -1804,6 +1898,10 @@ const CombatBoard = ({
                               isResolving && flipping[Number(coin)] === true
                             }
                             state={state}
+                            vfx={
+                              coin !== undefined &&
+                              vfx.has(`coin-${Number(coin)}`)
+                            }
                           />
                         ) : null}
                       </button>
@@ -1822,7 +1920,7 @@ const CombatBoard = ({
                     {selectingFuel
                       ? `${fuelSelection.coins.length}/${skill.consume.count}`
                       : skill.consume.count}{" "}
-                    소비
+                    <Keyword term="consume">소비</Keyword>
                   </span>
                 </div>
               ) : null}
@@ -1844,7 +1942,7 @@ const CombatBoard = ({
                   </span>
                 )}
               </div>
-              <p>{effectText(String(slotState.skillId))}</p>
+              {skill !== undefined ? <CardEffectRows skill={skill} /> : null}
               {slotState.usedThisTurn ? (
                 <span className="spent-label">사용됨</span>
               ) : null}
@@ -1857,7 +1955,8 @@ const CombatBoard = ({
                   방어 {preview.byAxis.block.min}~{preview.byAxis.block.max}{" "}
                   (기대 {preview.expected.block})
                   <br />
-                  화상 {preview.byAxis.burn.min}~{preview.byAxis.burn.max} (기대{" "}
+                  <Keyword term="burn">화상</Keyword>{" "}
+                  {preview.byAxis.burn.min}~{preview.byAxis.burn.max} (기대{" "}
                   {preview.expected.burn})
                   {preview.byAxis.selfDamage.max > 0 ? (
                     <>
@@ -2037,6 +2136,7 @@ interface UnitPanelProps {
   floats: FloatText[];
   motion: "idle" | "attack" | "hurt";
   playKey: number;
+  vfx: Set<string>;
 }
 
 const UnitPanel = ({
@@ -2051,22 +2151,35 @@ const UnitPanel = ({
   floats,
   motion,
   playKey,
+  vfx,
 }: UnitPanelProps) => (
-  <div className={`unit ${side}`}>
-    <div className="unit-plate">
+  <div className={`unit ${side} ${vfx.has(`unit-${side}`) ? "vfx-hit" : ""}`}>
+    <div
+      className={`unit-plate ${vfx.has(`wither-${side}`) ? "vfx-wither" : ""}`}
+    >
       <div className="plate-row">
         <span className="unit-name">{name}</span>
         {block > 0 ? (
-          <em aria-label={`방어 ${block}`} className="block-chip">
-            <ShieldIcon scale={1.4} />
-            {block}
-          </em>
+          <Keyword term="block" className="chip-keyword">
+            <em
+              aria-label={`방어 ${block}`}
+              className={`block-chip ${vfx.has(`block-${side}`) ? "vfx-pop" : ""}`}
+            >
+              <ShieldIcon scale={1.4} />
+              {block}
+            </em>
+          </Keyword>
         ) : null}
         {(statuses.burn ?? 0) > 0 ? (
-          <em aria-label={`화상 ${statuses.burn}`} className="burn-chip">
-            <EmberIcon scale={1.4} />
-            {statuses.burn}
-          </em>
+          <Keyword term="burn" className="chip-keyword">
+            <em
+              aria-label={`화상 ${statuses.burn}`}
+              className={`burn-chip ${vfx.has(`burn-${side}`) ? "vfx-pulse" : ""}`}
+            >
+              <EmberIcon scale={1.4} />
+              {statuses.burn}
+            </em>
+          </Keyword>
         ) : null}
       </div>
       <div aria-label={`체력 ${hp}/${maxHp}`} className="hp-bar">

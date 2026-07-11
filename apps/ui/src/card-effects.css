@@ -1,0 +1,66 @@
+.card-effects {
+  width: 100%;
+  min-height: 3.2em;
+  padding: 3px 4px;
+  color: #f3ead2;
+  background: #141820;
+  border-top: 2px solid #5d4d34;
+  opacity: 0.86;
+}
+
+.card-effect-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 4px;
+  min-height: 15px;
+  font-size: 10.5px;
+  line-height: 1.25;
+  text-align: left;
+}
+
+.card-effect-badge {
+  min-width: 24px;
+  padding: 1px 3px;
+  font-size: 10px;
+  line-height: 1.1;
+  text-align: center;
+  color: var(--paper, #f3ead2);
+  background: #2f3241;
+  border: 1px solid var(--out, #151019);
+}
+
+.card-effect-row.heads .card-effect-badge {
+  color: var(--ink, #151019);
+  background: var(--gold, #f2cf5b);
+  border-color: #fff3c4;
+  box-shadow: 0 0 4px rgba(242, 207, 91, 0.65);
+}
+
+.card-effect-row.tails .card-effect-badge {
+  color: #cfe0ff;
+  background: #2b3047;
+  border-color: #7f8ab0;
+}
+
+.card-effect-row.cost .card-effect-badge {
+  color: var(--ink, #151019);
+  background: var(--flame, #f0902c);
+}
+
+/* 줄바꿈 허용 — 수치는 절대 숨기지 않는다 (카드 폭·HUD 높이는 그대로).
+   한국어 어절 단위 줄바꿈(keep-all)으로 "소비"가 "소/비"로 끊기지 않게 한다 */
+.card-effect-copy {
+  min-width: 0;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.card-effect-mode {
+  color: #aeb7cf;
+}
+
+.card-effect-segment .kw-tip {
+  bottom: calc(100% + 5px);
+}
