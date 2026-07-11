@@ -4,11 +4,16 @@ import type { CoinUid, Face, SlotId } from '../../ids';
 import { rngFrom } from '../../rng';
 import type { CombatEvent } from '../events';
 import { statusTurns } from '../state';
-import type { CombatState, StatusState } from '../state';
+import type { CombatState, StatusState, TurnTriggerInstance } from '../state';
 
 export interface ResolveResult {
   state: CombatState;
   events: CombatEvent[];
+}
+
+interface ApplyEffectOptions {
+  suppressTurnTriggers?: boolean;
+  turnTriggerScope?: readonly TurnTriggerInstance[];
 }
 
 const isAliveEnemy = (state: CombatState, index: number): boolean => {
@@ -195,12 +200,17 @@ export const applyEffectAtom = (
   target: TargetRef,
   db: ContentDb,
   events: CombatEvent[],
-  chosen?: readonly CoinUid[]
+  chosen?: readonly CoinUid[],
+  options?: ApplyEffectOptions
 ): CombatState => {
   if (state.phase === 'victory' || state.phase === 'defeat') return state;
   switch (atom.kind) {
-    case 'damage':
-      return applyDamage(state, target, atom.amount, 'skill', events, { type: 'player' });
+    case 'damage': {
+      const damaged = applyDamage(state, target, atom.amount, 'skill', events, { type: 'player' });
+      return target.type === 'enemy' && options?.suppressTurnTriggers !== true
+        ? fireTurnTriggers(damaged, 'onDamageDealt', target, db, events, options?.turnTriggerScope)
+        : damaged;
+    }
     case 'block':
       return applyBlock(state, { type: 'player' }, atom.amount, events);
     case 'selfDamage':
@@ -234,7 +244,40 @@ export const applyEffectAtom = (
       return addTemporaryCoin(state, atom, events);
     case 'grantElement':
       return grantElement(state, atom, db, events, chosen);
+    case 'addTurnTrigger': {
+      events.push({ type: 'turnTriggerAdded', trigger: atom.trigger.id });
+      return {
+        ...state,
+        nextTurnTriggerUid: state.nextTurnTriggerUid + 1,
+        turnTriggers: [...state.turnTriggers, { uid: state.nextTurnTriggerUid, trigger: atom.trigger }]
+      };
+    }
   }
+};
+
+export const fireTurnTriggers = (
+  input: CombatState,
+  hook: 'onDamageDealt' | 'onAttackSkillResolved',
+  target: TargetRef,
+  db: ContentDb,
+  events: CombatEvent[],
+  triggerScope: readonly TurnTriggerInstance[] = input.turnTriggers
+): CombatState => {
+  let state = input;
+  // 종료 우선 결정 (P3.3 감사): 전투가 끝난 뒤에는 어떤 훅도 발동·기록하지 않는다 —
+  // P5 미시 종료 규칙이 §12 "피해 여부 무관" 자구(0피해 취지)보다 우선한다.
+  if (state.phase === 'victory' || state.phase === 'defeat') return state;
+  for (const instance of triggerScope) {
+    if (instance.trigger.hook !== hook) continue;
+    // 인스턴스 사이 종료는 내부 루프의 return이 보장한다 — 여기 도달하면 항상 비종료 상태
+    events.push({ type: 'turnTriggerFired', trigger: instance.trigger.id, hook });
+    for (const atom of instance.trigger.effects) {
+      state = applyEffectAtom(state, atom, target, db, events, undefined, { suppressTurnTriggers: true });
+      state = checkCombatEnd(state, events);
+      if (state.phase === 'victory' || state.phase === 'defeat') return state;
+    }
+  }
+  return state;
 };
 
 const targetForElementProc = (state: CombatState, atom: EffectAtom, skillTarget: TargetRef): TargetRef | undefined => {
@@ -307,6 +350,7 @@ export const resolveFlip = (
   if (placed.length !== skill.cost) throw new Error('placed coin count must equal skill cost');
   const skillTarget = targetForSkill(input, skill, target);
   const events: CombatEvent[] = [{ type: 'skillUsed', slot, skill: skill.id, kind: 'flip' }];
+  const turnTriggerScope = input.turnTriggers;
   const finish = (finishedState: CombatState): ResolveResult => {
     events.push({ type: 'coinsDiscarded', coins: [...placed], reason: 'skillCost' });
     return {
@@ -342,7 +386,7 @@ export const resolveFlip = (
   state = { ...state, rng: { ...state.rng, flip: rng.snapshot() } };
 
   for (const atom of collectEffects(skill, faces)) {
-    state = applyEffectAtom(state, atom, skillTarget, db, events, chosen);
+    state = applyEffectAtom(state, atom, skillTarget, db, events, chosen, { turnTriggerScope });
     if (state.phase === 'victory' || state.phase === 'defeat') return finish(state);
   }
 
@@ -356,12 +400,15 @@ export const resolveFlip = (
       for (const atom of proc.effects) {
         const procTarget = targetForElementProc(state, atom, skillTarget);
         if (procTarget === undefined) continue;
-        state = applyEffectAtom(state, atom, procTarget, db, events);
+        state = applyEffectAtom(state, atom, procTarget, db, events, undefined, { turnTriggerScope });
         if (state.phase === 'victory' || state.phase === 'defeat') return finish(state);
       }
     }
   }
 
   state = checkCombatEnd(state, events);
+  if (state.phase !== 'victory' && state.phase !== 'defeat' && skill.tags.includes('attack')) {
+    state = fireTurnTriggers(state, 'onAttackSkillResolved', skillTarget, db, events, turnTriggerScope);
+  }
   return finish(state);
 };

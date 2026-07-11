@@ -3,7 +3,7 @@ import { effectiveElements } from '../../content-types';
 import type { CoinUid, SlotId } from '../../ids';
 import type { CombatEvent } from '../events';
 import type { CombatState } from '../state';
-import { applyEffectAtom, checkCombatEnd } from './flip';
+import { applyEffectAtom, checkCombatEnd, fireTurnTriggers } from './flip';
 
 export interface ResolveConsumeResult {
   state: CombatState;
@@ -61,6 +61,7 @@ export const resolveConsume = (
   }
 
   const skillTarget = targetForSkill(input, skill, target);
+  const turnTriggerScope = input.turnTriggers;
   const consumed = new Set<CoinUid>(coins);
   const events: CombatEvent[] = [
     { type: 'skillUsed', slot, skill: skill.id, kind: 'consume' },
@@ -82,9 +83,13 @@ export const resolveConsume = (
   };
 
   for (const atom of skill.effects) {
-    state = applyEffectAtom(state, atom, skillTarget, db, events);
+    state = applyEffectAtom(state, atom, skillTarget, db, events, undefined, { turnTriggerScope });
     if (state.phase === 'victory' || state.phase === 'defeat') return { state, events };
   }
 
-  return { state: checkCombatEnd(state, events), events };
+  state = checkCombatEnd(state, events);
+  if (state.phase !== 'victory' && state.phase !== 'defeat' && skill.tags.includes('attack')) {
+    state = fireTurnTriggers(state, 'onAttackSkillResolved', skillTarget, db, events, turnTriggerScope);
+  }
+  return { state, events };
 };

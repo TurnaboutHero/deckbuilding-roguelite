@@ -40,6 +40,7 @@ const describeEffect = (effect: EffectAtom, db: ContentDb): string => {
     const target = effect.to === "self" ? "자신" : "대상";
     return `${target}에게 ${effect.status} ${effect.stacks}`;
   }
+  if (effect.kind === "addTurnTrigger") return "턴 트리거 추가";
   return `기본 코인을 ${elementKo(effect.element)} 코인으로 취급`;
 };
 

@@ -162,9 +162,11 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
       usedThisTurn: false,
       usedThisCombat: false
     })),
+    turnTriggers: [],
     skillUsesThisTurn: 0,
     rng: { flip: derive(combat, 'flip'), shuffle: shuffleRng.snapshot(), ai: derive(combat, 'ai') },
     nextUid: bag.length + 1,
+    nextTurnTriggerUid: 1,
     events: []
   };
 
@@ -291,6 +293,10 @@ const endTurn = (input: CombatState, db: ContentDb): StepResult => {
   state = tickPlayerDurations(state, events);
   state = checkCombatEnd(state, events);
   if (state.phase === 'defeat') return { ok: true, state, events };
+  if (state.turnTriggers.length > 0) {
+    events.push({ type: 'turnTriggersExpired', count: state.turnTriggers.length });
+    state = { ...state, turnTriggers: [] };
+  }
 
   const clearedCoins = Object.fromEntries(
     Object.entries(state.coins).map(([key, coin]) => [key, { ...coin, grants: [] }])

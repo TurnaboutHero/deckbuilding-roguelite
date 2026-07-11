@@ -20,6 +20,9 @@ export type CombatEvent =
   | { type: 'statusTicked'; target: TargetRef; status: StatusId; amount: number; remaining: number; turns?: number }
   | { type: 'coinCreated'; coin: CoinUid; defId: string; zone: 'draw' | 'discard' | 'hand' }
   | { type: 'traitTriggered'; trait: string }
+  | { type: 'turnTriggerAdded'; trigger: string }
+  | { type: 'turnTriggerFired'; trigger: string; hook: string }
+  | { type: 'turnTriggersExpired'; count: number }
   | { type: 'coinsDiscarded'; coins: CoinUid[]; reason: 'skillCost' | 'turnEnd' }
   | { type: 'coinsConsumed'; coins: CoinUid[] }
   | { type: 'pileShuffled'; count: number }

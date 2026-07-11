@@ -1,4 +1,4 @@
-import type { CoinInstance, EnemyIntent, StatusId } from '../content-types';
+import type { CoinInstance, EnemyIntent, StatusId, TurnTriggerDef } from '../content-types';
 import type { CoinUid, EnemyDefId, SkillId, SlotId } from '../ids';
 import type { Rng, RngSnapshot } from '../rng';
 import type { CombatEvent } from './events';
@@ -40,6 +40,11 @@ export interface SlotState {
   usedThisCombat: boolean;
 }
 
+export interface TurnTriggerInstance {
+  uid: number;
+  trigger: TurnTriggerDef;
+}
+
 export interface CombatZones {
   draw: CoinUid[];
   hand: CoinUid[];
@@ -56,10 +61,12 @@ export interface CombatState {
   coins: Record<number, CoinInstance>;
   zones: CombatZones;
   slots: SlotState[];
+  turnTriggers: TurnTriggerInstance[];
   skillUsesThisTurn: number;
   rng: { flip: RngSnapshot; shuffle: RngSnapshot; ai: RngSnapshot };
   rngImpl?: { flip?: Rng; shuffle?: Rng; ai?: Rng };
   nextUid: number;
+  nextTurnTriggerUid: number;
   events: CombatEvent[];
 }
 
@@ -84,6 +91,10 @@ export const cloneState = (state: CombatState): CombatState => ({
     exhausted: [...state.zones.exhausted]
   },
   slots: state.slots.map((slot) => ({ ...slot })),
+  turnTriggers: state.turnTriggers.map((trigger) => ({
+    ...trigger,
+    trigger: { ...trigger.trigger, effects: [...trigger.trigger.effects] }
+  })),
   rng: {
     flip: { s: [...state.rng.flip.s] as [number, number, number, number] },
     shuffle: { s: [...state.rng.shuffle.s] as [number, number, number, number] },

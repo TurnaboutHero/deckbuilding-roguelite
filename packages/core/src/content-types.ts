@@ -54,13 +54,20 @@ export interface ConsumeSkillDef extends SkillDefBase {
 
 export type SkillDef = FlipSkillDef | ConsumeSkillDef;
 
+export interface TurnTriggerDef {
+  id: string;
+  hook: 'onDamageDealt' | 'onAttackSkillResolved';
+  effects: EffectAtom[];
+}
+
 export type EffectAtom =
   | { kind: 'damage'; amount: number }
   | { kind: 'block'; amount: number }
   | { kind: 'selfDamage'; amount: number }
   | { kind: 'applyStatus'; status: StatusId; stacks: number; to: 'target' | 'self' }
   | { kind: 'addCoin'; coin: CoinDefId; zone: 'draw' | 'discard' | 'hand'; count: number }
-  | { kind: 'grantElement'; element: Element; scope: 'allBasicInHand' | 'chooseBasicInHand' };
+  | { kind: 'grantElement'; element: Element; scope: 'allBasicInHand' | 'chooseBasicInHand' }
+  | { kind: 'addTurnTrigger'; trigger: TurnTriggerDef };
 
 export interface CharacterDef {
   id: CharacterId;
@@ -144,12 +151,62 @@ const validateSkillCosts = (skills: readonly SkillDef[]): string[] => {
   return errors;
 };
 
+// addTurnTrigger 재귀 검증 — 잘못된 id/hook/빈 효과, 그리고 트리거 효과 안의
+// 중첩 addTurnTrigger(순환 폭주 표면)를 콘텐츠 단계에서 거부한다 (P3.3 감사).
+const TURN_TRIGGER_HOOKS = ['onDamageDealt', 'onAttackSkillResolved'] as const;
+
+const validateTriggerAtoms = (
+  atoms: readonly EffectAtom[],
+  owner: string,
+  insideTrigger: boolean,
+  errors: string[]
+): void => {
+  for (const atom of atoms) {
+    if (atom.kind !== 'addTurnTrigger') continue;
+    if (insideTrigger) {
+      errors.push(`${owner}: nested addTurnTrigger inside a trigger is not allowed`);
+      continue;
+    }
+    const trigger = atom.trigger;
+    if (typeof trigger.id !== 'string' || trigger.id.length === 0) {
+      errors.push(`${owner}: turn trigger id must be a non-empty string`);
+    }
+    if (!TURN_TRIGGER_HOOKS.includes(trigger.hook)) {
+      errors.push(`${owner}: unknown turn trigger hook ${String(trigger.hook)}`);
+    }
+    if (!Array.isArray(trigger.effects) || trigger.effects.length === 0) {
+      errors.push(`${owner}: turn trigger ${trigger.id} must declare at least one effect`);
+    } else {
+      validateTriggerAtoms(trigger.effects, `${owner} trigger ${trigger.id}`, true, errors);
+    }
+  }
+};
+
+const validateTurnTriggers = (db: Omit<ContentDb, 'validate'>): string[] => {
+  const errors: string[] = [];
+  for (const skill of Object.values(db.skills)) {
+    const owner = `skill ${String(skill.id)}`;
+    if (skill.type === 'consume') {
+      validateTriggerAtoms(skill.effects, owner, false, errors);
+    } else {
+      validateTriggerAtoms(skill.base, owner, false, errors);
+      if (skill.heads) validateTriggerAtoms(skill.heads.effects, owner, false, errors);
+      if (skill.tails) validateTriggerAtoms(skill.tails.effects, owner, false, errors);
+    }
+  }
+  for (const character of Object.values(db.characters)) {
+    validateTriggerAtoms(character.trait.effects, `character ${String(character.id)}`, false, errors);
+  }
+  return errors;
+};
+
 export const validateContentDb = (db: Omit<ContentDb, 'validate'>): string[] => [
   ...duplicateIds(Object.values(db.coins), 'coin'),
   ...duplicateIds(Object.values(db.skills), 'skill'),
   ...duplicateIds(Object.values(db.enemies), 'enemy'),
   ...duplicateIds(Object.values(db.characters), 'character'),
-  ...validateSkillCosts(Object.values(db.skills))
+  ...validateSkillCosts(Object.values(db.skills)),
+  ...validateTurnTriggers(db)
 ];
 
 export const effectiveElements = (coin: CoinInstance, db: ContentDb): Element[] => {
