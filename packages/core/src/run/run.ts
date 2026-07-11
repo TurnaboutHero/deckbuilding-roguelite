@@ -65,6 +65,25 @@ const finishRewardsIfComplete = (
   return { ...run, pendingRewards };
 };
 
+// 보상 풀 적격 판정의 단일 정본 — exclusiveTo 캐릭터 경계 + 미보유 필터 + 결정론 정렬.
+// 코어 보상 생성과 UI 저장 검증(run-storage)이 같은 술어를 공유해 규칙 중복을 막는다.
+export const rewardEligibleSkillIds = (
+  skills: ContentDb["skills"],
+  character: RunState["character"],
+  owned: readonly SkillId[],
+): SkillId[] => {
+  const ownedSet = new Set(owned.map(String));
+  return Object.values(skills)
+    .filter(
+      (skill) =>
+        skill.exclusiveTo === undefined ||
+        String(skill.exclusiveTo) === String(character),
+    )
+    .map((skill) => skill.id)
+    .filter((skill) => !ownedSet.has(String(skill)))
+    .sort((left, right) => String(left).localeCompare(String(right)));
+};
+
 const pendingRewardsFor = (
   run: RunState,
   completedCombatIndex: number,
@@ -79,18 +98,11 @@ const pendingRewardsFor = (
     derive(seedFromString(run.runSeed), "reward", completedCombatIndex),
   );
   const coinOptions = rewardRng.shuffle(REWARD_COIN_IDS);
-  const owned = new Set(run.equippedSkills.map(String));
-  // 캐릭터 전용 스킬은 명시적 exclusiveTo 데이터로 풀 경계를 가른다 — 해당 캐릭터
-  // 런에서만 후보가 되고, 다른 캐릭터의 풀·셔플 순서에는 존재 자체가 개입하지 않는다.
-  const unowned = Object.values(db.skills)
-    .filter(
-      (skill) =>
-        skill.exclusiveTo === undefined ||
-        String(skill.exclusiveTo) === String(run.character),
-    )
-    .map((skill) => skill.id)
-    .filter((skill) => !owned.has(String(skill)))
-    .sort((left, right) => String(left).localeCompare(String(right)));
+  const unowned = rewardEligibleSkillIds(
+    db.skills,
+    run.character,
+    run.equippedSkills,
+  );
   const offeredSkills =
     completedCombatIndex >= 1 ? rewardRng.shuffle(unowned).slice(0, 2) : [];
   const skillOptions = offeredSkills.length === 2 ? offeredSkills : [];

@@ -1,6 +1,8 @@
 import {
+  LEGACY_RUN_SAVE_VERSIONS,
   RUN_ENCOUNTER_COUNT,
   RUN_SAVE_VERSION,
+  rewardEligibleSkillIds,
   type CharacterId,
   type CoinDefId,
   type ContentDb,
@@ -83,6 +85,7 @@ const parsePendingRewards = (
   value: unknown,
   combatIndex: number,
   equippedSkills: readonly string[],
+  character: string,
   context: RunValidationContext,
 ): PendingRewards | null => {
   if (
@@ -114,11 +117,13 @@ const parsePendingRewards = (
     if (value.coinRemovalResolved && !value.coinChoiceResolved) return null;
   } else {
     const equipped = new Set(equippedSkills);
-    const unownedSkillCount = new Set(
-      Object.values(context.skills)
-        .map((skill) => String(skill.id))
-        .filter((skill) => !equipped.has(skill)),
-    ).size;
+    // 코어 보상 생성과 같은 술어(rewardEligibleSkillIds)를 사용 — exclusiveTo를 무시하면
+    // 공용 풀 소진 저장에서 전용 스킬을 가용으로 오판해 정상 저장을 거부한다 (감시자 발견)
+    const unownedSkillCount = rewardEligibleSkillIds(
+      context.skills,
+      character as CharacterId,
+      equippedSkills.map((skill) => skill as SkillId),
+    ).length;
     if (unownedSkillCount >= 2) {
       if (
         skillOptions.length !== 2 ||
@@ -160,7 +165,15 @@ const normalizeRunSave = (
   expectedContentVersion: string,
   context: RunValidationContext,
 ): RunSave | null => {
-  if (!isRecord(value) || value.version !== RUN_SAVE_VERSION) return null;
+  if (!isRecord(value)) return null;
+  // v1 → v2 명시 마이그레이션: 형태 동일, 검증 규칙 세대만 승격 (전부 warrior 시대 저장 보존).
+  // 미지의 미래 버전은 거부한다 — 증거 계약 §2.
+  const version = LEGACY_RUN_SAVE_VERSIONS.includes(
+    value.version as (typeof LEGACY_RUN_SAVE_VERSIONS)[number],
+  )
+    ? RUN_SAVE_VERSION
+    : value.version;
+  if (version !== RUN_SAVE_VERSION) return null;
   if (
     !isNonEmptyString(value.contentVersion) ||
     value.contentVersion !== expectedContentVersion
@@ -243,6 +256,7 @@ const normalizeRunSave = (
           value.pendingRewards,
           value.combatIndex,
           value.equippedSkills,
+          value.character,
           context,
         );
   if (value.phase === "rewards" && pendingRewards === undefined) return null;

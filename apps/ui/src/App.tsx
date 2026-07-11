@@ -2,6 +2,7 @@ import { CONTENT_VERSION, contentDb } from "@game/content";
 import type {
   CoinDefId,
   CoinUid,
+  CharacterId,
   EffectAtom,
   EnemyDefId,
   Face,
@@ -35,6 +36,7 @@ import "./vfx.css";
 import { AtlasSprite } from "./AtlasSprite";
 import { REJECTION_TEXT, rejectionReason } from "./action-feedback";
 import { CardEffectRows } from "./card-effects";
+import { CharacterSelect } from "./character-select";
 import {
   autoSuggestCoinChoice,
   coinChoiceCandidates,
@@ -136,6 +138,7 @@ const WORDS = [
 
 interface SpriteAsset {
   atlasUrl: string;
+  fallbackFor?: CharacterId;
   manifest: SpriteManifest;
 }
 
@@ -165,6 +168,13 @@ const enemySprite = (enemyId: string): SpriteAsset => {
   if (enemyId.startsWith("shaman")) return SPRITES.shaman;
   if (enemyId.startsWith("gatekeeper")) return SPRITES.gatekeeper;
   return SPRITES.raider;
+};
+
+const playerSprite = (character: CharacterId): SpriteAsset => {
+  // TODO(P3.2 asset lane): guardian 전용 스프라이트가 들어오면 warrior 폴백을 제거한다.
+  if (String(character) === "guardian")
+    return { ...SPRITES.player, fallbackFor: character };
+  return SPRITES.player;
 };
 
 type FloatText = {
@@ -442,10 +452,27 @@ interface RunSession {
   combat: CombatState | null;
 }
 
-const replaceUrlSeed = (seed: string): void => {
+type BootState =
+  | { mode: "select"; seed: string | null }
+  | { mode: "run"; session: RunSession };
+
+const replaceUrlSeed = (seed: string, character?: CharacterId): void => {
   const url = new URL(window.location.href);
   url.searchParams.set("seed", seed);
+  if (character !== undefined && String(character) !== "warrior") {
+    url.searchParams.set("character", String(character));
+  } else {
+    url.searchParams.delete("character");
+  }
   window.history.replaceState(null, "", url);
+};
+
+const characterFromUrl = (): CharacterId | null => {
+  const character = new URL(window.location.href).searchParams.get("character");
+  if (character === null) return null;
+  return contentDb.characters[character] === undefined
+    ? null
+    : (character as CharacterId);
 };
 
 const testEncounterFromUrl = (): readonly EnemyDefId[] | null => {
@@ -480,12 +507,15 @@ const persistRun = (run: RunState): void => {
   }
 };
 
-const freshSession = (seed: string): RunSession => {
+const freshSession = (
+  seed: string,
+  character: CharacterId = "warrior" as CharacterId,
+): RunSession => {
   const created = createRun(
     {
       contentVersion: CONTENT_VERSION,
       runSeed: seed,
-      character: "warrior" as RunState["character"],
+      character,
     },
     contentDb,
   );
@@ -519,17 +549,36 @@ const freshSession = (seed: string): RunSession => {
   return { run: started.run, combat: started.combat };
 };
 
-const bootSession = (): RunSession => {
-  const urlSeed = seedFromUrl();
-  if (testEncounterFromUrl() !== null || new URL(window.location.href).searchParams.has("skills"))
-    return freshSession(urlSeed);
+const bootState = (): BootState => {
+  const url = new URL(window.location.href);
+  const urlSeed = url.searchParams.get("seed");
+  const testCharacter = characterFromUrl();
+  const hasSeed = urlSeed !== null && urlSeed.trim().length > 0;
+  const hasTestBoot =
+    testEncounterFromUrl() !== null ||
+    url.searchParams.has("skills") ||
+    testCharacter !== null;
+  if (hasTestBoot)
+    return {
+      mode: "run",
+      session: freshSession(seedFromUrl(), testCharacter ?? ("warrior" as CharacterId)),
+    };
   const saved = loadRun(window.localStorage, CONTENT_VERSION, contentDb);
-  if (saved === null) return freshSession(urlSeed);
-  replaceUrlSeed(saved.runSeed);
-  if (saved.phase !== "combat") return { run: saved, combat: null };
+  if (saved === null) {
+    // URL contract: existing playtests boot with ?seed= and must keep the legacy
+    // warrior fast path. Character selection appears only on pure new entry or
+    // explicit ?select=1 so seed reproducibility and harness URLs stay stable.
+    if (!hasSeed || url.searchParams.get("select") === "1") {
+      return { mode: "select", seed: hasSeed ? urlSeed : null };
+    }
+    return { mode: "run", session: freshSession(urlSeed, "warrior" as CharacterId) };
+  }
+  replaceUrlSeed(saved.runSeed, saved.character);
+  if (saved.phase !== "combat")
+    return { mode: "run", session: { run: saved, combat: null } };
   const resumed = resumeAbandonedCombat(saved);
   const started = startRunCombat(resumed, contentDb);
-  return { run: started.run, combat: started.combat };
+  return { mode: "run", session: { run: started.run, combat: started.combat } };
 };
 
 const coinName = (coin: CoinDefId): string => {
@@ -615,8 +664,8 @@ const RunMeta = ({ run }: { run: RunState }) => {
   );
 };
 
-export const App = () => {
-  const [session, setSession] = useState<RunSession>(bootSession);
+const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
+  const [session, setSession] = useState<RunSession>(initialSession);
   const [removalIndex, setRemovalIndex] = useState<number | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<SkillId | null>(null);
   const primaryRef = useRef<HTMLButtonElement | null>(null);
@@ -725,10 +774,10 @@ export const App = () => {
     } catch {
       // 메모리 세션 재시작은 저장소 가용성과 무관하다.
     }
-    replaceUrlSeed(seed);
+    replaceUrlSeed(seed, run.character);
     setRemovalIndex(null);
     setSelectedSkill(null);
-    const fresh = freshSession(seed);
+    const fresh = freshSession(seed, run.character);
     telemetryRef.current = createHumanRunTrace({
       runSeed: fresh.run.runSeed,
       contentVersion: CONTENT_VERSION,
@@ -1137,6 +1186,42 @@ export const App = () => {
         </section>
       </div>
     </main>
+  );
+};
+
+export const App = () => {
+  const [boot, setBoot] = useState<BootState>(bootState);
+  if (boot.mode === "select") {
+    return (
+      <main
+        aria-label="런 시작 화면"
+        className="run-stage-shell"
+        data-run-phase="character-select"
+        data-testid="run-phase"
+      >
+        <div className="backdrop" aria-hidden="true">
+          <img alt="" className="backdrop-img" src={bgForest} />
+        </div>
+        <CharacterSelect
+          characters={Object.values(contentDb.characters)}
+          contentDb={contentDb}
+          seed={boot.seed}
+          onSelect={(character) => {
+            const seed = boot.seed ?? randomSeed();
+            replaceUrlSeed(seed, character);
+            const session = freshSession(seed, character);
+            persistRun(session.run);
+            setBoot({ mode: "run", session });
+          }}
+        />
+      </main>
+    );
+  }
+  return (
+    <RunGame
+      initialSession={boot.session}
+      key={`${boot.session.run.runSeed}-${String(boot.session.run.character)}`}
+    />
   );
 };
 
@@ -1984,8 +2069,8 @@ const CombatBoard = ({
         <UnitPanel
           side="player"
           unitKey="player"
-          sprite={SPRITES.player}
-          name="전사"
+          sprite={playerSprite(run.character)}
+          name={contentDb.characters[String(run.character)]?.name ?? "영웅"}
           hp={state.player.hp}
           maxHp={state.player.maxHp}
           block={state.player.block}
@@ -2583,6 +2668,9 @@ const UnitPanel = ({
       className="sprite"
       disabled={!targeting}
       type="button"
+      data-sprite-fallback={
+        sprite.fallbackFor === undefined ? undefined : String(sprite.fallbackFor)
+      }
       onClick={(event) => {
         event.stopPropagation();
         onTarget?.();

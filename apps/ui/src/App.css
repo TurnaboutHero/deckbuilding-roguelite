@@ -1405,6 +1405,127 @@ button:focus-visible {
   font-size: clamp(36px, 2.7vw, 54px);
 }
 
+.character-select-overlay {
+  padding: 24px;
+}
+
+.character-select-panel {
+  width: min(1120px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.select-seed {
+  color: #aeb7cf !important;
+  font-size: clamp(12px, 0.78vw, 15px) !important;
+}
+
+.character-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(12px, 1.2vw, 20px);
+  text-align: left;
+}
+
+.result-panel .character-card {
+  min-height: 0;
+  height: 100%;
+  padding: clamp(14px, 1.25vw, 20px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: clamp(10px, 0.85vw, 14px);
+  color: var(--paper);
+  background:
+    linear-gradient(#3b4154, #242936 58%, #171a23) padding-box,
+    linear-gradient(#e7bd59, #755223) border-box;
+  border-color: transparent;
+  text-align: left;
+}
+
+.character-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid rgba(217, 164, 65, 0.48);
+}
+
+.character-card-head strong {
+  color: var(--gold-2);
+  font-size: clamp(22px, 1.7vw, 32px);
+  text-shadow: 2px 2px 0 var(--out);
+}
+
+.character-card-head em {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  color: #ffe9a8;
+  background: #171a23;
+  border: 2px solid var(--out);
+  font-style: normal;
+}
+
+.character-section,
+.character-trait {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.character-section b,
+.character-trait b {
+  color: #fff1bf;
+  font-size: clamp(13px, 0.85vw, 16px);
+  font-weight: 400;
+}
+
+.character-coins,
+.character-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.character-coins i,
+.character-skills i {
+  padding: 4px 7px;
+  color: #d9e7ff;
+  background: #202430;
+  border: 2px solid #151821;
+  box-shadow: inset 0 0 0 1px #4c5268;
+  font-size: clamp(12px, 0.78vw, 14px);
+  font-style: normal;
+  line-height: 1.1;
+}
+
+.character-coins .coin-fire {
+  color: #ffd9b0;
+  border-color: #6e3a1f;
+}
+
+.character-coins .coin-mana {
+  color: #cfe0ff;
+  border-color: #31456e;
+}
+
+.character-trait {
+  margin-top: auto;
+  padding: 10px;
+  background: rgba(18, 21, 29, 0.78);
+  border: 2px solid #151821;
+  box-shadow: inset 0 0 0 1px #5d4d34;
+}
+
+.character-trait small {
+  color: #d8d2c0;
+  font-size: clamp(12px, 0.78vw, 15px);
+  line-height: 1.35;
+}
+
 .run-kicker,
 .reward-step {
   font-size: clamp(12px, 0.78vw, 15px);

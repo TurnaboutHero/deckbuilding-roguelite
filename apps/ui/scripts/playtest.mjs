@@ -48,7 +48,7 @@ await mkdir(outDir, { recursive: true });
 /** 페이지 준비 — 콘솔/페이지 에러 수집기 부착 후 이벤트 큐가 빠질 때까지 대기 */
 const boot = async (
   viewport = { width: 1280, height: 720 },
-  { fast = false, url = URL } = {},
+  { fast = false, url = URL, waitFor = "combat" } = {},
 ) => {
   // 시나리오 간 저장소를 분리하되, 한 시나리오 안의 reload에는 같은 저장소를 유지한다.
   const context = await browser.newContext({ viewport, deviceScaleFactor: 1 });
@@ -69,6 +69,13 @@ const boot = async (
       errors.push(`console: ${message.text()}`);
   });
   await page.goto(url, { waitUntil: "networkidle" });
+  if (waitFor === "select") {
+    // 캐릭터 선택 화면 진입 — 전투 준비 대기를 건너뛴다 (S21)
+    await page.waitForSelector('[data-testid="character-select"]', {
+      timeout: 15000,
+    });
+    return { page, errors };
+  }
   await page.waitForFunction(
     () =>
       document.querySelector(".end-turn:not(:disabled)") !== null &&
@@ -2442,6 +2449,102 @@ const winCurrentCombat = async (page) => {
     check("S20 결정론 경로 에러 0", second.errors.length === 0, second.errors.join(" | "));
     await second.page.close();
   }
+}
+
+// ---------- 시나리오 21: P3.2 캐릭터 선택 ----------
+{
+  // 21a. ?select=1 → 선택 화면: 두 캐릭터 카드, 특성 문구(발동 시점·임시 수명 명시)
+  const { page, errors } = await boot(undefined, {
+    url: `${baseUrl}?seed=${SEED}&select=1`,
+    waitFor: "select",
+  });
+  check(
+    "S21 선택 화면 캐릭터 카드 2종",
+    (await page.locator(".character-card").count()) === 2,
+  );
+  const guardianCard = page.locator(
+    '[data-testid="character-select-guardian"]',
+  );
+  const guardianText = (await guardianCard.innerText()).replace(/\n/g, " ");
+  check(
+    "S21 수호자 특성 문구 — 전투 시작·임시 명시",
+    guardianText.includes("전투 시작 시") && guardianText.includes("임시"),
+    guardianText.slice(0, 120),
+  );
+  check(
+    "S21 수호자 카드 구성 정보 (HP·마나)",
+    guardianText.includes("70") && guardianText.includes("마나"),
+  );
+
+  // 21b. 키보드로 수호자 선택 → 수호자 전투 진입 (가방 마나 2·전용 스킬 카드·스프라이트 폴백)
+  await guardianCard.focus();
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".combat-shell[data-bag]");
+  await page.waitForFunction(
+    () => document.querySelector(".end-turn:not(:disabled)") !== null,
+  );
+  const bag = await page
+    .locator(".combat-shell")
+    .getAttribute("data-bag");
+  check(
+    "S21 수호자 가방 마나 2닢",
+    (bag ?? "").split(",").filter((id) => id === "mana").length === 2,
+    bag ?? "",
+  );
+  const cardTitles = await page
+    .locator(".skill-card .card-title")
+    .allInnerTexts();
+  check(
+    "S21 수호자 전용 스킬 카드 렌더",
+    ["수호 타격", "마나 방벽", "방패 반격", "마나 샘"].every((name) =>
+      cardTitles.includes(name),
+    ),
+    cardTitles.join(","),
+  );
+  check(
+    "S21 수호자 스프라이트 폴백 표기",
+    (await page.locator("[data-sprite-fallback]").count()) >= 1,
+  );
+  check("S21 선택 플로우 에러 0", errors.length === 0, errors.join(" | "));
+  await page.close();
+}
+
+{
+  // 21c. ?seed=만 → 선택 화면 없이 warrior 즉시 시작 (하네스·시드 재현 불변 규칙)
+  const { page, errors } = await boot();
+  check(
+    "S21 시드 부팅은 선택 화면 생략",
+    (await page.locator('[data-testid="character-select"]').count()) === 0,
+  );
+  check(
+    "S21 시드 부팅 warrior 유지",
+    (await page.locator(".unit.player .unit-name").innerText()) === "전사",
+  );
+
+  // 21d. ?character=guardian 직접 부팅
+  const direct = await boot(undefined, {
+    url: `${baseUrl}?seed=${SEED}&character=guardian`,
+  });
+  check(
+    "S21 직접 부팅 선택 화면 생략",
+    (await direct.page.locator('[data-testid="character-select"]').count()) ===
+      0,
+  );
+  const directBag = await direct.page
+    .locator(".combat-shell")
+    .getAttribute("data-bag");
+  check(
+    "S21 직접 부팅 수호자 가방",
+    (directBag ?? "").split(",").filter((id) => id === "mana").length === 2,
+    directBag ?? "",
+  );
+  check(
+    "S21 캐릭터 부팅 에러 0",
+    errors.length === 0 && direct.errors.length === 0,
+    [...errors, ...direct.errors].join(" | "),
+  );
+  await page.close();
+  await direct.page.close();
 }
 
 await browser.close();

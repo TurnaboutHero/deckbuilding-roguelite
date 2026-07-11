@@ -11,6 +11,7 @@ import type {
 import type { CombatState } from "../combat/state";
 import { RUN_ENCOUNTERS } from "./encounters";
 import {
+  rewardEligibleSkillIds,
   chooseCoinReward,
   chooseSkillReward,
   createRun,
@@ -20,6 +21,7 @@ import {
   skipSkillReward,
   startRunCombat,
 } from "./run";
+import { RUN_SAVE_VERSION } from "./types";
 import type { RunSave, RunState } from "./types";
 
 const id = <T extends string>(value: string): T => value as T;
@@ -304,6 +306,38 @@ describe("run progression", () => {
     }
   });
 
+  it("keeps shared skills in every pool and exclusive skills only in their owner's", () => {
+    const db = testDb();
+    db.characters["guardian"] = {
+      ...db.characters["warrior"]!,
+      id: id<CharacterId>("guardian"),
+      name: "guardian",
+    };
+    db.skills["gx"] = {
+      ...simpleSkill("gx"),
+      exclusiveTo: id<CharacterId>("guardian"),
+    };
+    const owned = db.characters["warrior"]!.startingSkills;
+    const guardianPool = rewardEligibleSkillIds(
+      db.skills,
+      id<CharacterId>("guardian"),
+      owned,
+    ).map(String);
+    const warriorPool = rewardEligibleSkillIds(
+      db.skills,
+      id<CharacterId>("warrior"),
+      owned,
+    ).map(String);
+
+    expect(guardianPool).toContain("gx");
+    expect(warriorPool).not.toContain("gx");
+    // 공용 스킬은 양쪽 풀에 유지된다
+    for (const shared of ["s7", "s8", "s9"]) {
+      expect(guardianPool).toContain(shared);
+      expect(warriorPool).toContain(shared);
+    }
+  });
+
   it("removes one permanent coin and requires an explicit skill replacement slot", () => {
     let run = reachSecondSkillReward();
     const originalBag = [...run.bag];
@@ -493,7 +527,7 @@ describe("run progression", () => {
 
     expect(parsed).toEqual(save);
     expect(parsed).toMatchObject({
-      version: 1,
+      version: RUN_SAVE_VERSION,
       contentVersion: "test-m5",
       runSeed: "SAVE-ROUND-TRIP",
       currentHp: 63,

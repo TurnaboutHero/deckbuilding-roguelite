@@ -26,6 +26,12 @@ const STARTING_BAG = [...(contentDb.characters.warrior?.startingBag ?? [])];
 const STARTING_SKILLS = [
   ...(contentDb.characters.warrior?.startingSkills ?? []),
 ];
+const GUARDIAN_STARTING_BAG = [
+  ...(contentDb.characters.guardian?.startingBag ?? []),
+];
+const GUARDIAN_STARTING_SKILLS = [
+  ...(contentDb.characters.guardian?.startingSkills ?? []),
+];
 
 const readySave = (): RunSave => ({
   version: RUN_SAVE_VERSION,
@@ -201,6 +207,27 @@ describe("run save serialization boundary", () => {
     expect(loadRun(storage, CONTENT_VERSION, contentDb)).toBeNull();
   });
 
+  it("round-trips a Guardian run through caller-supplied storage", () => {
+    const storage = new MemoryStorage();
+    const save: RunSave = {
+      version: RUN_SAVE_VERSION,
+      contentVersion: CONTENT_VERSION,
+      runSeed: "BRAVE-EMBER-42",
+      character: "guardian" as never,
+      currentHp: 70,
+      maxHp: 70,
+      bag: [...GUARDIAN_STARTING_BAG] as never,
+      equippedSkills: [...GUARDIAN_STARTING_SKILLS] as never,
+      gold: 0,
+      combatIndex: 0,
+      attempt: 0,
+      phase: "combat",
+    };
+
+    saveRun(storage, save, contentDb);
+    expect(loadRun(storage, CONTENT_VERSION, contentDb)).toEqual(save);
+  });
+
   it("returns null without throwing for corrupt, old-version, wrong-content, or inaccessible saves", () => {
     expect(parse("{broken")).toBeNull();
     expect(parse(rawWith({ version: RUN_SAVE_VERSION + 1 }))).toBeNull();
@@ -220,6 +247,46 @@ describe("run save serialization boundary", () => {
       loadRun(unavailable, CONTENT_VERSION, contentDb),
     ).not.toThrow();
     expect(loadRun(unavailable, CONTENT_VERSION, contentDb)).toBeNull();
+  });
+
+  it("migrates v1 saves explicitly and rejects unknown versions", () => {
+    // v1 → v2: 형태 동일, warrior 시대 저장 보존 (증거 계약 §2 — 명시 마이그레이션)
+    const migrated = parse(rawWith({ version: 1 }));
+    expect(migrated).toEqual(readySave());
+    expect(migrated?.version).toBe(RUN_SAVE_VERSION);
+    expect(parse(rawWith({ version: 0 }))).toBeNull();
+    expect(parse(rawWith({ version: RUN_SAVE_VERSION + 1 }))).toBeNull();
+  });
+
+  it("accepts an exhausted shared-pool save even when exclusive skills exist", () => {
+    // 감시자 발견 회귀: 검증기가 exclusiveTo를 무시하면 전용 스킬을 가용으로 오판해
+    // 공용 풀 소진(B2 fallback) 저장을 거부한다 — 코어와 같은 술어를 공유해야 한다
+    const shared = [
+      ...(contentDb.characters.warrior?.startingSkills ?? []).map(String),
+      "smash",
+    ];
+    const exclusiveIds = [
+      "warding-strike",
+      "mana-bulwark",
+      "shield-reprisal",
+      "mana-well",
+    ];
+    const context = {
+      coins: contentDb.coins,
+      characters: contentDb.characters,
+      skills: Object.fromEntries(
+        [...shared, ...exclusiveIds].map((id) => [id, contentDb.skills[id]]),
+      ),
+    } as typeof contentDb;
+    const save = fallbackRewardsSave({
+      coinChoiceResolved: false,
+      coinRemovalResolved: true,
+    });
+    // 공용 미보유 = smash 1종뿐 (<2) → fallback 단계가 정상 수용돼야 한다.
+    // 전용 4종이 섞여도 판정이 달라지면(가용 5종 오판 → 정상 스킬 단계 요구) 회귀다.
+    expect(
+      parseRunSave(serializeRunSave(save, context), CONTENT_VERSION, context),
+    ).toEqual(save);
   });
 
   it.each([
