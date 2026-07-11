@@ -646,7 +646,8 @@ const winCurrentCombat = async (page) => {
     { timeout: 30000 },
   );
   check("S7 턴2 스트라이크 소켓 비움 (D7)", (await loadedCount()) === 0);
-  check("S7 턴2 손패 5", (await handCount(page)) === 5);
+  // 그래프 세대: 1전투가 주술사(위축) — 턴2 드로우 5-1=4
+  check("S7 턴2 손패 4 (위축 반영)", (await handCount(page)) === 4);
   check(
     "S7 턴2 낡은 면 0",
     (await page.locator(".hand-tray .coin .coin-face-mark").count()) === 0,
@@ -768,10 +769,10 @@ const winCurrentCombat = async (page) => {
   );
   await page.locator(".pouch-circle").click();
   await popSettled();
-  check("S8 턴2 구성 합계 1", (await popSum()) === 1);
+  check("S8 턴2 구성 합계 2 (위축 드로우 4)", (await popSum()) === 2);
   check(
-    "S8 턴2 주머니 라벨 1",
-    (await page.locator(".pouch-circle").innerText()) === "1",
+    "S8 턴2 주머니 라벨 2",
+    (await page.locator(".pouch-circle").innerText()) === "2",
   );
   await page.screenshot({ path: `${outDir}/19-pouch-turn2.png` });
   check("S8 에러 0", errors.length === 0, errors.join(" | "));
@@ -1267,9 +1268,9 @@ const winCurrentCombat = async (page) => {
   };
 
   check(
-    "S12 첫 전투 진행 1/5",
+    "S12 첫 노드 진행 1/10 (그래프 세대)",
     (await page.locator('[data-testid="run-progress"] strong').innerText()) ===
-      "전투 1/5",
+      "노드 1/10",
   );
   await winCurrentCombat(page);
   check(
@@ -1420,156 +1421,212 @@ const winCurrentCombat = async (page) => {
   );
   await page.screenshot({ path: `${outDir}/36-m5-combat-stable-1920.png` });
   await page.setViewportSize({ width: 1280, height: 720 });
-
-  await winCurrentCombat(page);
-  await page.locator('[data-testid="coin-reward-skip"]').click();
-  check(
-    "S12 코인 보상 skip 동작",
-    (await page.locator('[data-testid="reward-stage"]').innerText()).includes(
-      "코인 제거",
-    ),
-  );
-  await page.locator('[data-testid="removal-skip"]').click();
-  check(
-    "S12 제거 skip 후 스킬 보상",
-    (await page.locator('[data-testid="reward-stage"]').innerText()).includes(
-      "스킬 선택",
-    ),
-  );
-  const skillChoices = page.locator(
-    '[data-testid^="skill-reward-"]:not([data-testid$="skip"])',
-  );
-  const skillChoiceIds = await skillChoices.evaluateAll((buttons) =>
-    buttons.map((button) => button.getAttribute("data-testid")),
-  );
-  check(
-    "S12 스킬 보상 2개·중복 없음",
-    skillChoiceIds.length === 2 && new Set(skillChoiceIds).size === 2,
-    skillChoiceIds.join(","),
-  );
-  await page.screenshot({ path: `${outDir}/33-m5-skill-reward-1280.png` });
-  await assertBoundaryLayout("1280x720 스킬 보상", {
-    width: 1280,
-    height: 720,
-  });
-  await assertBoundaryLayout("1920x1080 스킬 보상", {
-    width: 1920,
-    height: 1080,
-  });
-  await page.screenshot({ path: `${outDir}/42-m5-skill-reward-1920.png` });
-  await page.setViewportSize({ width: 1280, height: 720 });
-  const beforeDecline = await equipped();
-  await skillChoices.first().click();
-  check(
-    "S12 스킬 선택 후 명시적 6슬롯 교체 화면",
-    (await page.locator('[data-testid^="replace-slot-"]').count()) === 6,
-  );
-  await assertBoundaryLayout("1280x720 스킬 교체", {
-    width: 1280,
-    height: 720,
-  });
-  await assertBoundaryLayout("1920x1080 스킬 교체", {
-    width: 1920,
-    height: 1080,
-  });
-  await page.screenshot({ path: `${outDir}/43-m5-skill-replace-1920.png` });
-  await page.setViewportSize({ width: 1280, height: 720 });
-  await page.screenshot({ path: `${outDir}/34-m5-skill-replace-1280.png` });
-  await page.locator('[data-testid="replace-cancel"]').click();
-  check(
-    "S12 교체 취소가 스킬 선택으로 복귀",
-    (await skillChoices.count()) === 2,
-  );
-  await skillChoices.first().click();
-  await page.locator('[data-testid="replace-decline"]').click();
-  check(
-    "S12 교체 거절이 장착 스킬을 유지하고 다음 전투로 진행",
-    (await main().getAttribute("data-run-phase")) === "ready" &&
-      (await equipped()).join(",") === beforeDecline.join(","),
-  );
-
-  await page.locator('[data-testid="next-combat"]').click();
-  await waitForCombatOrBoundary(page);
-  await winCurrentCombat(page);
-  await page.locator('[data-testid="coin-reward-skip"]').click();
-  await page.locator('[data-testid="removal-skip"]').click();
-  const nextSkillChoices = page.locator(
-    '[data-testid^="skill-reward-"]:not([data-testid$="skip"])',
-  );
-  const chosenSkill = String(
-    await nextSkillChoices.first().getAttribute("data-testid"),
-  ).replace("skill-reward-", "");
-  await nextSkillChoices.first().click();
-  const beforeReplacement = await equipped();
-  await page.locator('[data-testid="replace-slot-5"]').click();
-  const afterReplacement = await equipped();
-  check(
-    "S12 선택 스킬이 지정 슬롯을 교체",
-    afterReplacement[5] === chosenSkill &&
-      afterReplacement[5] !== beforeReplacement[5],
-    `${beforeReplacement[5]} → ${afterReplacement[5]}`,
-  );
-
-  await page.locator('[data-testid="next-combat"]').click();
-  await waitForCombatOrBoundary(page);
-  await winCurrentCombat(page);
-  await page.locator('[data-testid="coin-reward-skip"]').click();
-  await page.locator('[data-testid="removal-skip"]').click();
-  await page.locator('[data-testid="skill-reward-skip"]').click();
-  check(
-    "S12 스킬 보상 skip 동작",
-    (await main().getAttribute("data-run-phase")) === "ready",
-  );
-  await page.locator('[data-testid="next-combat"]').click();
-  await waitForCombatOrBoundary(page);
-  check(
-    "S12 마지막 전투 진행 5/5",
-    (await page.locator('[data-testid="run-progress"] strong').innerText()) ===
-      "전투 5/5",
-  );
-  await winCurrentCombat(page);
-  check(
-    "S12 5연전 최종 승리 도달",
-    (await main().getAttribute("data-run-phase")) === "victory" &&
-      (await page.locator('[data-testid="run-result"]').count()) === 1,
-  );
-  await page.screenshot({ path: `${outDir}/29-m5-run-victory.png` });
-  await assertBoundaryLayout("1280x720 최종 승리 결과", {
-    width: 1280,
-    height: 720,
-  });
-  await assertBoundaryLayout("1920x1080 최종 승리 결과", {
-    width: 1920,
-    height: 1080,
-  });
-  await page.screenshot({ path: `${outDir}/40-m5-run-victory-1920.png` });
-  await page.setViewportSize({ width: 1280, height: 720 });
-  const completedSeed = new globalThis.URL(page.url()).searchParams.get("seed");
-  await page.locator('[data-testid="new-seed"]').click();
-  await waitForCombatOrBoundary(page);
-  const restartedSeed = new globalThis.URL(page.url()).searchParams.get("seed");
-  check(
-    "S12 새 시드 동작이 다른 새 런 시작",
-    restartedSeed !== null &&
-      restartedSeed !== completedSeed &&
-      (await main().getAttribute("data-combat-index")) === "0",
-  );
-  check(
-    "S12 새 시드 동작이 HP·attempt 초기화",
-    (await page.locator(".unit.player .hp-num").innerText()) === "70/70" &&
-      (await main().getAttribute("data-attempt")) === "0",
-  );
   check(
     "S12 전 구간 콘솔/페이지 에러 0",
     errors.length === 0,
     errors.join(" | "),
   );
   await page.close();
+
+  // ---- 그래프 세대 재설계: 깊은 노드의 보상 교체·승리 화면은 v4 저장 주입으로
+  // 결정론 검증한다 (10레이어 브라우저 완주는 승패 비결정 — 완주 증명은 코어 e2e·
+  // 시뮬 seed42 골든이 소유).
+  const inject = async (save) => {
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 720 },
+      deviceScaleFactor: 1,
+    });
+    const page2 = await context.newPage();
+    const errors2 = [];
+    page2.on("pageerror", (error) => errors2.push(String(error.message)));
+    page2.on("console", (message) => {
+      if (
+        message.type() === "error" &&
+        !message.location().url.endsWith("/favicon.ico")
+      )
+        errors2.push(message.text());
+    });
+    await page2.addInitScript(
+      ([key, value]) => window.localStorage.setItem(key, value),
+      ["deckbuilding-roguelite.run-save", JSON.stringify(save)],
+    );
+    await page2.goto(baseUrl, { waitUntil: "networkidle" });
+    return { page: page2, errors: errors2, context };
+  };
+  const injectBase = {
+    version: 4,
+    contentVersion: "0.9.0-p4",
+    runSeed: "S12-INJECT",
+    character: "warrior",
+    currentHp: 63,
+    maxHp: 70,
+    bag: [...Array.from({ length: 8 }, () => "basic"), "fire", "fire"],
+    equippedSkills: [
+      "slash",
+      "guard",
+      "burning-strike",
+      "ignite",
+      "ignite-sword",
+      "flame-rampage",
+    ],
+    gold: 70,
+    graph: {
+      layers: [
+        [{ id: "i0", kind: "combat", encounter: ["raider"] }],
+        [{ id: "i1", kind: "combat", encounter: ["raider"] }],
+        [{ id: "i2", kind: "combat", encounter: ["raider"] }],
+        [{ id: "i3", kind: "boss", encounter: ["ember-archmage"] }],
+      ],
+    },
+    nodeChoices: [0, 0, 0, 0],
+    shopRemovals: 0,
+    shopPurchasedCoins: 0,
+    shopPurchasedSkills: 0,
+    attempt: 0,
+  };
+  const skillRewards = {
+    coinOptions: ["basic", "fire", "mana"],
+    coinChoiceResolved: true,
+    coinRemovalResolved: true,
+    skillOptions: ["smash", "fire-infusion"],
+    skillChoiceResolved: false,
+  };
+
+  {
+    // 교체 취소·거절 흐름
+    const { page: p2, errors: e2, context } = await inject({
+      ...injectBase,
+      combatIndex: 2,
+      phase: "rewards",
+      pendingRewards: skillRewards,
+    });
+    const choices = p2.locator(
+      '[data-testid^="skill-reward-"]:not([data-testid$="skip"])',
+    );
+    await p2.waitForSelector('[data-testid="reward-stage"]', { timeout: 15000 });
+    check("S12 주입 스킬 보상 2개", (await choices.count()) === 2);
+    const before = (
+      (await p2
+        .locator('[data-testid="run-phase"]')
+        .getAttribute("data-equipped-skills")) ?? ""
+    );
+    await choices.first().click();
+    check(
+      "S12 스킬 선택 후 명시적 6슬롯 교체 화면",
+      (await p2.locator('[data-testid^="replace-slot-"]').count()) === 6,
+    );
+    await p2.locator('[data-testid="replace-cancel"]').click();
+    check(
+      "S12 교체 취소가 스킬 선택으로 복귀",
+      (await choices.count()) === 2,
+    );
+    await choices.first().click();
+    await p2.locator('[data-testid="replace-decline"]').click();
+    check(
+      "S12 교체 거절이 장착 스킬을 유지하고 다음 노드로 진행",
+      (await p2
+        .locator('[data-testid="run-phase"]')
+        .getAttribute("data-run-phase")) === "ready" &&
+        ((await p2
+          .locator('[data-testid="run-phase"]')
+          .getAttribute("data-equipped-skills")) ?? "") === before,
+    );
+    check("S12 주입1 에러 0", e2.length === 0, e2.join(" | "));
+    await context.close();
+  }
+  {
+    // 지정 슬롯 교체
+    const { page: p2, errors: e2, context } = await inject({
+      ...injectBase,
+      combatIndex: 2,
+      phase: "rewards",
+      pendingRewards: skillRewards,
+    });
+    const choices = p2.locator(
+      '[data-testid^="skill-reward-"]:not([data-testid$="skip"])',
+    );
+    await p2.waitForSelector('[data-testid="reward-stage"]', { timeout: 15000 });
+    const chosen = String(
+      await choices.first().getAttribute("data-testid"),
+    ).replace("skill-reward-", "");
+    await choices.first().click();
+    await p2.locator('[data-testid="replace-slot-5"]').click();
+    check(
+      "S12 선택 스킬이 지정 슬롯을 교체",
+      (
+        (await p2
+          .locator('[data-testid="run-phase"]')
+          .getAttribute("data-equipped-skills")) ?? ""
+      ).split(",")[5] === chosen,
+    );
+    check("S12 주입2 에러 0", e2.length === 0, e2.join(" | "));
+    await context.close();
+  }
+  {
+    // 스킬 skip + 최종 승리 화면·새 시드 초기화
+    const { page: p2, errors: e2, context } = await inject({
+      ...injectBase,
+      combatIndex: 2,
+      phase: "rewards",
+      pendingRewards: skillRewards,
+    });
+    await p2.waitForSelector('[data-testid="reward-stage"]', { timeout: 15000 });
+    await p2.locator('[data-testid="skill-reward-skip"]').click();
+    check(
+      "S12 스킬 보상 skip 동작",
+      (await p2
+        .locator('[data-testid="run-phase"]')
+        .getAttribute("data-run-phase")) === "ready",
+    );
+    check("S12 주입3 에러 0", e2.length === 0, e2.join(" | "));
+    await context.close();
+  }
+  {
+    const { page: p2, errors: e2, context } = await inject({
+      ...injectBase,
+      combatIndex: 3,
+      phase: "victory",
+    });
+    await p2.waitForSelector('[data-testid="run-result"]', { timeout: 15000 });
+    check(
+      "S12 최종 승리 화면 (보스 레이어)",
+      (await p2
+        .locator('[data-testid="run-phase"]')
+        .getAttribute("data-run-phase")) === "victory",
+    );
+    await p2.screenshot({ path: `${outDir}/29-m5-run-victory.png` });
+    const completedSeed = new globalThis.URL(p2.url()).searchParams.get("seed");
+    await p2.locator('[data-testid="new-seed"]').click();
+    await waitForCombatOrBoundary(p2);
+    const restartedSeed = new globalThis.URL(p2.url()).searchParams.get("seed");
+    check(
+      "S12 새 시드 동작이 다른 새 런 시작",
+      restartedSeed !== null &&
+        restartedSeed !== completedSeed &&
+        (await p2
+          .locator('[data-testid="run-phase"], main.combat-shell')
+          .first()
+          .getAttribute("data-combat-index")) === "0",
+    );
+    check(
+      "S12 새 시드 동작이 HP·attempt 초기화",
+      (await p2.locator(".unit.player .hp-num").innerText()) === "70/70" &&
+        (await p2
+          .locator('[data-testid="run-phase"], main.combat-shell')
+          .first()
+          .getAttribute("data-attempt")) === "0",
+    );
+    check("S12 주입4 에러 0", e2.length === 0, e2.join(" | "));
+    await context.close();
+  }
 }
 
 // ---------- 시나리오 10: 패배 연출 완료 후 결과 표시 + 같은 시드 재시작 정리 ----------
 {
-  const { page, errors } = await boot();
+  // 그래프 세대: 1전투 적이 시드 롤이 되어 테스트 전용 ?encounter=raider로 고정한다
+  const { page, errors } = await boot(undefined, {
+    url: `${URL}&encounter=raider`,
+  });
 
   // 약탈자 고정 패턴(11, 4×2, 11)으로 아무 행동 없이 6턴을 넘기면 HP 10이 남는다.
   for (let attack = 0; attack < 6; attack += 1) {
@@ -2897,6 +2954,201 @@ const winCurrentCombat = async (page) => {
     );
     check(`S24 ${character} 에러 0`, errors.length === 0, errors.join(" | "));
     await page.close();
+  }
+}
+
+// ---------- 시나리오 25: P4.3 상점·갈림길 — 저장 주입 결정론 검증 ----------
+// v4 저장을 localStorage에 주입해 상점/갈림길 화면을 직접 부팅한다 (테스트 전용 경로,
+// 정식 콘텐츠 무접촉). 가격·경계 진실은 코어/저장 검증기가 소유 — 여기선 DOM 반영만 확인.
+{
+  const CONTENT_VERSION_PIN = "0.9.0-p4"; // 버전 승격 시 골든처럼 함께 재고정
+  const WARRIOR_SKILLS = [
+    "slash",
+    "guard",
+    "burning-strike",
+    "ignite",
+    "ignite-sword",
+    "flame-rampage",
+  ];
+  const baseSave = {
+    version: 4,
+    contentVersion: CONTENT_VERSION_PIN,
+    runSeed: "S25-SHOP",
+    character: "warrior",
+    currentHp: 63,
+    maxHp: 70,
+    bag: [...Array.from({ length: 8 }, () => "basic"), "fire", "fire"],
+    equippedSkills: WARRIOR_SKILLS,
+    gold: 150,
+    nodeChoices: [0, 0, 0],
+    shopRemovals: 0,
+    shopPurchasedCoins: 0,
+    shopPurchasedSkills: 0,
+    combatIndex: 1,
+    attempt: 0,
+  };
+  const bootWithSave = async (save) => {
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      deviceScaleFactor: 1,
+    });
+    const page = await context.newPage();
+    await page.addInitScript(
+      ([key, value]) => window.localStorage.setItem(key, value),
+      ["deckbuilding-roguelite.run-save", JSON.stringify(save)],
+    );
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
+    page.on("console", (message) => {
+      if (
+        message.type() === "error" &&
+        !message.location().url.endsWith("/favicon.ico")
+      )
+        errors.push(`console: ${message.text()}`);
+    });
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    return { page, errors, context };
+  };
+
+  // A. 상점 — 구매/제거/누진/나가기
+  const shopSave = {
+    ...baseSave,
+    phase: "shop",
+    graph: {
+      layers: [
+        [{ id: "n0", kind: "combat", encounter: ["raider"] }],
+        [{ id: "n1", kind: "shop" }],
+        [{ id: "n2", kind: "boss", encounter: ["ember-archmage"] }],
+      ],
+    },
+    pendingShop: {
+      coinOptions: ["basic", "fire", "mana"],
+      coinPrices: [25, 50, 70],
+      skillOptions: ["smash", "fire-infusion"],
+      skillPrices: [50, 80],
+    },
+  };
+  {
+    const { page, errors, context } = await bootWithSave(shopSave);
+    await page.waitForSelector('[data-testid="shop-screen"]', {
+      timeout: 15000,
+    });
+    check(
+      "S25 상점 부팅·골드 150",
+      (await page.locator('[data-testid="run-gold"]').innerText()).includes(
+        "150",
+      ),
+    );
+    check(
+      "S25 코인 진열 3종·가격 정본",
+      (await page.locator('[data-testid="shop-coins"] .shop-item').count()) ===
+        3 &&
+        (await page.locator('[data-testid="shop-coins"]').innerText()).includes(
+          "25G",
+        ),
+    );
+    // 스킬 구매: 강타 50 → 슬롯 1 교체
+    await page.locator('[data-testid="shop-skill-smash"]').click();
+    check(
+      "S25 스킬 슬롯 픽커 표시",
+      (await page.locator('[data-testid="shop-slot-picker"]').count()) === 1,
+    );
+    await page.locator('[data-testid="shop-replace-slot-0"]').click();
+    check(
+      "S25 스킬 구매 반영 (골드 100·슬롯1 강타)",
+      (await page.locator('[data-testid="run-gold"]').innerText()).includes(
+        "100",
+      ) &&
+        (
+          (await page
+            .locator('[data-testid="run-phase"]')
+            .getAttribute("data-equipped-skills")) ?? ""
+        ).startsWith("smash,"),
+    );
+    // 동전 제거: 75 → 골드 25, 다음 제거가 100으로 누진
+    await page.locator('[data-testid="shop-remove-0"]').click();
+    const removalText = await page
+      .locator('[data-testid="shop-removal"] h3')
+      .innerText();
+    check(
+      "S25 제거 75 지불·누진 100 표기",
+      (await page.locator('[data-testid="run-gold"]').innerText()).includes(
+        "25",
+      ) && removalText.includes("100G"),
+    );
+    check(
+      "S25 잔여 골드 25로 화염(50)·강습(80) 비활성, 기본(25) 활성",
+      (await page
+        .locator('[data-testid="shop-coin-fire"]')
+        .isDisabled()) &&
+        !(await page.locator('[data-testid="shop-coin-basic"]').isDisabled()),
+    );
+    await page.locator('[data-testid="shop-coin-basic"]').click();
+    check(
+      "S25 기본 코인 구매 (골드 0·가방 10)",
+      (await page.locator('[data-testid="run-gold"]').innerText()).includes(
+        "0",
+      ) &&
+        (
+          (await page
+            .locator('[data-testid="run-phase"]')
+            .getAttribute("data-bag")) ?? ""
+        )
+          .split(",")
+          .filter(Boolean).length === 10,
+    );
+    await page.locator(".shop-leave").click();
+    check(
+      "S25 상점 나가기 → 보스 노드 준비",
+      (await page
+        .locator('[data-testid="run-phase"]')
+        .getAttribute("data-run-phase")) === "ready" &&
+        (await page.locator(".run-panel").innerText()).includes("잿불 마도왕"),
+    );
+    check("S25 상점 에러 0", errors.length === 0, errors.join(" | "));
+    await context.close();
+  }
+
+  // B. 갈림길 — 현재 레이어 선택만, 선택 후 진입
+  const chooseSave = {
+    ...baseSave,
+    gold: 35,
+    phase: "choose-node",
+    graph: {
+      layers: [
+        [{ id: "c0", kind: "combat", encounter: ["raider"] }],
+        [
+          { id: "c1a", kind: "shop" },
+          { id: "c1b", kind: "combat", encounter: ["goblin", "ghoul"] },
+        ],
+        [{ id: "c2", kind: "boss", encounter: ["ember-archmage"] }],
+      ],
+    },
+  };
+  {
+    const { page, errors, context } = await bootWithSave(chooseSave);
+    await page.waitForSelector('[data-testid="node-choice"]', {
+      timeout: 15000,
+    });
+    check(
+      "S25 갈림길 옵션 2 (상점·전투)",
+      (await page.locator('[data-testid="node-option-0"]').innerText()).includes(
+        "상점",
+      ) &&
+        (
+          await page.locator('[data-testid="node-option-1"]').innerText()
+        ).includes("고블린·구울"),
+    );
+    await page.locator('[data-testid="node-option-1"]').click();
+    check(
+      "S25 전투 노드 선택 → 준비 페이즈·조우 표기",
+      (await page
+        .locator('[data-testid="run-phase"]')
+        .getAttribute("data-run-phase")) === "ready" &&
+        (await page.locator(".run-panel").innerText()).includes("고블린·구울"),
+    );
+    check("S25 갈림길 에러 0", errors.length === 0, errors.join(" | "));
+    await context.close();
   }
 }
 

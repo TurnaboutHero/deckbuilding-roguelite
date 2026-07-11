@@ -11,12 +11,16 @@ import type {
   SlotId,
 } from "@game/core";
 import {
-  RUN_ENCOUNTER_COUNT,
-  RUN_ENCOUNTERS,
+  buyShopCoin,
+  buyShopRemoval,
+  buyShopSkill,
   chooseCoinReward,
+  chooseRunNode,
   chooseSkillReward,
+  completedCombatCount,
   createCombat,
   createRun,
+  leaveShop,
   legalCommands,
   previewFlip,
   resolveCoinRemoval,
@@ -62,6 +66,8 @@ import {
   SwordIcon,
 } from "./icons";
 import { coinNameFor, coinRewardDetailFor } from "./coin-info";
+import { NodeChoice } from "./node-choice";
+import { ShopScreen } from "./shop-screen";
 import { Keyword } from "./keywords";
 import { buildResolutionSummary, statusKo } from "./resolution-summary";
 import { ResolutionTicket } from "./resolution-ticket";
@@ -140,9 +146,15 @@ import {
   finishHumanCombat,
   finishHumanRun,
   recordHumanDecision,
+  recordHumanNodeChoice,
   recordHumanReward,
+  recordHumanShopAction,
 } from "./telemetry";
-import type { HumanRunTrace, RecordHumanRewardInput } from "./telemetry";
+import type {
+  HumanRunTrace,
+  HumanShopAction,
+  RecordHumanRewardInput,
+} from "./telemetry";
 import { TurnBuffBar } from "./turn-buff";
 
 // 생성 에셋 (docs/ui/combat-ui-v2.png 앵커 스타일 — image_gen 산출, 후처리: 크로마 키·리사이즈)
@@ -558,9 +570,13 @@ const characterFromUrl = (): CharacterId | null => {
 const testEncounterFromUrl = (): readonly EnemyDefId[] | null => {
   const encounter = new URL(window.location.href).searchParams.get("encounter");
   // 테스트 전용 전투 표면: 정식 런 encounter 테이블을 건드리지 않고 UI에서만 적 배열을 바꾼다.
+  // 'raider' 단일은 S10 패배 산술(고정 패턴 11·4×2·11)의 결정론 앵커 — 그래프 세대에서
+  // 1전투 적이 시드 롤이 되면서 필요해졌다.
   return encounter === "duo-raiders"
     ? (["raider" as EnemyDefId, "raider" as EnemyDefId] as const)
-    : null;
+    : encounter === "raider"
+      ? (["raider" as EnemyDefId] as const)
+      : null;
 };
 
 const testSkillsFromUrl = (
@@ -685,22 +701,33 @@ const SkillRewardMark = ({
   return <EmberIcon scale={scale} />;
 };
 
+const currentNodeFor = (run: RunState) =>
+  run.graph.layers[run.combatIndex]?.[run.nodeChoices[run.combatIndex] ?? 0];
+
+const NODE_KIND_KO: Record<string, string> = {
+  combat: "전투",
+  elite: "엘리트",
+  shop: "상점",
+  event: "이벤트",
+  boss: "보스",
+};
+
 const enemyNameFor = (run: RunState): string => {
-  const id = RUN_ENCOUNTERS[run.combatIndex]?.[0];
-  return id === undefined
-    ? "적"
-    : (contentDb.enemies[String(id)]?.name ?? "적");
+  const node = currentNodeFor(run);
+  const names = (node?.encounter ?? []).map(
+    (id) => contentDb.enemies[String(id)]?.name ?? "적",
+  );
+  return names.length === 0 ? "적" : names.join("·");
 };
 
 const RunMeta = ({ run }: { run: RunState }) => {
+  const layerCount = run.graph.layers.length;
   const progress =
     run.phase === "rewards"
-      ? `전투 ${run.combatIndex}/${RUN_ENCOUNTER_COUNT} 완료`
-      : run.phase === "ready"
-        ? `다음 전투 ${run.combatIndex + 1}/${RUN_ENCOUNTER_COUNT}`
-        : run.phase === "victory" || run.phase === "defeat"
-          ? "런 결과"
-          : `전투 ${run.combatIndex + 1}/${RUN_ENCOUNTER_COUNT}`;
+      ? `전투 ${completedCombatCount(run)} 완료`
+      : run.phase === "victory" || run.phase === "defeat"
+        ? "런 결과"
+        : `노드 ${run.combatIndex + 1}/${layerCount}`;
   const context =
     run.phase === "rewards"
       ? "보상 선택"
@@ -708,7 +735,11 @@ const RunMeta = ({ run }: { run: RunState }) => {
         ? "승리"
         : run.phase === "defeat"
           ? "패배"
-          : enemyNameFor(run);
+          : run.phase === "shop"
+            ? "상점"
+            : run.phase === "choose-node"
+              ? "갈림길"
+              : enemyNameFor(run);
   return (
     <header
       aria-label="런 진행 정보"
@@ -726,16 +757,31 @@ const RunMeta = ({ run }: { run: RunState }) => {
       <span>
         HP {run.currentHp}/{run.maxHp}
       </span>
+      <span aria-label={`보유 골드 ${run.gold}`} data-testid="run-gold">
+        골드 {run.gold}
+      </span>
       <span>시도 {run.attempt + 1}</span>
       <small>SEED {run.runSeed}</small>
     </header>
   );
 };
 
+// 코어 거부 메시지 → 사용자 문구 (규칙 재판정 없이 메시지 매핑만)
+const shopRejectionKo = (message: string): string =>
+  message.includes("not enough gold")
+    ? "골드가 부족합니다."
+    : message.includes("cannot remove the last coin")
+      ? "마지막 동전은 제거할 수 없습니다."
+      : message.includes("already owned")
+        ? "이미 장착한 스킬입니다."
+        : "구매할 수 없습니다.";
+
 const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
   const [session, setSession] = useState<RunSession>(initialSession);
   const [removalIndex, setRemovalIndex] = useState<number | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<SkillId | null>(null);
+  const [shopRejection, setShopRejection] = useState<string | null>(null);
+  const [shopSkillPick, setShopSkillPick] = useState<number | null>(null);
   const primaryRef = useRef<HTMLButtonElement | null>(null);
   const { run, combat } = session;
   const telemetryRef = useRef<HumanRunTrace | null>(null);
@@ -760,6 +806,8 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
   useEffect(() => {
     setRemovalIndex(null);
     setSelectedSkill(null);
+    setShopSkillPick(null);
+    setShopRejection(null);
   }, [run.combatIndex, run.phase, rewardStage]);
 
   useEffect(() => {
@@ -769,6 +817,24 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
   const commitRun = (next: RunState) => {
     persistRun(next);
     setSession({ run: next, combat: null });
+  };
+
+  // 상점 액션 공통 경로: 코어가 던지는 거부 사유를 사용자 문구로 노출 (기존 거부 피드백 패턴).
+  // 성공 시에만 경로 사실을 기록한다 — 리플레이 스키마 v2 (거부된 시도는 상태 무변).
+  const runShopAction = (action: () => RunState, fact: HumanShopAction) => {
+    try {
+      const next = action();
+      telemetryRef.current = recordHumanShopAction(currentTelemetry(), {
+        layer: run.combatIndex,
+        action: fact,
+      });
+      setShopRejection(null);
+      commitRun(next);
+    } catch (error) {
+      setShopRejection(
+        error instanceof Error ? shopRejectionKo(error.message) : "구매할 수 없습니다.",
+      );
+    }
   };
 
   const commitReward = (next: RunState, reward: RecordHumanRewardInput) => {
@@ -912,7 +978,7 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
           {run.phase === "rewards" && pending !== undefined ? (
             <>
               <p className="run-kicker">
-                전투 {run.combatIndex}/{RUN_ENCOUNTER_COUNT} 완료
+                전투 {completedCombatCount(run)} 완료
               </p>
               <h1>전투 보상</h1>
               <p
@@ -947,7 +1013,7 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                         ref={index === 0 ? primaryRef : undefined}
                         type="button"
                         onClick={() =>
-                          commitReward(chooseCoinReward(run, coin), {
+                          commitReward(chooseCoinReward(run, coin, contentDb), {
                             combatIndex: run.combatIndex - 1,
                             stage:
                               rewardStage === "fallback-coin"
@@ -971,7 +1037,7 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                     data-testid="coin-reward-skip"
                     type="button"
                     onClick={() =>
-                      commitReward(chooseCoinReward(run, null), {
+                      commitReward(chooseCoinReward(run, null, contentDb), {
                         combatIndex: run.combatIndex - 1,
                         stage:
                           rewardStage === "fallback-coin"
@@ -1102,7 +1168,7 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                         data-testid="skill-reward-skip"
                         type="button"
                         onClick={() =>
-                          commitReward(skipSkillReward(run), {
+                          commitReward(skipSkillReward(run, contentDb), {
                             combatIndex: run.combatIndex - 1,
                             stage: "skill",
                             options: pending.skillOptions.map(String),
@@ -1136,7 +1202,7 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                             type="button"
                             onClick={() =>
                               commitReward(
-                                chooseSkillReward(run, selectedSkill, index),
+                                chooseSkillReward(run, selectedSkill, index, contentDb),
                                 {
                                   combatIndex: run.combatIndex - 1,
                                   stage: "skill",
@@ -1180,7 +1246,7 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                           data-testid="replace-decline"
                           type="button"
                           onClick={() =>
-                            commitReward(skipSkillReward(run), {
+                            commitReward(skipSkillReward(run, contentDb), {
                               combatIndex: run.combatIndex - 1,
                               stage: "skill",
                               options: pending.skillOptions.map(String),
@@ -1199,7 +1265,9 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
             </>
           ) : run.phase === "ready" ? (
             <>
-              <p className="run-kicker">보상 선택 완료</p>
+              <p className="run-kicker">
+                {NODE_KIND_KO[currentNodeFor(run)?.kind ?? "combat"]} 노드
+              </p>
               <h1>다음 전투</h1>
               <p>
                 {enemyNameFor(run)} · HP {run.currentHp}/{run.maxHp}
@@ -1211,13 +1279,109 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                 type="button"
                 onClick={startNextCombat}
               >
-                전투 {run.combatIndex + 1}/{RUN_ENCOUNTER_COUNT} 시작
+                노드 {run.combatIndex + 1}/{run.graph.layers.length} 전투 시작
               </button>
             </>
+          ) : run.phase === "choose-node" ? (
+            <NodeChoice
+              layerLabel={`노드 ${run.combatIndex + 1}/${run.graph.layers.length}`}
+              options={(run.graph.layers[run.combatIndex] ?? []).map(
+                (node, index) => ({
+                  index,
+                  kind: node.kind,
+                  title: NODE_KIND_KO[node.kind] ?? node.kind,
+                  detail:
+                    node.kind === "shop"
+                      ? "골드로 동전·스킬 구매, 동전 제거"
+                      : (node.encounter ?? [])
+                          .map(
+                            (enemy) =>
+                              contentDb.enemies[String(enemy)]?.name ?? "적",
+                          )
+                          .join("·"),
+                }),
+              )}
+              onChoose={(index) => {
+                telemetryRef.current = recordHumanNodeChoice(
+                  currentTelemetry(),
+                  { layer: run.combatIndex, choice: index },
+                );
+                commitRun(chooseRunNode(run, index, contentDb));
+              }}
+            />
+          ) : run.phase === "shop" && run.pendingShop !== undefined ? (
+            <ShopScreen
+              gold={run.gold}
+              removalPrice={75 + 25 * run.shopRemovals}
+              coinOffers={run.pendingShop.coinOptions.map((coin, index) => ({
+                id: String(coin),
+                name: coinName(coin),
+                price: run.pendingShop?.coinPrices[index] ?? 0,
+                visualClass: String(
+                  contentDb.coins[String(coin)]?.element ?? "",
+                ),
+              }))}
+              skillOffers={run.pendingShop.skillOptions.map((skill, index) => ({
+                id: String(skill),
+                name: contentDb.skills[String(skill)]?.name ?? String(skill),
+                price: run.pendingShop?.skillPrices[index] ?? 0,
+                rarityName: skillRarityName(skill),
+                card: <SkillRewardMark scale={2.6} skill={skill} />,
+              }))}
+              bagCoins={run.bag.map((coin, bagIndex) => ({
+                bagIndex,
+                name: coinName(coin),
+                visualClass: String(
+                  contentDb.coins[String(coin)]?.element ?? "",
+                ),
+              }))}
+              rejection={shopRejection}
+              skillPick={shopSkillPick}
+              slotLabels={run.equippedSkills.map(
+                (skill) => contentDb.skills[String(skill)]?.name ?? String(skill),
+              )}
+              onBuyCoin={(index) =>
+                runShopAction(
+                  () => buyShopCoin(run, index, contentDb),
+                  { kind: "buy-coin", option: index },
+                )
+              }
+              onPickSkill={(index) => {
+                setShopRejection(null);
+                setShopSkillPick(index);
+              }}
+              onConfirmSkill={(slot) =>
+                runShopAction(
+                  () => {
+                    const next = buyShopSkill(
+                      run,
+                      shopSkillPick ?? -1,
+                      contentDb,
+                      slot,
+                    );
+                    setShopSkillPick(null);
+                    return next;
+                  },
+                  { kind: "buy-skill", option: shopSkillPick ?? -1, slot },
+                )
+              }
+              onCancelSkill={() => setShopSkillPick(null)}
+              onRemoveCoin={(bagIndex) =>
+                runShopAction(
+                  () => buyShopRemoval(run, bagIndex, contentDb),
+                  { kind: "remove-coin", bagIndex },
+                )
+              }
+              onLeave={() =>
+                runShopAction(() => leaveShop(run, contentDb), {
+                  kind: "leave",
+                })
+              }
+            />
           ) : (
             <>
               <p className="run-kicker">
-                전투 {run.combatIndex + 1}/{RUN_ENCOUNTER_COUNT}
+                전투 {completedCombatCount(run)} 완료
               </p>
               <h1>{run.phase === "victory" ? "런 승리" : "런 패배"}</h1>
               <p>
