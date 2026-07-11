@@ -12,7 +12,7 @@ import type {
   SkillId,
   SlotId
 } from '@game/core';
-import { createCombat, step, validateContentDb } from '@game/core';
+import { createCombat, statusStacks, step, validateContentDb } from '@game/core';
 import { describe, expect, it } from 'vitest';
 
 import { characters, coins, CONTENT_VERSION, contentDb, enemies, skills } from './index';
@@ -49,6 +49,15 @@ const withEquippedSkill = (state: CombatState, value: string): CombatState => ({
   )
 });
 
+const withEquippedSkills = (state: CombatState, values: readonly string[]): CombatState => ({
+  ...state,
+  slots: state.slots.map((candidate, index) =>
+    values[index] === undefined
+      ? candidate
+      : { ...candidate, skillId: skillId(values[index]), usedThisTurn: false, usedThisCombat: false }
+  )
+});
+
 const withHandDefs = (state: CombatState, defs: readonly string[]): CombatState => ({
   ...state,
   coins: {
@@ -71,6 +80,30 @@ const useFlip = (state: CombatState, coinsToUse: readonly CoinUid[], target?: nu
     current = placed.state;
   }
   const result = step(current, { type: 'useFlipSkill', slot: slotId(0), target, chosen }, contentDb);
+  if (!result.ok) throw new Error(result.error);
+  return result;
+};
+
+const useFlipAt = (
+  state: CombatState,
+  slot: number,
+  coinsToUse: readonly CoinUid[],
+  target?: number,
+  chosen?: CoinUid[]
+) => {
+  let current = state;
+  for (const coin of coinsToUse) {
+    const placed = step(current, { type: 'placeCoin', coin, slot: slotId(slot) }, contentDb);
+    if (!placed.ok) throw new Error(placed.error);
+    current = placed.state;
+  }
+  const result = step(current, { type: 'useFlipSkill', slot: slotId(slot), target, chosen }, contentDb);
+  if (!result.ok) throw new Error(result.error);
+  return result;
+};
+
+const useConsumeAt = (state: CombatState, slot: number, coins: readonly CoinUid[], target?: number) => {
+  const result = step(state, { type: 'useConsumeSkill', slot: slotId(slot), coins: [...coins], target }, contentDb);
   if (!result.ok) throw new Error(result.error);
   return result;
 };
@@ -211,9 +244,73 @@ describe('turn trigger content lint (P3.3)', () => {
   });
 });
 
+describe('P3.3 heart-of-flame interaction regressions', () => {
+  // 감시자 함정 회귀: 하트 활성 중 utility 셋업(화염검) 사용은 하트를 발동시키지 않고
+  // 셀프 화상도 만들지 않는다. 실제 공격은 적에게 화상 +2를 얹는다.
+  const armedHeart = () => {
+    let state = withEquippedSkills(combat('p33-heart-regression'), [
+      'heart-of-flame',
+      'slash',
+      'flame-sword',
+      'guard',
+      'ignite',
+      'flame-rampage'
+    ]);
+    state = withHandDefs(state, ['fire', 'fire', 'fire', 'fire', 'basic']);
+    const coins = state.zones.hand.slice(0, 3);
+    const heart = useConsumeAt(state, 0, coins, 0);
+    return heart.state;
+  };
+
+  it('does not fire heart-of-flame nor burn the player when flame-sword resolves', () => {
+    const state = armedHeart();
+    const fuel = state.zones.hand.find((coin) => {
+      const instance = state.coins[Number(coin)];
+      return String(instance?.defId) === 'fire';
+    });
+    if (fuel === undefined) throw new Error('missing fuel');
+    const setup = useConsumeAt(state, 2, [fuel]);
+
+    expect(
+      setup.events.filter(
+        (event) => event.type === 'turnTriggerFired' && event.trigger === 'heart-of-flame'
+      )
+    ).toHaveLength(0);
+    expect(statusStacks(setup.state.player.statuses, 'burn')).toBe(0);
+  });
+
+  it('fires heart-of-flame on a real attack and burns the enemy by 2', () => {
+    const state = armedHeart();
+    const coin = state.zones.hand[0];
+    if (coin === undefined) throw new Error('missing coin');
+    const placed = step(state, { type: 'placeCoin', coin, slot: slotId(1) }, contentDb);
+    if (!placed.ok) throw new Error(placed.error);
+    const attack = step(
+      withFaces(placed.state, ['tails']),
+      { type: 'useFlipSkill', slot: slotId(1), target: 0 },
+      contentDb
+    );
+    if (!attack.ok) throw new Error(attack.error);
+
+    expect(
+      attack.events.filter(
+        (event) => event.type === 'turnTriggerFired' && event.trigger === 'heart-of-flame'
+      )
+    ).toHaveLength(1);
+    expect(statusStacks(attack.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(2);
+    expect(statusStacks(attack.state.player.statuses, 'burn')).toBe(0);
+  });
+
+  it('rejects attack-tagged skills without an enemy targetType (structural lint)', () => {
+    expect(
+      validateSkill(flipSkill({ tags: ['attack'], targetType: 'self' }))
+    ).toContain('skill test-flip: attack tag requires an enemy targetType (got self)');
+  });
+});
+
 describe('M5 shipped content', () => {
   it('ships the M5 version, mana coin, skills, and fixed enemy definitions', () => {
-    expect(CONTENT_VERSION).toBe('0.6.0-p3.2');
+    expect(CONTENT_VERSION).toBe('0.7.0-p3.3');
     expect(coins.mana).toEqual({
       id: coinId('mana'),
       element: 'mana',
@@ -265,6 +362,56 @@ describe('M5 shipped content', () => {
       cost: 1,
       base: [{ kind: 'addCoin', coin: coinId('mana'), zone: 'discard', count: 1 }],
       tails: { mode: 'any', effects: [{ kind: 'block', amount: 4 }] }
+    });
+    expect(skills['flame-sword']).toMatchObject({
+      name: '화염검',
+      type: 'consume',
+      rarity: 'advanced',
+      tags: ['utility'],
+      targetType: 'self',
+      consume: { element: 'fire', count: 1 },
+      effects: [
+        {
+          kind: 'addTurnTrigger',
+          trigger: {
+            id: 'flame-sword',
+            hook: 'onDamageDealt',
+            effects: [{ kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }]
+          }
+        }
+      ]
+    });
+    expect(skills['heart-of-flame']).toMatchObject({
+      name: '불의 심장',
+      type: 'consume',
+      rarity: 'rare',
+      tags: ['utility'],
+      targetType: 'self',
+      consume: { element: 'fire', count: 3 },
+      effects: [
+        {
+          kind: 'addTurnTrigger',
+          trigger: {
+            id: 'heart-of-flame',
+            hook: 'onAttackSkillResolved',
+            effects: [{ kind: 'applyStatus', status: 'burn', stacks: 2, to: 'target' }]
+          }
+        }
+      ]
+    });
+    expect(skills.conflagration).toMatchObject({
+      name: '대화재',
+      type: 'flip',
+      rarity: 'rare',
+      tags: ['attack', 'ultimate'],
+      targetType: 'single-enemy',
+      oncePerCombat: true,
+      cost: 5,
+      base: [
+        { kind: 'damage', amount: 18 },
+        { kind: 'applyStatus', status: 'burn', stacks: 4, to: 'target' }
+      ],
+      heads: { mode: 'per', effects: [{ kind: 'damage', amount: 4 }] }
     });
     expect(enemies.gatekeeper.maxHp).toBe(70);
     expect(enemies.shaman.maxHp).toBe(60);
@@ -426,6 +573,46 @@ describe('M5 shipped content', () => {
     expect(result.state.coins[Number(basicTwo)]?.grants).toEqual(['fire']);
     expect(result.state.coins[Number(fire)]?.grants).toEqual([]);
     expect(result.state.coins[Number(mana)]?.grants).toEqual([]);
+  });
+
+  it('Flame Sword adds one burn for each later damage packet this turn', () => {
+    let state = withFaces(combat('flame-sword-trigger'), ['tails', 'tails']);
+    state = withEquippedSkills(state, ['flame-sword', 'slash', 'slash']);
+    state = withHandDefs(state, ['fire', 'basic', 'basic']);
+    const [fuel] = state.zones.hand;
+    if (fuel === undefined) throw new Error('missing flame sword fuel');
+
+    const setup = useConsumeAt(state, 0, [fuel]);
+    const firstCost = setup.state.zones.hand[0];
+    if (firstCost === undefined) throw new Error('missing first attack cost');
+    const first = useFlipAt(setup.state, 1, [firstCost], 0);
+    expect(statusStacks(first.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(1);
+
+    const secondCost = first.state.zones.hand[0];
+    if (secondCost === undefined) throw new Error('missing second attack cost');
+    const second = useFlipAt(first.state, 2, [secondCost], 0);
+    expect(second.events).toContainEqual({ type: 'turnTriggerFired', trigger: 'flame-sword', hook: 'onDamageDealt' });
+    expect(statusStacks(second.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(2);
+  });
+
+  it('Heart of Flame adds two burn after each later attack skill this turn', () => {
+    let state = withFaces(combat('heart-of-flame-trigger'), ['tails', 'tails']);
+    state = withEquippedSkills(state, ['heart-of-flame', 'slash', 'slash']);
+    state = withHandDefs(state, ['fire', 'fire', 'fire', 'basic', 'basic']);
+    const fuel = state.zones.hand.slice(0, 3);
+    expect(fuel).toHaveLength(3);
+
+    const setup = useConsumeAt(state, 0, fuel);
+    const firstCost = setup.state.zones.hand[0];
+    if (firstCost === undefined) throw new Error('missing first attack cost');
+    const first = useFlipAt(setup.state, 1, [firstCost], 0);
+    expect(first.events).toContainEqual({ type: 'turnTriggerFired', trigger: 'heart-of-flame', hook: 'onAttackSkillResolved' });
+    expect(statusStacks(first.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(2);
+
+    const secondCost = first.state.zones.hand[0];
+    if (secondCost === undefined) throw new Error('missing second attack cost');
+    const second = useFlipAt(first.state, 2, [secondCost], 0);
+    expect(statusStacks(second.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(4);
   });
 
   it.each([

@@ -182,6 +182,24 @@ const validateTriggerAtoms = (
   }
 };
 
+// attack 태그 스킬이 self/none 대상을 갖으면 onAttackSkillResolved류 트리거가
+// 플레이어를 대상으로 발동하는 셀프 피해 함정이 된다 — 구조적으로 금지 (P3.3 감사)
+const validateAttackTargets = (skills: readonly SkillDef[]): string[] => {
+  const errors: string[] = [];
+  for (const skill of skills) {
+    if (
+      skill.tags.includes('attack') &&
+      skill.targetType !== 'single-enemy' &&
+      skill.targetType !== 'all-enemies'
+    ) {
+      errors.push(
+        `skill ${String(skill.id)}: attack tag requires an enemy targetType (got ${skill.targetType})`
+      );
+    }
+  }
+  return errors;
+};
+
 const validateTurnTriggers = (db: Omit<ContentDb, 'validate'>): string[] => {
   const errors: string[] = [];
   for (const skill of Object.values(db.skills)) {
@@ -206,7 +224,8 @@ export const validateContentDb = (db: Omit<ContentDb, 'validate'>): string[] => 
   ...duplicateIds(Object.values(db.enemies), 'enemy'),
   ...duplicateIds(Object.values(db.characters), 'character'),
   ...validateSkillCosts(Object.values(db.skills)),
-  ...validateTurnTriggers(db)
+  ...validateTurnTriggers(db),
+  ...validateAttackTargets(Object.values(db.skills))
 ];
 
 export const effectiveElements = (coin: CoinInstance, db: ContentDb): Element[] => {

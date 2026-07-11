@@ -4,8 +4,11 @@ import type { CharacterDef, CoinDef, ContentDb, EnemyDef, SkillDef } from '@game
 
 // P3.2 승격: 수호자·마나 스킬·exclusiveTo 시대. m5 콘텐츠는 현 버전의 부분집합이고
 // 기존 수치가 불변이므로 m5 저장은 안전하게 로드(마이그레이션)할 수 있다.
-export const CONTENT_VERSION = '0.6.0-p3.2';
-export const LEGACY_CONTENT_VERSIONS: readonly string[] = ['0.5.0-m5'];
+export const CONTENT_VERSION = '0.7.0-p3.3';
+export const LEGACY_CONTENT_VERSIONS: readonly string[] = ['0.6.0-p3.2', '0.5.0-m5'];
+// p3.2→p3.3 호환 근거: 스킬 3종 가산뿐(수치 불변)이라 기존 저장의 모든 참조가 유효하다.
+// rewards 저장의 유일한 위험 형상(공용 풀 소진 fallback)은 p3.2 실콘텐츠에서 도달 불가
+// (전사 공용 9종 − 장착 6 = 미보유 ≥3 ≥ 2) — 공허 엣지, run-storage 테스트로 고정.
 
 const coin = (value: string) => value as CoinDefId;
 const skill = (value: string) => value as SkillId;
@@ -100,6 +103,61 @@ export const skills = {
     base: [{ kind: 'grantElement', element: 'fire', scope: 'allBasicInHand' }],
     heads: { mode: 'any', effects: [{ kind: 'addCoin', coin: coin('fire'), zone: 'hand', count: 1 }] },
     tails: { mode: 'any', effects: [{ kind: 'selfDamage', amount: 2 }] }
+  },
+  'flame-sword': {
+    id: skill('flame-sword'),
+    name: '화염검',
+    type: 'consume',
+    rarity: 'advanced',
+    // 셋업 버프 스킬 — attack 태그면 onAttackSkillResolved가 self 대상으로 발동해
+    // 셀프 화상 함정이 된다 (P3.3 감사 결정: utility + 구조 lint로 클래스 차단)
+    tags: ['utility'],
+    targetType: 'self',
+    consume: { element: 'fire', count: 1 },
+    effects: [
+      {
+        kind: 'addTurnTrigger',
+        trigger: {
+          id: 'flame-sword',
+          hook: 'onDamageDealt',
+          effects: [{ kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }]
+        }
+      }
+    ]
+  },
+  'heart-of-flame': {
+    id: skill('heart-of-flame'),
+    name: '불의 심장',
+    type: 'consume',
+    rarity: 'rare',
+    tags: ['utility'],
+    targetType: 'self',
+    consume: { element: 'fire', count: 3 },
+    effects: [
+      {
+        kind: 'addTurnTrigger',
+        trigger: {
+          id: 'heart-of-flame',
+          hook: 'onAttackSkillResolved',
+          effects: [{ kind: 'applyStatus', status: 'burn', stacks: 2, to: 'target' }]
+        }
+      }
+    ]
+  },
+  conflagration: {
+    id: skill('conflagration'),
+    name: '대화재',
+    type: 'flip',
+    rarity: 'rare',
+    tags: ['attack', 'ultimate'],
+    targetType: 'single-enemy',
+    oncePerCombat: true,
+    cost: 5,
+    base: [
+      { kind: 'damage', amount: 18 },
+      { kind: 'applyStatus', status: 'burn', stacks: 4, to: 'target' }
+    ],
+    heads: { mode: 'per', effects: [{ kind: 'damage', amount: 4 }] }
   },
   smash: {
     id: skill('smash'),

@@ -6,12 +6,14 @@ const BASE_SEED = "1";
 const GAMES_PER_POLICY = 125;
 const EXPECTED_RUNS = GAMES_PER_POLICY * POLICY_IDS.length;
 
+// P3.3 R2: 공용 보상 풀에 flame-sword/heart-of-flame/conflagration 3종을 추가하며
+// seed42 보상 셔플과 fire-build 선택 결과가 의도적으로 바뀌어 재고정했다.
 const SEED_42_GOLDEN = {
   seed: "42",
   result: "victory",
   combatsCompleted: 5,
-  turnsPerCombat: [4, 3, 4, 4, 5],
-  carriedHp: 41,
+  turnsPerCombat: [4, 3, 4, 5, 9],
+  carriedHp: 27,
   finalBag: [
     "basic",
     "basic",
@@ -25,10 +27,10 @@ const SEED_42_GOLDEN = {
     "fire",
   ],
   finalEquippedSkills: [
-    "slash",
+    "conflagration",
     "guard",
     "burning-strike",
-    "furnace",
+    "flame-sword",
     "ignite-sword",
     "smash",
   ],

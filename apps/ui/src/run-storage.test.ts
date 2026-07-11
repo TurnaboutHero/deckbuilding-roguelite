@@ -260,6 +260,10 @@ describe("run save serialization boundary", () => {
 
   it("migrates v1 saves explicitly and rejects unknown versions", () => {
     // v1 → v2: 형태 동일, warrior 시대 저장 보존 (증거 계약 §2 — 명시 마이그레이션)
+    // 0.6.0-p3.2 레거시 콘텐츠 버전도 안전 로드 + 현 버전 정규화 (p3.3 가산 확장 — 공허 엣지 근거는 content index 주석)
+    const p32 = parse(rawWith({ contentVersion: "0.6.0-p3.2" }));
+    expect(p32).toEqual(readySave());
+    expect(p32?.contentVersion).toBe(CURRENT_CONTENT_VERSION);
     const migrated = parse(rawWith({ version: 1 }));
     expect(migrated).toEqual(readySave());
     expect(migrated?.version).toBe(RUN_SAVE_VERSION);

@@ -45,16 +45,31 @@ import {
 
 const character = (value: string): CharacterId => value as CharacterId;
 
+// 사용 우선순위 — attack만이 아니라 utility 셋업(화염검·불의 심장)도 포함한다:
+// 봇은 셋업을 먼저 발동해 이후 공격으로 트리거 가치를 실현한다 (P3.3 의도 문서화).
+// 셋업은 usedThisTurn/소비 코인으로 자연 한정되어 무진행 루프를 만들지 않는다 — 가드가 이를 보증.
 const ATTACK_SKILL_PRIORITY = [
+  "flame-sword",
+  "heart-of-flame",
   "ignite-sword",
   "burning-strike",
   "smash",
+  "shield-reprisal",
+  "warding-strike",
   "slash",
   "ignite",
+  "conflagration",
   "fire-infusion",
   "furnace",
 ];
-const REWARD_SKILL_PRIORITY = ["smash", "fire-infusion", "furnace"];
+const REWARD_SKILL_PRIORITY = [
+  "smash",
+  "fire-infusion",
+  "furnace",
+  "flame-sword",
+  "heart-of-flame",
+  "conflagration",
+];
 const REPLACEMENT_PRIORITY = [
   "flame-rampage",
   "furnace",
@@ -281,6 +296,27 @@ const runInvariantViolations = (run: RunState): string[] => {
   return violations;
 };
 
+// 진행 지문 — 모든 커맨드는 이 중 하나를 바꿔야 한다. 무진행 반복(장전/회수 교대 등)은
+// cap을 올려 숨기지 말고 즉시 실패시킨다 (P3.3 감시자 게이트).
+const progressFingerprint = (state: CombatState): string =>
+  [
+    state.turn,
+    state.phase,
+    state.skillUsesThisTurn,
+    state.player.hp,
+    state.player.block,
+    state.enemies.map((enemy) => `${enemy.hp}:${enemy.block}`).join(","),
+    state.zones.hand.length,
+    state.zones.draw.length,
+    state.zones.discard.length,
+    state.zones.exhausted.length,
+    Object.values(state.zones.placed)
+      .map((coins) => coins.length)
+      .join(","),
+    state.slots.map((slot) => (slot.usedThisTurn ? 1 : 0)).join(""),
+    state.turnTriggers.length,
+  ].join("|");
+
 const playCombat = (initial: CombatState): CombatState => {
   let state = initial;
   let expectedCoins = Object.keys(state.coins).length;
@@ -290,10 +326,16 @@ const playCombat = (initial: CombatState): CombatState => {
     commandIndex += 1
   ) {
     const command = chooseRunCommand(state);
+    const before = progressFingerprint(state);
     const result = step(state, command, contentDb);
     if (!result.ok)
       throw new Error(`illegal baseline command: ${result.error}`);
     state = result.state;
+    if (progressFingerprint(state) === before) {
+      throw new Error(
+        `baseline policy made no progress with command ${command.type}`,
+      );
+    }
     expectedCoins += result.events.filter(
       (event) => event.type === "coinCreated",
     ).length;
