@@ -165,6 +165,52 @@ describe('content cost lint (A18)', () => {
   });
 });
 
+describe('turn trigger content lint (P3.3)', () => {
+  const triggerSkill = (trigger: unknown): SkillDef =>
+    flipSkill({ base: [{ kind: 'addTurnTrigger', trigger } as never] });
+
+  it('accepts a well-formed turn trigger', () => {
+    expect(
+      validateSkill(
+        triggerSkill({
+          id: 'ok-trigger',
+          hook: 'onDamageDealt',
+          effects: [{ kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }]
+        })
+      )
+    ).toEqual([]);
+  });
+
+  it('rejects malformed trigger id, hook, and empty effects', () => {
+    expect(
+      validateSkill(triggerSkill({ id: '', hook: 'onDamageDealt', effects: [{ kind: 'damage', amount: 1 }] }))
+    ).toContain('skill test-flip: turn trigger id must be a non-empty string');
+    expect(
+      validateSkill(triggerSkill({ id: 'bad-hook', hook: 'onTurnStart', effects: [{ kind: 'damage', amount: 1 }] }))
+    ).toContain('skill test-flip: unknown turn trigger hook onTurnStart');
+    expect(
+      validateSkill(triggerSkill({ id: 'empty', hook: 'onDamageDealt', effects: [] }))
+    ).toContain('skill test-flip: turn trigger empty must declare at least one effect');
+  });
+
+  it('rejects nested addTurnTrigger inside a trigger (cyclic surface)', () => {
+    expect(
+      validateSkill(
+        triggerSkill({
+          id: 'outer',
+          hook: 'onDamageDealt',
+          effects: [
+            {
+              kind: 'addTurnTrigger',
+              trigger: { id: 'inner', hook: 'onDamageDealt', effects: [{ kind: 'damage', amount: 1 }] }
+            }
+          ]
+        })
+      )
+    ).toContain('skill test-flip trigger outer: nested addTurnTrigger inside a trigger is not allowed');
+  });
+});
+
 describe('M5 shipped content', () => {
   it('ships the M5 version, mana coin, skills, and fixed enemy definitions', () => {
     expect(CONTENT_VERSION).toBe('0.6.0-p3.2');
