@@ -2493,9 +2493,12 @@ const winCurrentCombat = async (page) => {
     url: `${baseUrl}?seed=${SEED}&select=1`,
     waitFor: "select",
   });
+  // P3.4: 술사·냉기 기사 추가로 4종 — 데이터 주도 노출의 의도 변경
   check(
-    "S21 선택 화면 캐릭터 카드 2종",
-    (await page.locator(".character-card").count()) === 2,
+    "S21 선택 화면 캐릭터 카드 4종 (전사·수호자·술사·냉기 기사)",
+    (await page.locator(".character-card").count()) === 4 &&
+      (await page.locator('[data-testid="character-select-sorcerer"]').count()) === 1 &&
+      (await page.locator('[data-testid="character-select-frost-knight"]').count()) === 1,
   );
   const guardianCard = page.locator(
     '[data-testid="character-select-guardian"]',

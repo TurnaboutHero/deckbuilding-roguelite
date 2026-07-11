@@ -52,9 +52,9 @@ describe('M5 full-run simulator', () => {
       result: 'victory',
       combatsCompleted: 5,
       turnsPerCombat: [4, 3, 4, 5, 9],
-      carriedHp: 27,
-      finalBag: ['basic', 'basic', 'basic', 'basic', 'fire', 'fire', 'fire', 'fire', 'fire', 'fire'],
-      finalEquippedSkills: ['conflagration', 'guard', 'burning-strike', 'flame-sword', 'ignite-sword', 'smash'],
+      carriedHp: 35,
+      finalBag: ['basic', 'basic', 'basic', 'basic', 'fire', 'fire', 'fire', 'fire', 'basic', 'fire'],
+      finalEquippedSkills: ['slash', 'guard', 'burning-strike', 'flame-sword', 'ignite-sword', 'conflagration'],
       encounterOrder: [['raider'], ['shaman'], ['gatekeeper'], ['raider-plus'], ['gatekeeper-plus']]
     });
   });

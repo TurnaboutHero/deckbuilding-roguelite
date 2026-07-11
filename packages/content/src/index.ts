@@ -4,8 +4,8 @@ import type { CharacterDef, CoinDef, ContentDb, EnemyDef, SkillDef } from '@game
 
 // P3.2 승격: 수호자·마나 스킬·exclusiveTo 시대. m5 콘텐츠는 현 버전의 부분집합이고
 // 기존 수치가 불변이므로 m5 저장은 안전하게 로드(마이그레이션)할 수 있다.
-export const CONTENT_VERSION = '0.7.0-p3.3';
-export const LEGACY_CONTENT_VERSIONS: readonly string[] = ['0.6.0-p3.2', '0.5.0-m5'];
+export const CONTENT_VERSION = '0.8.0-p3.4';
+export const LEGACY_CONTENT_VERSIONS: readonly string[] = ['0.7.0-p3.3', '0.6.0-p3.2', '0.5.0-m5'];
 // p3.2→p3.3 호환 근거: 스킬 3종 가산뿐(수치 불변)이라 기존 저장의 모든 참조가 유효하다.
 // rewards 저장의 유일한 위험 형상(공용 풀 소진 fallback)은 p3.2 실콘텐츠에서 도달 불가
 // (전사 공용 9종 − 장착 6 = 미보유 ≥3 ≥ 2) — 공허 엣지, run-storage 테스트로 고정.
@@ -26,6 +26,17 @@ export const coins = {
     id: coin('mana'),
     element: 'mana',
     proc: { face: 'heads', effects: [{ kind: 'block', amount: 2 }] }
+  },
+  // P3.4 — 냉기·전기 (PRD 코인 표 168~169행 그대로: 앞면 proc, 지속형 상태 1턴)
+  frost: {
+    id: coin('frost'),
+    element: 'frost',
+    proc: { face: 'heads', effects: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }] }
+  },
+  lightning: {
+    id: coin('lightning'),
+    element: 'lightning',
+    proc: { face: 'heads', effects: [{ kind: 'applyStatus', status: 'shock', stacks: 1, to: 'target' }] }
   }
 } satisfies Record<string, CoinDef>;
 
@@ -244,6 +255,109 @@ export const skills = {
     base: [{ kind: 'addCoin', coin: coin('mana'), zone: 'discard', count: 1 }],
     tails: { mode: 'any', effects: [{ kind: 'block', amount: 4 }] }
   }
+  ,
+  // ---- P3.4 술사 전용 (감전·연계 폭딜) — 수치는 기준표 안 임시값, balance-provisional ----
+  'spark-strike': {
+    id: skill('spark-strike'),
+    name: '뇌격',
+    exclusiveTo: character('sorcerer'),
+    type: 'flip',
+    rarity: 'common',
+    tags: ['attack'],
+    targetType: 'single-enemy',
+    cost: 1,
+    base: [{ kind: 'damage', amount: 5 }],
+    heads: { mode: 'any', effects: [{ kind: 'applyStatus', status: 'shock', stacks: 1, to: 'target' }] }
+  },
+  'chain-surge': {
+    id: skill('chain-surge'),
+    name: '연쇄 방전',
+    exclusiveTo: character('sorcerer'),
+    type: 'flip',
+    rarity: 'common',
+    tags: ['attack'],
+    targetType: 'single-enemy',
+    cost: 2,
+    base: [{ kind: 'damage', amount: 7 }],
+    heads: { mode: 'per', effects: [{ kind: 'damage', amount: 3 }] }
+  },
+  'static-field': {
+    id: skill('static-field'),
+    name: '정전기장',
+    exclusiveTo: character('sorcerer'),
+    type: 'flip',
+    rarity: 'common',
+    tags: ['utility'],
+    targetType: 'single-enemy',
+    cost: 1,
+    base: [{ kind: 'applyStatus', status: 'shock', stacks: 1, to: 'target' }],
+    heads: { mode: 'any', effects: [{ kind: 'block', amount: 3 }] }
+  },
+  'volt-lash': {
+    id: skill('volt-lash'),
+    name: '뇌전 개방',
+    exclusiveTo: character('sorcerer'),
+    type: 'consume',
+    rarity: 'advanced',
+    tags: ['attack'],
+    targetType: 'single-enemy',
+    consume: { element: 'lightning', count: 1 },
+    effects: [
+      { kind: 'damage', amount: 6 },
+      { kind: 'applyStatus', status: 'shock', stacks: 1, to: 'target' }
+    ]
+  },
+  // ---- P3.4 냉기 기사 전용 (약화·지연·방어 운영) — balance-provisional ----
+  'frost-slash': {
+    id: skill('frost-slash'),
+    name: '서리 베기',
+    exclusiveTo: character('frost-knight'),
+    type: 'flip',
+    rarity: 'common',
+    tags: ['attack'],
+    targetType: 'single-enemy',
+    cost: 1,
+    base: [{ kind: 'damage', amount: 5 }],
+    heads: { mode: 'any', effects: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }] }
+  },
+  'glacial-wall': {
+    id: skill('glacial-wall'),
+    name: '빙벽',
+    exclusiveTo: character('frost-knight'),
+    type: 'flip',
+    rarity: 'common',
+    tags: ['defense'],
+    targetType: 'self',
+    cost: 2,
+    base: [{ kind: 'block', amount: 9 }],
+    tails: { mode: 'per', effects: [{ kind: 'block', amount: 3 }] }
+  },
+  'chilling-field': {
+    id: skill('chilling-field'),
+    name: '한파',
+    exclusiveTo: character('frost-knight'),
+    type: 'flip',
+    rarity: 'common',
+    tags: ['utility'],
+    targetType: 'single-enemy',
+    cost: 1,
+    base: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }],
+    tails: { mode: 'any', effects: [{ kind: 'block', amount: 3 }] }
+  },
+  'glacier-strike': {
+    id: skill('glacier-strike'),
+    name: '빙결 일격',
+    exclusiveTo: character('frost-knight'),
+    type: 'consume',
+    rarity: 'advanced',
+    tags: ['attack'],
+    targetType: 'single-enemy',
+    consume: { element: 'frost', count: 1 },
+    effects: [
+      { kind: 'damage', amount: 7 },
+      { kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }
+    ]
+  }
 } satisfies Record<string, SkillDef>;
 
 
@@ -374,6 +488,48 @@ export const characters = {
       name: '고요한 샘',
       hook: 'combatStart',
       effects: [{ kind: 'addCoin', coin: coin('mana'), zone: 'draw', count: 1 }]
+    }
+  }
+  ,
+  // P3.4 — 술사·냉기 기사 (PRD 캐릭터 표 263~264행, 수치는 기준표 규격 그대로)
+  sorcerer: {
+    id: character('sorcerer'),
+    name: '술사',
+    maxHp: 70,
+    startingBag: [...Array.from({ length: 8 }, () => coin('basic')), coin('lightning'), coin('lightning')],
+    startingSkills: [
+      skill('slash'),
+      skill('guard'),
+      skill('spark-strike'),
+      skill('chain-surge'),
+      skill('static-field'),
+      skill('volt-lash')
+    ],
+    trait: {
+      id: 'charged-focus',
+      name: '대전된 집중',
+      hook: 'combatStart',
+      effects: [{ kind: 'addCoin', coin: coin('lightning'), zone: 'draw', count: 1 }]
+    }
+  },
+  'frost-knight': {
+    id: character('frost-knight'),
+    name: '냉기 기사',
+    maxHp: 70,
+    startingBag: [...Array.from({ length: 8 }, () => coin('basic')), coin('frost'), coin('frost')],
+    startingSkills: [
+      skill('slash'),
+      skill('guard'),
+      skill('frost-slash'),
+      skill('glacial-wall'),
+      skill('chilling-field'),
+      skill('glacier-strike')
+    ],
+    trait: {
+      id: 'winter-mantle',
+      name: '겨울 외투',
+      hook: 'combatStart',
+      effects: [{ kind: 'addCoin', coin: coin('frost'), zone: 'draw', count: 1 }]
     }
   }
 } satisfies Record<string, CharacterDef>;

@@ -12,10 +12,10 @@ import type {
   SkillId,
   SlotId
 } from '@game/core';
-import { createCombat, statusStacks, step, validateContentDb } from '@game/core';
+import { createCombat, statusStacks, statusTurns, step, validateContentDb } from '@game/core';
 import { describe, expect, it } from 'vitest';
 
-import { characters, coins, CONTENT_VERSION, contentDb, enemies, skills } from './index';
+import { characters, coins, CONTENT_VERSION, LEGACY_CONTENT_VERSIONS, contentDb, enemies, skills } from './index';
 
 const skillId = (value: string) => value as SkillId;
 const coinId = (value: string) => value as CoinDefId;
@@ -308,9 +308,85 @@ describe('P3.3 heart-of-flame interaction regressions', () => {
   });
 });
 
+describe('P3.4 shipped content goldens', () => {
+  it('ships the p3.4 version with legacy allowlist', () => {
+    expect(CONTENT_VERSION).toBe('0.8.0-p3.4');
+    expect(LEGACY_CONTENT_VERSIONS).toContain('0.7.0-p3.3');
+    expect(LEGACY_CONTENT_VERSIONS).toContain('0.6.0-p3.2');
+    expect(LEGACY_CONTENT_VERSIONS).toContain('0.5.0-m5');
+  });
+
+  it('ships frost and lightning coins with hostile heads procs', () => {
+    expect(coins.frost).toEqual({
+      id: coinId('frost'),
+      element: 'frost',
+      proc: { face: 'heads', effects: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }] }
+    });
+    expect(coins.lightning).toEqual({
+      id: coinId('lightning'),
+      element: 'lightning',
+      proc: { face: 'heads', effects: [{ kind: 'applyStatus', status: 'shock', stacks: 1, to: 'target' }] }
+    });
+  });
+
+  it('ships sorcerer and frost-knight with the standard character shape', () => {
+    const sorcerer = characters.sorcerer;
+    expect(sorcerer.maxHp).toBe(70);
+    expect(sorcerer.startingBag.filter((coin) => String(coin) === 'lightning')).toHaveLength(2);
+    expect(sorcerer.startingBag.filter((coin) => String(coin) === 'basic')).toHaveLength(8);
+    expect(sorcerer.startingSkills.map(String)).toEqual([
+      'slash', 'guard', 'spark-strike', 'chain-surge', 'static-field', 'volt-lash'
+    ]);
+    expect(sorcerer.trait.hook).toBe('combatStart');
+
+    const frostKnight = characters['frost-knight'];
+    expect(frostKnight.maxHp).toBe(70);
+    expect(frostKnight.startingBag.filter((coin) => String(coin) === 'frost')).toHaveLength(2);
+    expect(frostKnight.startingSkills.map(String)).toEqual([
+      'slash', 'guard', 'frost-slash', 'glacial-wall', 'chilling-field', 'glacier-strike'
+    ]);
+  });
+
+  it('keeps every new skill exclusive to its character and lint-clean', () => {
+    const sorcererSkills = ['spark-strike', 'chain-surge', 'static-field', 'volt-lash'];
+    const frostSkills = ['frost-slash', 'glacial-wall', 'chilling-field', 'glacier-strike'];
+    for (const skill of sorcererSkills) {
+      expect(String(contentDb.skills[skill]?.exclusiveTo)).toBe('sorcerer');
+    }
+    for (const skill of frostSkills) {
+      expect(String(contentDb.skills[skill]?.exclusiveTo)).toBe('frost-knight');
+    }
+    expect(contentDb.validate()).toEqual([]);
+  });
+});
+
+describe('P3.4 hostile coin proc rerouting regressions', () => {
+  // 감시자 결함 회귀: self 스킬(guard)에 냉기/전기 코인 앞면 — 상태는 적에게, 플레이어 0
+  const procCase = (defId: string) => {
+    let state = withEquippedSkill(combat(`proc-${defId}`), 'guard');
+    state = withHandDefs(state, [defId]);
+    const coinUid = state.zones.hand[0];
+    if (coinUid === undefined) throw new Error('missing coin');
+    const result = useFlip(withFaces(state, ['heads']), [coinUid], undefined);
+    return result;
+  };
+
+  it('sends a frost coin proc on guard to the enemy, not the player', () => {
+    const result = procCase('frost');
+    expect(statusTurns(result.state.enemies[0]?.statuses ?? {}, 'frostbite')).toBe(1);
+    expect(statusTurns(result.state.player.statuses, 'frostbite')).toBe(0);
+  });
+
+  it('sends a lightning coin proc on guard to the enemy, not the player', () => {
+    const result = procCase('lightning');
+    expect(statusTurns(result.state.enemies[0]?.statuses ?? {}, 'shock')).toBe(1);
+    expect(statusTurns(result.state.player.statuses, 'shock')).toBe(0);
+  });
+});
+
 describe('M5 shipped content', () => {
   it('ships the M5 version, mana coin, skills, and fixed enemy definitions', () => {
-    expect(CONTENT_VERSION).toBe('0.7.0-p3.3');
+    expect(CONTENT_VERSION).toBe('0.8.0-p3.4');
     expect(coins.mana).toEqual({
       id: coinId('mana'),
       element: 'mana',

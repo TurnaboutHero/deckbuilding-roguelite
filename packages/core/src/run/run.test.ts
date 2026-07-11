@@ -54,7 +54,9 @@ const testDb = (): ContentDb => {
       basic: { id: id<CoinDefId>("basic"), element: null },
       fire: { id: id<CoinDefId>("fire"), element: "fire" },
       mana: { id: id<CoinDefId>("mana"), element: "mana" },
-      ash: { id: id<CoinDefId>("ash"), element: null },
+      // 경계 회귀 고정: 기본 testDb의 보상 풀은 3종을 유지한다 — 풀이 3을 넘으면
+      // §825 가중 경로가 켜져 레거시 골든이 전부 흔들린다. 임시 코인 sentinel 'ash'는
+      // db 멤버십이 필요 없으므로(전투 상태 직접 주입·미제공 보상 거부용) 여기 넣지 않는다.
     },
     skills,
     enemies: Object.fromEntries(
@@ -336,6 +338,11 @@ describe("run progression", () => {
       expect(guardianPool).toContain(shared);
       expect(warriorPool).toContain(shared);
     }
+  });
+
+  it("keeps the default test pool at 3 coins so legacy goldens stay on the legacy path", () => {
+    // ash가 다시 db에 들어오면 이 테스트가 §825 경계 침범을 즉시 알린다
+    expect(Object.keys(testDb().coins).sort()).toEqual(["basic", "fire", "mana"]);
   });
 
   it("removes one permanent coin and requires an explicit skill replacement slot", () => {

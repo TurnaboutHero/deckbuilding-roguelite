@@ -979,7 +979,7 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                       type="button"
                       onClick={() => {
                         if (removalIndex === null) return;
-                        commitReward(resolveCoinRemoval(run, removalIndex), {
+                        commitReward(resolveCoinRemoval(run, removalIndex, contentDb), {
                           combatIndex: run.combatIndex - 1,
                           stage: "removal",
                           options: run.bag.map(String),
@@ -1005,7 +1005,7 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                       data-testid="removal-skip"
                       type="button"
                       onClick={() =>
-                        commitReward(resolveCoinRemoval(run, null), {
+                        commitReward(resolveCoinRemoval(run, null, contentDb), {
                           combatIndex: run.combatIndex - 1,
                           stage: "removal",
                           options: run.bag.map(String),

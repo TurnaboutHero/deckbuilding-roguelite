@@ -218,7 +218,7 @@ const resolveReward = (
   }
   if (reward.stage === "removal") {
     try {
-      return resolveCoinRemoval(input, reward.bagIndex ?? null);
+      return resolveCoinRemoval(input, reward.bagIndex ?? null, contentDb);
     } catch (error) {
       mismatches.push(`${path} resolution failed: ${error instanceof Error ? error.message : String(error)}`);
       return input;

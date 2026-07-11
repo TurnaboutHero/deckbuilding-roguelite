@@ -386,7 +386,7 @@ const resolveRewardsDetailed = (
   const removedBagIndex = removableBasic >= 0 ? removableBasic : null;
   const removedCoin =
     removedBagIndex === null ? null : String(run.bag[removedBagIndex]);
-  run = resolveCoinRemoval(run, removedBagIndex);
+  run = resolveCoinRemoval(run, removedBagIndex, contentDb);
 
   let fallbackCoinOptions: string[] = [];
   let selectedFallbackCoin: CoinDefId | null = null;

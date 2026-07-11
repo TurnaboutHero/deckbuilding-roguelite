@@ -8,12 +8,15 @@ const EXPECTED_RUNS = GAMES_PER_POLICY * POLICY_IDS.length;
 
 // P3.3 R2: 공용 보상 풀에 flame-sword/heart-of-flame/conflagration 3종을 추가하며
 // seed42 보상 셔플과 fire-build 선택 결과가 의도적으로 바뀌어 재고정했다.
+// P3.4 재고정 (0.8.0-p3.4 결속): 코인 풀 5종 진입으로 §825 가중 경로가 활성화되어
+// 보상 코인 옵션과 후속 스킬 셔플(공유 reward 스트림 소비량 변화)이 의도 변경됨 —
+// 턴 수 [4,3,4,5,9] 불변, HP 27→35, 가방 fire 6→5 (귀속: 보상 스트림 한정).
 const SEED_42_GOLDEN = {
   seed: "42",
   result: "victory",
   combatsCompleted: 5,
   turnsPerCombat: [4, 3, 4, 5, 9],
-  carriedHp: 27,
+  carriedHp: 35,
   finalBag: [
     "basic",
     "basic",
@@ -23,16 +26,16 @@ const SEED_42_GOLDEN = {
     "fire",
     "fire",
     "fire",
-    "fire",
+    "basic",
     "fire",
   ],
   finalEquippedSkills: [
-    "conflagration",
+    "slash",
     "guard",
     "burning-strike",
     "flame-sword",
     "ignite-sword",
-    "smash",
+    "conflagration",
   ],
   encounterOrder: [
     ["raider"],

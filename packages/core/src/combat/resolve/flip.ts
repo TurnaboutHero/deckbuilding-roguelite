@@ -1,4 +1,5 @@
-import type { ContentDb, EffectAtom, FlipSkillDef, TargetRef } from '../../content-types';
+import type {
+  StatusId, ContentDb, EffectAtom, FlipSkillDef, TargetRef } from '../../content-types';
 import { effectiveElements } from '../../content-types';
 import type { CoinUid, Face, SlotId } from '../../ids';
 import { rngFrom } from '../../rng';
@@ -280,8 +281,13 @@ export const fireTurnTriggers = (
   return state;
 };
 
+const HOSTILE_STATUSES: ReadonlySet<StatusId> = new Set(['burn', 'frostbite', 'shock']);
+
 const targetForElementProc = (state: CombatState, atom: EffectAtom, skillTarget: TargetRef): TargetRef | undefined => {
-  if (atom.kind === 'applyStatus' && atom.status === 'burn' && atom.to === 'target') {
+  // 적대 상태(화상·동상·감전)만 명시 집합으로 라우팅 — self 스킬에 속성 코인을 장전해도
+  // 플레이어가 자기 상태를 뒤집어쓰지 않는다. 미래의 우호/미지 상태는 skillTarget 유지
+  // (P3.4 감사 2건: burn 전용 결함 수정 + 전량 강제 라우팅의 과잉 일반화 방지)
+  if (atom.kind === 'applyStatus' && atom.to === 'target' && HOSTILE_STATUSES.has(atom.status)) {
     if (skillTarget.type === 'enemy' && isAliveEnemy(state, skillTarget.index)) return skillTarget;
     const fallback = firstAliveEnemy(state);
     return fallback === undefined ? undefined : { type: 'enemy', index: fallback };
