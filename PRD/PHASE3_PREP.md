@@ -1,8 +1,9 @@
-# Phase 3 준비 스펙 (구현 보류 — 스펙만)
+# Phase 3 준비 스펙 (활성 — 2026-07-11 공학 트랙 진입)
 
-> 성격: **사람 게이트(M2/M4/M5/M6) 통과 전에는 어떤 항목도 구현하지 않는다.** 이 문서는 Phase 3
-> 진입이 결정되는 순간 재설계 없이 착수할 수 있도록 규칙을 미리 고정하는 준비물이다.
-> 근거 문서: docs/implementation-plan.md A7/A8/B17/C1/C3/C4/§12, PRD/PHASE1_HOLDS.md 조건부 보류.
+> 성격: ~~사람 게이트(M2/M4/M5/M6) 통과 전에는 어떤 항목도 구현하지 않는다.~~
+> **2026-07-11 오너 오버라이드로 공학 트랙 구현이 활성화됐다** (`PRD/PHASE1_HOLDS.md` 오버라이드 절).
+> 이 문서의 규칙이 Phase 3 구현의 확정 계약이며, 증거 요건은 `PRD/PHASE3_EVIDENCE_CONTRACT.md`를 따른다.
+> 근거 문서: docs/implementation-plan.md A7/A8/B17/C1/C3/C4/§12, PRD/PHASE1_HOLDS.md 오버라이드 절.
 
 ## 1. 다중 적 전투 — 타겟팅 UI 규칙
 

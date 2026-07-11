@@ -19,6 +19,7 @@ Phase 1 보류 항목을 명시적으로 유지한 채 Phase 2를 진행한다. 
 
 ## 완료
 
+- [x] **P3.0 거버넌스 전환 (phase3-governance)** (2026-07-11, Fable 직접) — 오너 오버라이드(사람 게이트의 개발 차단 효력 해제)를 원장에 기록: `PHASE1_HOLDS.md` 오버라이드 절 + 게이트 행 `experience-unverified`/`waived-for-progression` 재분류(**passed 표기 없음**), `03_PHASES.md` 전제 조건·로드맵 갱신, `PHASE3_PREP.md` 활성화, `VALIDATION.md` Phase 3+ 포인터. 신규 `PHASE3_EVIDENCE_CONTRACT.md` — 3축 라벨(engineering-safe/balance-provisional/experience-unverified), 골든 동결·재고정 절차, 이벤트 additive-first 스키마 정책, 저장 saveVersion 마이그레이션 의무(P3.2부터), CI 매트릭스(sim:balance는 report-only 유지), 지배/사장 옵션·콤보 상한 리포트 의무, 자산 provenance 규칙. 코드 무변경 — 문서만
 - [x] **UX 피드백 라운드 — 인과 가독성 (ux-feedback-clarity)** (2026-07-11, Pumasi 3라운드+Fable, 배포 `9758500`) — 사용자 피드백(화상/위축 hover 무반응 · 기본/앞뒤 비직관 · "방금 무슨 일이" 혼란)을 정보·피드백 결함으로 진단하고 **수치·확률·콘텐츠 무변경**으로 수정. ① `keywords.tsx` 7종 용어 툴팁(hover/:focus-visible/클릭·탭 토글, Escape 억제 — WCAG 1.4.13, aria-describedby). ② `card-effects.tsx` 기본/앞면/뒷면/비용 배지 행 — **값 우선 표기**(피해 +3 · 동전마다), any 모드 접미 생략, keep-all 줄바꿈, 클리핑 시 카드 아트 양보(정보>장식, 하한 36px). ③ `resolution-summary.ts`+`resolution-ticket.tsx` 결산 티켓 — 면 칩→기본→발동 보너스(any 1회/per ×N)→상태→이벤트 정본 합계, 다음 커맨드/7초 제거. ④ `vfx.css` 절제 이벤트 VFX(피격·방어·화상·위축·면 확정 금/은 글로우, ≤350ms steps, reduced-motion 전면 비활성, 신규 에셋 0). ⑤ 어휘 정정 쇠약→**위축**. 감시자 협업: 워커의 effect-probe 유령 DOM 셰임 기각→가시 계약 재검증, 슬롯 인덱스 셀렉터 기각→텍스트 파생, 시각 판정 PASS 93 후에도 DOM 계측으로 행 클리핑 2건 적발·수정. 검증: typecheck·lint·test 226/226·build, ci:sim 4게이트·seed42 골든 불변, playtest **293어서션**(신규 S14~S18: 툴팁 4경로·수치 가시 기하·전 카드 클리핑 0·티켓 합계=HP 감소·쇠약 부재·reduced-motion), CI `29139918740`·Deploy `29139918769` green, 라이브 `index-CIEUWhdZ.js` 200 + 신규 문구 포함 확인. 결정 기록 `PRD/UX_FEEDBACK_DECISIONS.md`(변경/불변/보류 3건+진입 기준). 사람 게이트·Phase 3 보류 유지 — 이 라운드는 손맛 게이트를 대체하지 않는다
 - [x] **사람 게이트 전 백로그 (pre-human-backlog)** (2026-07-11, Pumasi 3워커+후속 2건+Fable, 배포 `7ea1a17`) — ① 소비 연료 직접 선택 규칙 확정·구현(조건부 보류 닫힘): count 1 = A15 자동 유지, count≥2 = 연료 지정 모드, 실행 coins[] 손패 순서 결정론, 순수 모듈+test-db 테스트. 감시자 지적으로 워커의 ref/DOM 폴백/캡처 중복 통합을 기각하고 최소 경로로 단순화시킨 뒤 수용(제거분 전부 공식 게이트에 불필요 입증). ② 다중 적 엔진 하네스 7테스트 — A7/B17 주장 최초 증거화, 엔진 결함 0, legalCommands target-0은 기준선 한계로 문서화. ③ CI playwright 캐시 + feedback-check 필수 편입 + sim:human 프로세스 레벨 CLI 테스트(`--` 회귀 포함; sim 무의존 원칙 유지 위해 node-shims 확장 — 워커 브리프의 typecheck 게이트 누락은 통합 게이트에서 적발·후속 수정). ④ `PRD/PHASE3_PREP.md` 스펙(타겟팅 UI — legalCommands 다중 target 열거를 진입 필수 전제로 명시, C1 지속형 골든, 용광로 UX, 콘텐츠 게이트 재계산 의무) — 구현은 전부 Phase 3 hold. 검증: typecheck·lint·test 211/211·build, ci:sim 4게이트, seed42 골든 불변, playtest 260어서션, feedback-check, CI `29128783038`·Deploy `29128783037` green, 라이브 `index-Cl5QyWAx.js` 200. content 수치 무변경, 사람 게이트 4건·Phase 3 보류 유지
 - [x] **사람 게이트 실행 도구 (human-gate-enablement)** (2026-07-11, Pumasi 3워커+Fable, 배포 `41bab3e`) — ① `pnpm sim:human`: human-run-trace JSON 디렉토리를 **코어 리플레이 대조**(runSeed+커맨드 재시뮬 → HP/플립/결과 사실 일치, contentVersion 드리프트 거부)로 검증하고 §8.3 사람 지표(N·평균 턴·스킬/턴·낭비율·속성 활용률·소비/2코인 기회 정규화·보상 선택·계산 가능 무효 태그)를 결정론 리포트로 집계. sim→core+content 의존 방향 유지, UI import 없음. 후속 수정 2건: pnpm 전달 `--` 토큰 허용, 스킬/턴을 %가 아닌 개수 표기(감시자 발견 `281.6%` → `2.82 (276/98)`). ② 거부 행동 사유 한국어 피드백 + ③ 프리뷰 자해·코인 생성 축 + ④ URL 시드 재현성 S13 + CI playtest 필수 잡 — PHASE1_HOLDS 4행 닫힘(증거 링크 포함). ⑤ `PRD/PLAYTEST_KIT.md` — 테스터 안내·M2/M4/M5/M6 통합 설문·진행자 집계 절차 (Fable 직접 작성). 검증: typecheck·lint·test 195/195·build, ci:sim 4게이트, seed42 골든 불변, playtest 260어서션(로컬+원격 CI), feedback-check, sim:human 2회 byte-identical(결정론 픽스처 N=5 — **도구 검증용이며 사람 증거 아님**). CI/Deploy `29110395064`/`29110395102` green, 라이브 `index-D7PQXBtO.js` 200. 수치 콘텐츠 무변경(T6.4 유지), 사람 게이트·Phase 3 보류 유지
@@ -61,15 +62,15 @@ UX 피드백 라운드 `9758500` — 키워드 툴팁·카드 문법·결산 티
 
 ## 다음 단계
 
-`PRD/PLAYTEST_KIT.md`대로 사람 N≥5 플레이테스트를 실행한다: 테스터에게 정식 URL과 설문을 전달하고, 결과 화면의 `플레이 로그 저장` JSON을 모아 `pnpm sim:human -- --dir <디렉토리>`로 집계한 뒤 §8.3 지표와 정성 설문으로 사람이 판정한다. 이것이 남은 유일한 차단 항목이며, 그 전에는 봇 지표를 근거로 수치를 조정하지 않고 Phase 3도 시작하지 않는다.
+**2026-07-11 오너 오버라이드로 Phase 3+ 공학 트랙이 활성화됐다** (`PHASE1_HOLDS.md` 오버라이드 절, 증거 계약 `PHASE3_EVIDENCE_CONTRACT.md`). 실행 순서: P3.0 거버넌스 → P3.1 다중 대상·duration 상태·용광로 → P3.2 마나/수호자 → P3.3 전사 희귀·트리거 → P3.4 냉기/전기 → P4 런 그래프·보스·상점 → P5 제품화. 병행으로 사람 N≥5 플레이테스트(`PLAYTEST_KIT.md` + `sim:human`)는 여전히 열려 있으며, 사람 데이터가 오면 experience-unverified 항목의 최종 판정이 이뤄진다. 수치 변경은 결정론 증거가 방향을 특정할 때만, 전부 provisional로.
 
 ## 리스크 / 블로커
 
 - ~~[해소] 감사 수정분 미배포~~ — 커밋 `2acfd23`, CI `29070513959`, Deploy `29070513929` 성공. 라이브 번들에서 주머니 인스펙터·회수 힌트 포함 여부와 HTTP 200 확인.
 - ~~[해소] 스크린샷 시스템 라이브러리~~ — sudo 없이 해결 (apt-get download + dpkg -x + LD_LIBRARY_PATH). 시각 검증 통과, Neo둥근모 폰트 정식 탑재
 - ~~[해소] 배포처 결정~~ — 리포 공개 전환 후 GitHub Pages 활성화·자동 배포 완료.
-- **[사람 대기] 플레이테스트 게이트 2건**: M2 손맛 · M4 갈등 관찰 — 정식 플레이 URL: https://turnabouthero.github.io/deckbuilding-roguelite/
-- **[사람 대기] M5 수문장·화상 체감 + M6 N≥5 지표 판정** — Fable 검토는 질문 설계 보조일 뿐 사람 판정을 대체하지 않는다.
+- **[experience-unverified] 플레이테스트 게이트 2건**: M2 손맛 · M4 갈등 관찰 — 정식 플레이 URL: https://turnabouthero.github.io/deckbuilding-roguelite/ (2026-07-11 오버라이드로 개발 차단 효력만 해제 — 사람 판정 자체는 여전히 열려 있음)
+- **[experience-unverified] M5 수문장·화상 체감 + M6 N≥5 지표 판정** — Fable 검토는 질문 설계 보조일 뿐 사람 판정을 대체하지 않는다. Phase 3 콘텐츠가 늘수록 이 표본의 가치가 커진다.
 - **[보고 전용] M6 경고** — 전체 평균 턴 3.761, 속성 활용 0.514, 화상 기여 0.103, Gatekeeper Aggro/Greedy 정확 수렴 70/125. 자동 결함은 아니며 사람 로그로 판정한다.
 - 폴리시 백로그(사소): 거부된 행동 사유 피드백, 프리뷰의 자해·코인 생성 축
 - 잔여 가정(01_PRD 가정 원장): 사운드 MVP 제외 / 한국어 단일 / 최신 데스크톱 브라우저만
