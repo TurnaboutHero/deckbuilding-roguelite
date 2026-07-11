@@ -123,6 +123,42 @@ SSoT 출처: `docs/implementation-plan.md` §12 부록(예약 지점)·B1, `docs
   `choose-node` 페이즈에서 명시 커맨드, 단일 노드는 자동 진입. 불법 payload·범위 밖
   선택은 코어·저장 양쪽에서 거부.
 
+## D10. P4.4 이벤트 시스템 (2026-07-12, provisional)
+
+- **원칙(§6 그대로)**: 공짜 금지 — 모든 이벤트는 위험요소 4유형 중 하나. 전부 "지나친다"
+  선택 가능. 해결은 선택에 대해 결정론(해결 시점 주사위 없음).
+- **이벤트 4종 (각 유형 1종, 수치 전부 balance-provisional)**:
+  1. `ambush-bounty` **매복 현상금** (전투 위험): 수락 → 엘리트 전투(raider-plus|gatekeeper-plus,
+     이벤트 스트림 롤). 승리 시 보상의 스킬 단계가 **희귀 전용 2진열**로 대체(미보유 희귀 풀,
+     부족 시 fallback 규칙 재사용). 패배는 일반 패배.
+  2. `blood-offering` **피의 제물** (체력 감소): HP 5 지불(생존 하한 — currentHp ≤ 5면 수락
+     불가) → 대표 속성 코인 1 영구 획득.
+  3. `transmute-altar` **변환 제단** (재화 소모 = **영구 변환, 이벤트 전용 — PRD §10**):
+     100골드 지불 → 기본 코인 1개(직접 선택)를 대표 속성 코인으로 영구 교체. 기본 코인
+     0개면 수락 불가.
+  4. `coin-sacrifice` **동전 희생** (자원 소모): 기본 코인 1개(직접 선택) 제거 → 대표 속성
+     코인 1 획득 (주머니 압축 트레이드). bag 최소 1 가드.
+- **배정·결정론**: 이벤트 노드 진입 시 `derive(runSeed, 'event-<layerIndex>')` 전용 스트림으로
+  이벤트 1종 롤 — **기존 graph/combat/reward/shop 스트림 불변** (스트림 격리 계약 유지).
+- **그래프 계획 v2 (D9 유예 해제)**: 레이어 3·6 = 상점|**이벤트**, 8 = **이벤트**|전투 2마리
+  — D1 원안 복원. generateRunGraph 의도 변경 → seed42 골든 재고정을 이 라운드 커밋에 결속.
+- **상태 기계**: RunPhase + `'event'`. 진입 시 `pendingEvent { eventId }`. 커맨드:
+  `acceptEvent(run, db, choice?)`(제단·희생은 bag 인덱스 선택 필요) / `declineEvent(run, db)`.
+  매복 수락 → 즉시 엘리트 전투 시작 상태로 전이(`pendingEventCombat` 표시), 승리 정산 시
+  희귀 스킬 진열·골드는 엘리트 70.
+- **진행 SSoT 확장**: 이벤트 전투는 combat 노드가 아니므로 `eventCombats: number` 카운터를
+  save에 추가해 보상 상한 산정에 합산(비전투 이벤트는 상한 불증가 — 코인 증감은
+  `eventCoinGains`/`eventCoinLosses` 카운터로 bag 경계에 반영).
+- **save v5**: pendingEvent·pendingEventCombat·이벤트 카운터 3종. v1→…→v4→v5 체인,
+  이벤트 payload 계약(pendingEvent는 event 페이즈에만, eventId는 콘텐츠 사전 대조).
+- **telemetry**: path 사실에 `{ layer, type: 'event', action: 'accept'|'decline', choice? }`
+  추가 — schema v2 내 additive 확장(사실 배열에 새 variant, 기존 로그 형태 불변이므로
+  버전 유지. 리플레이는 기록 사실로만 통과).
+- **sim**: fight-first = 매복 수락·비용 이벤트 거절 / economy-first = 비용 지불 가능하면
+  수락·매복 거절 (D7 확장). 이벤트 도달/수락률은 P4.5 경제 MC 지표에 포함.
+- **UI**: 이벤트 화면(제시문·위험/보상 명시·수락/거절, 제단·희생은 기본 코인 선택 그리드),
+  S26(저장 주입 결정론 — 4종 각각 수락/거절/불가 사유). emoji 금지(픽셀 폰트 안전 텍스트만).
+
 ## 라운드 분할 (작은 커밋 단위)
 
 - **P4.0** 본 결정 기록 (docs).
