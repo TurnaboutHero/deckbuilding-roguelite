@@ -1,17 +1,19 @@
 import { LEGACY_CONTENT_VERSIONS } from "@game/content";
 import {
-  LEGACY_RUN_SAVE_VERSIONS,
   RUN_ENCOUNTERS,
-  RUN_ENCOUNTER_COUNT,
   RUN_SAVE_VERSION,
+  completedCombatCount,
   rewardEligibleSkillIds,
+  signatureElement,
   type CharacterId,
   type CoinDefId,
   type ContentDb,
   type EquippedSkills,
   type PendingRewards,
+  type PendingShop,
   type RunPhase,
   type RunSave,
+  type RunState,
   type SkillId,
 } from "@game/core";
 
@@ -45,8 +47,10 @@ const isPositiveSafeInteger = (value: unknown): value is number =>
 
 const isRunPhase = (value: unknown): value is RunPhase =>
   value === "ready" ||
+  value === "choose-node" ||
   value === "combat" ||
   value === "rewards" ||
+  value === "shop" ||
   value === "victory" ||
   value === "defeat";
 
@@ -87,13 +91,16 @@ const legacyGraphForSave = (): RunSave["graph"] => ({
 const migratedLegacySave = (
   value: Record<string, unknown>,
 ): Record<string, unknown> | null => {
-  if (
-    !LEGACY_RUN_SAVE_VERSIONS.includes(
-      value.version as (typeof LEGACY_RUN_SAVE_VERSIONS)[number],
-    )
-  ) {
-    return value.version === RUN_SAVE_VERSION ? value : null;
-  }
+  if (value.version === RUN_SAVE_VERSION) return value;
+  if (value.version === 3)
+    return {
+      ...value,
+      version: RUN_SAVE_VERSION,
+      pendingShop: undefined,
+      shopPurchasedCoins: 0,
+      shopPurchasedSkills: 0,
+    };
+  if (value.version !== 1 && value.version !== 2) return null;
   const graph = legacyGraphForSave();
   return {
     ...value,
@@ -101,7 +108,34 @@ const migratedLegacySave = (
     graph,
     nodeChoices: Array.from({ length: graph.layers.length }, () => 0),
     shopRemovals: 0,
+    pendingShop: undefined,
+    shopPurchasedCoins: 0,
+    shopPurchasedSkills: 0,
   };
+};
+
+const coinShopPrice = (
+  coin: string,
+  character: string,
+  context: RunValidationContext,
+): number | null => {
+  const element = context.coins[coin]?.element;
+  if (element === undefined) return null;
+  if (element === null) return 25;
+  return element === signatureElement(context as ContentDb, character as CharacterId)
+    ? 50
+    : 70;
+};
+
+const skillShopPrice = (
+  skill: string,
+  context: RunValidationContext,
+): number | null => {
+  const rarity = context.skills[skill]?.rarity;
+  if (rarity === undefined) return null;
+  if (rarity === "common") return 50;
+  if (rarity === "advanced") return 80;
+  return 120;
 };
 
 const parseRunGraph = (
@@ -256,13 +290,63 @@ const parsePendingRewards = (
   };
 };
 
+const parsePendingShop = (
+  value: unknown,
+  character: string,
+  context: RunValidationContext,
+): PendingShop | null => {
+  if (
+    !isRecord(value) ||
+    !isStringArray(value.coinOptions) ||
+    !isStringArray(value.skillOptions) ||
+    !Array.isArray(value.coinPrices) ||
+    !Array.isArray(value.skillPrices)
+  ) {
+    return null;
+  }
+  const coinOptions = value.coinOptions;
+  const skillOptions = value.skillOptions;
+  const coinPrices = value.coinPrices;
+  const skillPrices = value.skillPrices;
+  if (
+    coinOptions.length > 3 ||
+    skillOptions.length > 5 ||
+    coinOptions.length !== coinPrices.length ||
+    skillOptions.length !== skillPrices.length ||
+    !hasUniqueStrings(coinOptions) ||
+    !hasUniqueStrings(skillOptions) ||
+    !coinOptions.every((coin) => isKnownCoin(coin, context)) ||
+    !skillOptions.every((skill) => isKnownSkill(skill, context)) ||
+    !coinPrices.every(isPositiveSafeInteger) ||
+    !skillPrices.every(isPositiveSafeInteger)
+  ) {
+    return null;
+  }
+  if (
+    !coinOptions.every(
+      (coin, index) => coinPrices[index] === coinShopPrice(coin, character, context),
+    ) ||
+    !skillOptions.every(
+      (skill, index) => skillPrices[index] === skillShopPrice(skill, context),
+    )
+  ) {
+    return null;
+  }
+  return {
+    coinOptions: coinOptions as CoinDefId[],
+    coinPrices: coinPrices as number[],
+    skillOptions: skillOptions as SkillId[],
+    skillPrices: skillPrices as number[],
+  };
+};
+
 const normalizeRunSave = (
   rawValue: unknown,
   expectedContentVersion: string,
   context: RunValidationContext,
 ): RunSave | null => {
   if (!isRecord(rawValue)) return null;
-  // v1 → v2 → v3 명시 마이그레이션: v1/v2 선형 5전투 저장은 레거시 그래프로 감싼다.
+  // v1 → v2 → v3 → v4 명시 마이그레이션: v1/v2 선형 5전투 저장은 레거시 그래프로 감싼다.
   // 미지의 미래 버전은 거부한다 — 증거 계약 §2.
   const migrated = migratedLegacySave(rawValue);
   if (migrated === null || migrated.version !== RUN_SAVE_VERSION) return null;
@@ -291,13 +375,12 @@ const normalizeRunSave = (
   if (value.phase === "defeat" ? value.currentHp !== 0 : value.currentHp === 0)
     return null;
 
+  const graph = parseRunGraph(value.graph, context);
+  if (graph === null) return null;
   if (
     !isNonNegativeSafeInteger(value.combatIndex) ||
-    value.combatIndex >= RUN_ENCOUNTER_COUNT
+    value.combatIndex >= graph.layers.length
   )
-    return null;
-  const graph = parseRunGraph(value.graph, context);
-  if (graph === null || graph.layers.length !== RUN_ENCOUNTER_COUNT)
     return null;
   if (!Array.isArray(value.nodeChoices)) return null;
   if (value.nodeChoices.length !== graph.layers.length) return null;
@@ -311,12 +394,29 @@ const normalizeRunSave = (
     return null;
   }
   if (!isNonNegativeSafeInteger(value.shopRemovals)) return null;
-  if (value.phase === "rewards" && value.combatIndex === 0) return null;
   if (
-    value.phase === "victory" &&
-    value.combatIndex !== RUN_ENCOUNTER_COUNT - 1
+    !isNonNegativeSafeInteger(value.shopPurchasedCoins) ||
+    !isNonNegativeSafeInteger(value.shopPurchasedSkills)
   )
     return null;
+  if (value.phase === "rewards" && value.combatIndex === 0) return null;
+  if (value.phase === "victory" && value.combatIndex !== graph.layers.length - 1)
+    return null;
+  if (
+    value.phase === "choose-node" &&
+    graph.layers[value.combatIndex]?.length !== 2
+  )
+    return null;
+  if (
+    value.phase !== "choose-node" &&
+    graph.layers[value.combatIndex]?.length === 2 &&
+    value.phase !== "defeat" &&
+    value.phase !== "victory"
+  ) {
+    const node = graph.layers[value.combatIndex]?.[nodeChoices[value.combatIndex]];
+    if (node?.kind !== "combat" && node?.kind !== "elite" && node?.kind !== "boss" && node?.kind !== "shop")
+      return null;
+  }
   if (!isNonNegativeSafeInteger(value.attempt)) return null;
   if (value.phase === "rewards" && value.attempt !== 0) return null;
   if (!isNonNegativeSafeInteger(value.gold)) return null;
@@ -333,9 +433,19 @@ const normalizeRunSave = (
   )
     return null;
   const startingBag = character.startingBag.map(String);
-  const minimumBagSize = Math.max(1, startingBag.length - value.combatIndex);
+  const progressProbe = {
+    ...value,
+    graph,
+    nodeChoices,
+  } as RunState;
+  const completedCombats = completedCombatCount(progressProbe);
+  // 검증 High: 최종 보스 전투는 승리로 런이 끝나 보상 페이즈가 없다 — victory에서
+  // completedCombatCount가 세는 마지막 전투를 코인/스킬 보상 원천에서 제외한다.
+  const rewardGrantingCombats =
+    value.phase === "victory" ? completedCombats - 1 : completedCombats;
+  const minimumBagSize = Math.max(1, startingBag.length - value.shopRemovals);
   const maximumBagSize =
-    startingBag.length + value.combatIndex + Math.max(0, value.combatIndex - 1);
+    startingBag.length + rewardGrantingCombats + value.shopPurchasedCoins;
   if (value.bag.length < minimumBagSize || value.bag.length > maximumBagSize)
     return null;
   if (value.combatIndex === 0 && !sameStrings(value.bag, startingBag))
@@ -353,10 +463,9 @@ const normalizeRunSave = (
   const changedSlots = value.equippedSkills.filter(
     (skill, index) => skill !== startingSkills[index],
   ).length;
-  const completedSkillRewardCount = Math.max(
-    0,
-    value.combatIndex - (value.phase === "rewards" ? 2 : 1),
-  );
+  const completedSkillRewardCount =
+    Math.max(0, rewardGrantingCombats - (value.phase === "rewards" ? 2 : 1)) +
+    value.shopPurchasedSkills;
   if (changedSlots > completedSkillRewardCount) return null;
 
   const pendingRewards =
@@ -364,7 +473,7 @@ const normalizeRunSave = (
       ? undefined
       : parsePendingRewards(
           value.pendingRewards,
-          value.combatIndex,
+          completedCombats,
           value.equippedSkills,
           value.character,
           context,
@@ -373,6 +482,14 @@ const normalizeRunSave = (
   if (value.phase !== "rewards" && value.pendingRewards !== undefined)
     return null;
   if (pendingRewards === null) return null;
+
+  const pendingShop =
+    value.pendingShop === undefined
+      ? undefined
+      : parsePendingShop(value.pendingShop, value.character, context);
+  if (value.phase === "shop" && pendingShop === undefined) return null;
+  if (value.phase !== "shop" && value.pendingShop !== undefined) return null;
+  if (pendingShop === null) return null;
 
   const save: RunSave = {
     version: RUN_SAVE_VERSION,
@@ -387,11 +504,15 @@ const normalizeRunSave = (
     graph,
     nodeChoices,
     shopRemovals: value.shopRemovals,
+    shopPurchasedCoins: value.shopPurchasedCoins,
+    shopPurchasedSkills: value.shopPurchasedSkills,
     combatIndex: value.combatIndex,
     attempt: value.attempt,
     phase: value.phase,
   };
-  return pendingRewards === undefined ? save : { ...save, pendingRewards };
+  const withRewards =
+    pendingRewards === undefined ? save : { ...save, pendingRewards };
+  return pendingShop === undefined ? withRewards : { ...withRewards, pendingShop };
 };
 
 export const serializeRunSave = (

@@ -48,7 +48,18 @@ const db = (coins: ContentDb["coins"]): ContentDb => ({
     ]),
   ) as ContentDb["skills"],
   enemies: Object.fromEntries(
-    ["raider", "shaman", "gatekeeper", "raider-plus", "gatekeeper-plus"].map(
+    [
+      "raider",
+      "shaman",
+      "gatekeeper",
+      "raider-plus",
+      "gatekeeper-plus",
+      "goblin",
+      "thief",
+      "ghoul",
+      "slime",
+      "ember-archmage",
+    ].map(
       (enemy) => [
         enemy,
         {

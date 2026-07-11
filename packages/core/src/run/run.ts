@@ -4,12 +4,13 @@ import { derive, rngFrom, seedFromString } from "../rng";
 import type { Rng } from "../rng";
 import { createCombat } from "../combat/reducer";
 import type { CombatState } from "../combat/state";
-import { legacyRunGraph, nodeGoldReward } from "./graph";
+import { generateRunGraph, nodeGoldReward } from "./graph";
 import { RUN_SAVE_VERSION } from "./types";
 import type {
   CreateRunConfig,
   EquippedSkills,
   PendingRewards,
+  PendingShop,
   RunState,
 } from "./types";
 
@@ -130,6 +131,13 @@ const requirePendingRewards = (run: RunState): PendingRewards => {
   return run.pendingRewards;
 };
 
+const requirePendingShop = (run: RunState): PendingShop => {
+  if (run.phase !== "shop" || run.pendingShop === undefined) {
+    throw new Error("run is not in a shop");
+  }
+  return run.pendingShop;
+};
+
 // P4.1 코어 불변식 (통합 감사 2차): 정상 내부 흐름 가정으로 검증을 우회하지 않도록
 // 모든 public 진입점(start·settle, 향후 shop/event 포함)이 공유하는 단일 헬퍼.
 const assertRunGraphInvariants = (run: RunState): void => {
@@ -137,6 +145,14 @@ const assertRunGraphInvariants = (run: RunState): void => {
     throw new Error("gold must be a non-negative integer");
   if (!Number.isInteger(run.shopRemovals) || run.shopRemovals < 0)
     throw new Error("shop removals must be a non-negative integer");
+  if (!Number.isInteger(run.shopPurchasedCoins) || run.shopPurchasedCoins < 0)
+    throw new Error("shop purchased coins must be a non-negative integer");
+  if (!Number.isInteger(run.shopPurchasedSkills) || run.shopPurchasedSkills < 0)
+    throw new Error("shop purchased skills must be a non-negative integer");
+  if (run.phase === "shop" && run.pendingShop === undefined)
+    throw new Error("shop phase requires pending shop");
+  if (run.phase !== "shop" && run.pendingShop !== undefined)
+    throw new Error("pending shop is only valid in shop phase");
   if (run.graph.layers.length === 0)
     throw new Error("run graph must have at least one layer");
   if (run.nodeChoices.length !== run.graph.layers.length)
@@ -194,16 +210,124 @@ const requireCoinRemovalResolved = (pending: PendingRewards): void => {
     throw new Error("coin removal must be resolved first");
 };
 
+const isCombatNodeKind = (kind: ReturnType<typeof currentRunNode>["kind"]): boolean =>
+  kind === "combat" || kind === "elite" || kind === "boss";
+
+export const completedCombatCount = (run: RunState): number => {
+  let count = 0;
+  const upper = Math.min(run.combatIndex, run.graph.layers.length);
+  for (let layerIndex = 0; layerIndex < upper; layerIndex += 1) {
+    const node = run.graph.layers[layerIndex]?.[run.nodeChoices[layerIndex] ?? 0];
+    if (node !== undefined && isCombatNodeKind(node.kind)) count += 1;
+  }
+  if (run.phase === "victory") {
+    const node = run.graph.layers[run.combatIndex]?.[run.nodeChoices[run.combatIndex] ?? 0];
+    if (node !== undefined && isCombatNodeKind(node.kind)) count += 1;
+  }
+  return count;
+};
+
+const coinShopPrice = (
+  db: ContentDb,
+  character: CharacterId,
+  coin: CoinDefId,
+): number => {
+  const element = db.coins[String(coin)]?.element;
+  if (element === undefined) throw new Error("unknown shop coin");
+  if (element === null) return 25;
+  return element === signatureElement(db, character) ? 50 : 70;
+};
+
+const skillShopPrice = (db: ContentDb, skill: SkillId): number => {
+  const rarity = db.skills[String(skill)]?.rarity;
+  if (rarity === undefined) throw new Error("unknown shop skill");
+  if (rarity === "common") return 50;
+  if (rarity === "advanced") return 80;
+  return 120;
+};
+
+const takeSkills = (
+  pool: readonly SkillId[],
+  rarity: "common" | "advanced" | "rare",
+  count: number,
+  db: ContentDb,
+  rng: Rng,
+): SkillId[] =>
+  rng
+    .shuffle(pool.filter((skill) => db.skills[String(skill)]?.rarity === rarity))
+    .slice(0, count);
+
+const pendingShopFor = (
+  run: RunState,
+  layerIndex: number,
+  db: ContentDb,
+): PendingShop => {
+  const rng = rngFrom(
+    derive(seedFromString(run.runSeed), `shop-${layerIndex}`),
+  );
+  const coinOptions = weightedCoinOptions(db, run.character, run.bag, rng);
+  const eligible = rewardEligibleSkillIds(
+    db.skills,
+    run.character,
+    run.equippedSkills,
+  );
+  const fixedSkills = [
+    ...takeSkills(eligible, "common", 3, db, rng),
+    ...takeSkills(eligible, "advanced", 1, db, rng),
+  ];
+  const fixedSet = new Set(fixedSkills.map(String));
+  const randomSkill = rng
+    .shuffle(eligible.filter((skill) => !fixedSet.has(String(skill))))
+    .slice(0, 1);
+  const skillOptions = [...fixedSkills, ...randomSkill];
+  return {
+    coinOptions,
+    coinPrices: coinOptions.map((coin) =>
+      coinShopPrice(db, run.character, coin),
+    ),
+    skillOptions,
+    skillPrices: skillOptions.map((skill) => skillShopPrice(db, skill)),
+  };
+};
+
+const enterCurrentLayer = (run: RunState, db?: ContentDb): RunState => {
+  assertRunGraphInvariants(run);
+  const layer = run.graph.layers[run.combatIndex];
+  if (layer === undefined) throw new Error("combat index is out of range");
+  if (layer.length === 2 && run.phase !== "choose-node") {
+    return { ...run, phase: "choose-node", pendingRewards: undefined, pendingShop: undefined };
+  }
+  const node = currentRunNode(run);
+  if (isCombatNodeKind(node.kind)) {
+    return { ...run, phase: "ready", pendingRewards: undefined, pendingShop: undefined };
+  }
+  if (node.kind === "shop") {
+    // 상점 오퍼 롤에만 콘텐츠 컨텍스트가 필요하다. db 없이 phase만 'ready'로 두는
+    // 조용한 폴백은 "상점 레이어에서 전투 시작" 상태 손상을 만든다 — 소리내어 실패.
+    if (db === undefined)
+      throw new Error("content db is required to enter a shop node");
+    return {
+      ...run,
+      phase: "shop",
+      pendingRewards: undefined,
+      pendingShop: pendingShopFor(run, run.combatIndex, db),
+    };
+  }
+  throw new Error("event nodes are not active in this run graph");
+};
+
 const finishRewardsIfComplete = (
   run: RunState,
   pendingRewards: PendingRewards,
+  db?: ContentDb,
 ): RunState => {
   if (
     pendingRewards.coinChoiceResolved &&
     pendingRewards.coinRemovalResolved &&
     pendingRewards.skillChoiceResolved
   ) {
-    return { ...run, phase: "ready", pendingRewards: undefined };
+    // db 유무와 무관하게 레이어 진입 규칙은 동일하다 — db는 상점 진입에서만 필수.
+    return enterCurrentLayer({ ...run, pendingRewards: undefined }, db);
   }
   return { ...run, pendingRewards };
 };
@@ -238,7 +362,7 @@ const pendingRewardsFor = (
   }
 
   const rewardRng = rngFrom(
-    derive(seedFromString(run.runSeed), "reward", completedCombatIndex),
+    derive(seedFromString(run.runSeed), "reward", completedCombatIndex - 1),
   );
   // §825 전환 규칙: 풀 ≤3종이면 레거시 전량 셔플(바이트 불변), >3종이면 가중 3택
   const coinPoolSize = Object.keys(db.coins).length;
@@ -252,7 +376,7 @@ const pendingRewardsFor = (
     run.equippedSkills,
   );
   const offeredSkills =
-    completedCombatIndex >= 1 ? rewardRng.shuffle(unowned).slice(0, 2) : [];
+    completedCombatIndex >= 2 ? rewardRng.shuffle(unowned).slice(0, 2) : [];
   const skillOptions = offeredSkills.length === 2 ? offeredSkills : [];
 
   return {
@@ -260,7 +384,7 @@ const pendingRewardsFor = (
     coinChoiceResolved: false,
     coinRemovalResolved: false,
     skillOptions,
-    skillChoiceResolved: completedCombatIndex < 1 || skillOptions.length === 0,
+    skillChoiceResolved: completedCombatIndex < 2 || skillOptions.length === 0,
   };
 };
 
@@ -279,7 +403,7 @@ export const createRun = (config: CreateRunConfig, db: ContentDb): RunState => {
       throw new Error(`unknown starting skill: ${String(skill)}`);
   }
 
-  const graph = legacyRunGraph();
+  const graph = generateRunGraph(config.runSeed, db);
   return {
     version: RUN_SAVE_VERSION,
     contentVersion: config.contentVersion,
@@ -293,6 +417,8 @@ export const createRun = (config: CreateRunConfig, db: ContentDb): RunState => {
     graph,
     nodeChoices: Array.from({ length: graph.layers.length }, () => 0),
     shopRemovals: 0,
+    shopPurchasedCoins: 0,
+    shopPurchasedSkills: 0,
     combatIndex: 0,
     attempt: 0,
     phase: "ready",
@@ -343,7 +469,7 @@ export const startRunCombat = (
     run.runSeed,
   );
   return {
-    run: { ...run, phase: "combat", pendingRewards: undefined },
+    run: { ...run, phase: "combat", pendingRewards: undefined, pendingShop: undefined },
     combat,
   };
 };
@@ -362,7 +488,7 @@ export const settleRunCombat = (
 
   const currentHp = combat.player.hp;
   if (combat.phase === "defeat") {
-    return { ...run, currentHp, phase: "defeat", pendingRewards: undefined };
+    return { ...run, currentHp, phase: "defeat", pendingRewards: undefined, pendingShop: undefined };
   }
 
   const node = currentRunNode(run);
@@ -375,24 +501,34 @@ export const settleRunCombat = (
       gold,
       phase: "victory",
       pendingRewards: undefined,
+      pendingShop: undefined,
     };
   }
 
-  const pendingRewards = pendingRewardsFor(run, run.combatIndex, db);
-  return {
+  const nextRun = {
     ...run,
     currentHp,
     gold,
     combatIndex: run.combatIndex + 1,
     attempt: 0,
+  };
+  const pendingRewards = pendingRewardsFor(
+    nextRun,
+    completedCombatCount(nextRun),
+    db,
+  );
+  return {
+    ...nextRun,
     phase: "rewards",
     pendingRewards,
+    pendingShop: undefined,
   };
 };
 
 export const chooseCoinReward = (
   run: RunState,
   coin: CoinDefId | null,
+  db?: ContentDb,
 ): RunState => {
   const pending = requirePendingRewards(run);
   if (pending.coinChoiceResolved)
@@ -401,7 +537,7 @@ export const chooseCoinReward = (
     throw new Error("coin is not an offered reward");
   const pendingRewards = { ...pending, coinChoiceResolved: true };
   const bag = coin === null ? [...run.bag] : [...run.bag, coin];
-  return finishRewardsIfComplete({ ...run, bag }, pendingRewards);
+  return finishRewardsIfComplete({ ...run, bag }, pendingRewards, db);
 };
 
 export const resolveCoinRemoval = (
@@ -423,8 +559,8 @@ export const resolveCoinRemoval = (
     bag.splice(bagIndex, 1);
   }
   const pendingRewards = { ...pending, coinRemovalResolved: true };
-  const completedCombatIndex = run.combatIndex - 1;
-  if (completedCombatIndex >= 1 && pendingRewards.skillOptions.length === 0) {
+  const completedCount = completedCombatCount(run);
+  if (completedCount >= 2 && pendingRewards.skillOptions.length === 0) {
     // The normal coin choice is already materialized in the bag. Reuse the
     // active coin fields for the distinct fallback stage so existing saves and
     // chooseCoinReward callers remain source compatible.
@@ -435,19 +571,20 @@ export const resolveCoinRemoval = (
         ...pendingRewards,
         coinOptions:
           db === undefined
-            ? legacyFallbackCoinOptions(run.runSeed, completedCombatIndex)
-            : fallbackCoinOptionsFor(run, completedCombatIndex, db),
+            ? legacyFallbackCoinOptions(run.runSeed, completedCount - 1)
+            : fallbackCoinOptionsFor(run, completedCount - 1, db),
         coinChoiceResolved: false,
       },
     };
   }
-  return finishRewardsIfComplete({ ...run, bag }, pendingRewards);
+  return finishRewardsIfComplete({ ...run, bag }, pendingRewards, db);
 };
 
 export const chooseSkillReward = (
   run: RunState,
   skill: SkillId,
   replaceSlot?: number,
+  db?: ContentDb,
 ): RunState => {
   const pending = requirePendingRewards(run);
   requireCoinRemovalResolved(pending);
@@ -469,10 +606,11 @@ export const chooseSkillReward = (
   return finishRewardsIfComplete(
     { ...run, equippedSkills: equippedSkills(nextSkills) },
     { ...pending, skillChoiceResolved: true },
+    db,
   );
 };
 
-export const skipSkillReward = (run: RunState): RunState => {
+export const skipSkillReward = (run: RunState, db?: ContentDb): RunState => {
   const pending = requirePendingRewards(run);
   requireCoinRemovalResolved(pending);
   if (pending.skillChoiceResolved)
@@ -480,7 +618,7 @@ export const skipSkillReward = (run: RunState): RunState => {
   return finishRewardsIfComplete(run, {
     ...pending,
     skillChoiceResolved: true,
-  });
+  }, db);
 };
 
 export const resumeAbandonedCombat = (run: RunState): RunState => {
@@ -490,5 +628,147 @@ export const resumeAbandonedCombat = (run: RunState): RunState => {
     attempt: run.attempt + 1,
     phase: "ready",
     pendingRewards: undefined,
+    pendingShop: undefined,
   };
+};
+
+export const chooseRunNode = (
+  run: RunState,
+  choice: number,
+  db: ContentDb,
+): RunState => {
+  if (run.phase !== "choose-node") throw new Error("run is not choosing a node");
+  assertRunGraphInvariants(run);
+  const layer = run.graph.layers[run.combatIndex];
+  if (layer === undefined || layer.length !== 2) {
+    throw new Error("current layer is not a branch");
+  }
+  if (!Number.isInteger(choice) || choice < 0 || choice >= layer.length) {
+    throw new Error("node choice is out of range");
+  }
+  const nodeChoices = [...run.nodeChoices];
+  nodeChoices[run.combatIndex] = choice;
+  return enterCurrentLayer({ ...run, nodeChoices }, db);
+};
+
+export const buyShopCoin = (
+  run: RunState,
+  optionIndex: number,
+  db: ContentDb,
+): RunState => {
+  const pending = requirePendingShop(run);
+  assertRunGraphInvariants(run);
+  if (
+    !Number.isInteger(optionIndex) ||
+    optionIndex < 0 ||
+    optionIndex >= pending.coinOptions.length
+  ) {
+    throw new Error("shop coin option is out of range");
+  }
+  const coin = pending.coinOptions[optionIndex]!;
+  const price = pending.coinPrices[optionIndex]!;
+  if (price !== coinShopPrice(db, run.character, coin))
+    throw new Error("shop coin price is invalid");
+  if (run.gold < price) throw new Error("not enough gold");
+  return {
+    ...run,
+    gold: run.gold - price,
+    bag: [...run.bag, coin],
+    shopPurchasedCoins: run.shopPurchasedCoins + 1,
+    pendingShop: {
+      ...pending,
+      coinOptions: pending.coinOptions.filter((_, index) => index !== optionIndex),
+      coinPrices: pending.coinPrices.filter((_, index) => index !== optionIndex),
+    },
+  };
+};
+
+export const buyShopSkill = (
+  run: RunState,
+  optionIndex: number,
+  db: ContentDb,
+  replaceSlot?: number,
+): RunState => {
+  const pending = requirePendingShop(run);
+  assertRunGraphInvariants(run);
+  if (
+    !Number.isInteger(optionIndex) ||
+    optionIndex < 0 ||
+    optionIndex >= pending.skillOptions.length
+  ) {
+    throw new Error("shop skill option is out of range");
+  }
+  if (replaceSlot === undefined)
+    throw new Error("replaceSlot is required when six slots are equipped");
+  if (
+    !Number.isInteger(replaceSlot) ||
+    replaceSlot < 0 ||
+    replaceSlot >= run.equippedSkills.length
+  ) {
+    throw new Error("replacement slot is out of range");
+  }
+  const skill = pending.skillOptions[optionIndex]!;
+  const price = pending.skillPrices[optionIndex]!;
+  if (price !== skillShopPrice(db, skill))
+    throw new Error("shop skill price is invalid");
+  if (run.gold < price) throw new Error("not enough gold");
+  if (run.equippedSkills.map(String).includes(String(skill))) {
+    throw new Error("shop skill is already owned");
+  }
+  const equipped = [...run.equippedSkills];
+  equipped[replaceSlot] = skill;
+  return {
+    ...run,
+    gold: run.gold - price,
+    equippedSkills: equippedSkills(equipped),
+    shopPurchasedSkills: run.shopPurchasedSkills + 1,
+    pendingShop: {
+      ...pending,
+      skillOptions: pending.skillOptions.filter((_, index) => index !== optionIndex),
+      skillPrices: pending.skillPrices.filter((_, index) => index !== optionIndex),
+    },
+  };
+};
+
+export const buyShopRemoval = (
+  run: RunState,
+  bagIndex: number,
+  db: ContentDb,
+): RunState => {
+  requirePendingShop(run);
+  assertRunGraphInvariants(run);
+  if (run.bag.some((coin) => db.coins[String(coin)] === undefined))
+    throw new Error("run bag contains an unknown coin");
+  if (run.bag.length <= 1) throw new Error("cannot remove the last coin");
+  if (!Number.isInteger(bagIndex) || bagIndex < 0 || bagIndex >= run.bag.length) {
+    throw new Error("bag index is out of range");
+  }
+  const price = 75 + 25 * run.shopRemovals;
+  if (run.gold < price) throw new Error("not enough gold");
+  const bag = [...run.bag];
+  bag.splice(bagIndex, 1);
+  return {
+    ...run,
+    gold: run.gold - price,
+    bag,
+    shopRemovals: run.shopRemovals + 1,
+  };
+};
+
+export const leaveShop = (run: RunState, db: ContentDb): RunState => {
+  requirePendingShop(run);
+  assertRunGraphInvariants(run);
+  if (run.combatIndex >= run.graph.layers.length - 1) {
+    throw new Error("cannot leave shop after the final layer");
+  }
+  return enterCurrentLayer(
+    {
+      ...run,
+      combatIndex: run.combatIndex + 1,
+      attempt: 0,
+      phase: "ready",
+      pendingShop: undefined,
+    },
+    db,
+  );
 };

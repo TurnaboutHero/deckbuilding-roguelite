@@ -58,6 +58,8 @@ const readySave = (): RunSave => ({
   graph: legacyGraph(),
   nodeChoices: [0, 0, 0, 0, 0],
   shopRemovals: 0,
+  shopPurchasedCoins: 0,
+  shopPurchasedSkills: 0,
   combatIndex: 2,
   attempt: 1,
   phase: "ready",
@@ -244,6 +246,8 @@ describe("run save serialization boundary", () => {
       graph: legacyGraph(),
       nodeChoices: [0, 0, 0, 0, 0],
       shopRemovals: 0,
+      shopPurchasedCoins: 0,
+      shopPurchasedSkills: 0,
       combatIndex: 0,
       attempt: 0,
       phase: "combat",
@@ -282,15 +286,24 @@ describe("run save serialization boundary", () => {
     expect(parse(rawWith({ contentVersion: "9.9.9-unknown" }))).toBeNull();
   });
 
-  it("migrates v2 and v1 saves explicitly to v3 and rejects unknown versions", () => {
-    // v1 → v2 → v3: 선형 5전투 저장을 레거시 그래프로 감싼다 (증거 계약 §2 — 명시 마이그레이션)
+  it("migrates v3, v2, and v1 saves explicitly to v4 and rejects unknown versions", () => {
+    // v1 → v2 → v3 → v4: 선형 5전투 저장을 레거시 그래프로 감싼다 (증거 계약 §2 — 명시 마이그레이션)
     // 0.6.0-p3.2 레거시 콘텐츠 버전도 안전 로드 + 현 버전 정규화 (p3.3 가산 확장 — 공허 엣지 근거는 content index 주석)
+    const v3Raw = JSON.stringify({
+      ...readySave(),
+      version: 3,
+      shopPurchasedCoins: undefined,
+      shopPurchasedSkills: undefined,
+    });
+    expect(parse(v3Raw)).toEqual(readySave());
     const p32 = parse(legacyRawWith({ version: 2, contentVersion: "0.6.0-p3.2" }));
     expect(p32).toEqual(readySave());
     expect(p32?.contentVersion).toBe(CURRENT_CONTENT_VERSION);
     const migratedV2 = parse(legacyRawWith({ version: 2, gold: 77 }));
     expect(migratedV2).toEqual({ ...readySave(), gold: 77 });
     expect(migratedV2?.shopRemovals).toBe(0);
+    expect(migratedV2?.shopPurchasedCoins).toBe(0);
+    expect(migratedV2?.shopPurchasedSkills).toBe(0);
     expect(migratedV2?.nodeChoices).toEqual([0, 0, 0, 0, 0]);
     expect(migratedV2?.graph).toEqual(legacyGraph());
     const migrated = parse(legacyRawWith({ version: 1 }));
@@ -298,6 +311,78 @@ describe("run save serialization boundary", () => {
     expect(migrated?.version).toBe(RUN_SAVE_VERSION);
     expect(parse(legacyRawWith({ version: 0 }))).toBeNull();
     expect(parse(rawWith({ version: RUN_SAVE_VERSION + 1 }))).toBeNull();
+  });
+
+  it("keeps non-combat layers from inflating bag and skill bounds", () => {
+    const graph = {
+      layers: [
+        legacyGraph().layers[0]!,
+        [{ id: "shop-1", kind: "shop" as const }],
+        legacyGraph().layers[1]!,
+      ],
+    };
+    const save: RunSave = {
+      ...readySave(),
+      graph,
+      nodeChoices: [0, 0, 0],
+      combatIndex: 2,
+      bag: [...STARTING_BAG, "fire", "mana"] as never,
+      equippedSkills: [
+        ...STARTING_SKILLS.slice(0, 4),
+        "smash",
+        "furnace",
+      ] as never,
+    };
+    expect(parse(JSON.stringify(save))).toBeNull();
+    expect(
+      parse(
+        JSON.stringify({
+          ...save,
+          bag: [...STARTING_BAG, "fire"],
+          equippedSkills: [...STARTING_SKILLS] as never,
+        }),
+      ),
+    ).not.toBeNull();
+  });
+
+  it("accepts and rejects shop save contracts", () => {
+    const graph = {
+      layers: [legacyGraph().layers[0]!, [{ id: "shop-1", kind: "shop" as const }]],
+    };
+    const shopSave: RunSave = {
+      ...readySave(),
+      graph,
+      nodeChoices: [0, 0],
+      combatIndex: 1,
+      attempt: 0,
+      phase: "shop",
+      equippedSkills: [...STARTING_SKILLS] as never,
+      pendingShop: {
+        coinOptions: ["basic", "fire", "mana"] as never,
+        coinPrices: [25, 50, 70],
+        skillOptions: ["smash", "furnace", "conflagration"] as never,
+        skillPrices: [50, 80, 120],
+      },
+    };
+    expect(parse(JSON.stringify(shopSave))).toEqual(shopSave);
+    expect(
+      parse(
+        JSON.stringify({
+          ...shopSave,
+          pendingShop: { ...shopSave.pendingShop!, coinPrices: [25, 25, 70] },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parse(
+        JSON.stringify({
+          ...shopSave,
+          pendingShop: { ...shopSave.pendingShop!, coinOptions: ["basic", "basic"] },
+        }),
+      ),
+    ).toBeNull();
+    expect(parse(JSON.stringify({ ...shopSave, phase: "ready" }))).toBeNull();
+    expect(parse(JSON.stringify({ ...shopSave, pendingShop: undefined }))).toBeNull();
   });
 
   it("accepts an exhausted shared-pool save even when exclusive skills exist", () => {
@@ -592,7 +677,7 @@ describe("run save serialization boundary", () => {
             : layer,
       ),
     };
-    const save = { ...readySave(), graph };
+    const save = { ...readySave(), graph, equippedSkills: [...STARTING_SKILLS] as never };
     expect(parse(JSON.stringify(save))).toEqual(save);
   });
 
@@ -724,7 +809,6 @@ describe("run save serialization boundary", () => {
       initial,
       afterNormalCoin,
       fallbackCoin,
-      selectedFallback,
       skippedFallback,
     ]) {
       const serialized = serializeRunSave(save, exhaustedSkillContext);
@@ -732,6 +816,9 @@ describe("run save serialization boundary", () => {
         parseRunSave(serialized, CONTENT_VERSION, exhaustedSkillContext),
       ).toEqual(save);
     }
+    expect(() =>
+      serializeRunSave(selectedFallback, exhaustedSkillContext),
+    ).toThrow("cannot serialize an invalid run save");
   });
 
   it("accepts the exact core-produced B2 fallback select and skip lifecycle", () => {

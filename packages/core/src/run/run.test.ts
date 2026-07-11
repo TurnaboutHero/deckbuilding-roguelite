@@ -9,10 +9,10 @@ import type {
   SkillId,
 } from "../ids";
 import type { CombatState } from "../combat/state";
-import { RUN_ENCOUNTERS } from "./encounters";
-import { legacyRunGraph, nodeGoldReward } from "./graph";
+import { generateRunGraph, nodeGoldReward } from "./graph";
 import {
   rewardEligibleSkillIds,
+  chooseRunNode,
   chooseCoinReward,
   chooseSkillReward,
   createRun,
@@ -21,6 +21,7 @@ import {
   settleRunCombat,
   skipSkillReward,
   startRunCombat,
+  leaveShop,
 } from "./run";
 import { RUN_SAVE_VERSION } from "./types";
 import type { RunSave, RunState } from "./types";
@@ -61,7 +62,18 @@ const testDb = (): ContentDb => {
     },
     skills,
     enemies: Object.fromEntries(
-      ["raider", "shaman", "gatekeeper", "raider-plus", "gatekeeper-plus"].map(
+      [
+        "raider",
+        "shaman",
+        "gatekeeper",
+        "raider-plus",
+        "gatekeeper-plus",
+        "goblin",
+        "thief",
+        "ghoul",
+        "slime",
+        "ember-archmage",
+      ].map(
         (enemy) => [enemy, enemyDef(enemy)],
       ),
     ),
@@ -134,16 +146,26 @@ const endedCombat = (
   })),
 });
 
-const skipAllRewards = (run: RunState): RunState => {
-  let next = chooseCoinReward(run, null);
-  next = resolveCoinRemoval(next, null);
+const chooseFightFirst = (run: RunState, db = testDb()): RunState => {
+  if (run.phase === "choose-node") {
+    const layer = run.graph.layers[run.combatIndex] ?? [];
+    const combatChoice = layer.findIndex((node) => node.kind !== "shop");
+    return chooseRunNode(run, combatChoice < 0 ? 0 : combatChoice, db);
+  }
+  if (run.phase === "shop") return leaveShop(run, db);
+  return run;
+};
+
+const skipAllRewards = (run: RunState, db = testDb()): RunState => {
+  let next = chooseCoinReward(run, null, db);
+  next = resolveCoinRemoval(next, null, db);
   if (next.phase === "rewards") {
     if (next.pendingRewards?.coinChoiceResolved === false)
-      next = chooseCoinReward(next, null);
+      next = chooseCoinReward(next, null, db);
     else if (next.pendingRewards?.skillChoiceResolved === false)
-      next = skipSkillReward(next);
+      next = skipSkillReward(next, db);
   }
-  return next;
+  return chooseFightFirst(next, db);
 };
 
 const reachSecondSkillReward = (
@@ -151,8 +173,9 @@ const reachSecondSkillReward = (
   seed = "M5-RUN-GOLDEN",
 ): RunState => {
   const first = startRunCombat(newRun(seed, db), db);
-  const afterFirst = skipAllRewards(
+    const afterFirst = skipAllRewards(
     settleRunCombat(first.run, endedCombat(first.combat, "victory"), db),
+    db,
   );
   const second = startRunCombat(afterFirst, db);
   return settleRunCombat(second.run, endedCombat(second.combat, "victory"), db);
@@ -163,6 +186,7 @@ const fallbackTrace = (seed: string, abandonSecondCombat = false) => {
   const first = startRunCombat(newRun(seed, db), db);
   const afterFirst = skipAllRewards(
     settleRunCombat(first.run, endedCombat(first.combat, "victory"), db),
+    db,
   );
   let second = startRunCombat(afterFirst, db);
   if (abandonSecondCombat)
@@ -201,27 +225,31 @@ const replayRun = (seed: string) => {
         coins: run.pendingRewards.coinOptions.map(String),
         skills: run.pendingRewards.skillOptions.map(String),
       });
-      run = skipAllRewards(run);
+      run = skipAllRewards(run, db);
     }
   }
   return { encounters, rewards, run };
 };
 
 describe("run progression", () => {
-  it("replays the fixed five encounters and reward ordering for a seed", () => {
+  it("replays the generated ten-layer fight-first encounters and reward ordering for a seed", () => {
     const first = replayRun("FIXED-FIVE");
     const second = replayRun("FIXED-FIVE");
 
-    expect(first.encounters).toEqual(
-      RUN_ENCOUNTERS.map((encounter) => encounter.map(String)),
-    );
-    expect(first.rewards).toEqual(second.rewards);
-    expect(first.rewards).toEqual([
-      { coins: ["fire", "basic", "mana"], skills: [] },
-      { coins: ["mana", "basic", "fire"], skills: ["s8", "s9"] },
-      { coins: ["basic", "mana", "fire"], skills: ["s8", "s7"] },
-      { coins: ["mana", "basic", "fire"], skills: ["s7", "s8"] },
+    expect(first.encounters).toEqual(second.encounters);
+    expect(first.encounters).toEqual([
+      ["shaman"],
+      ["goblin", "ghoul"],
+      ["goblin", "ghoul"],
+      ["thief", "goblin"],
+      ["gatekeeper-plus"],
+      ["ghoul", "goblin", "slime"],
+      ["ghoul", "goblin", "slime"],
+      ["thief", "goblin"],
+      ["ember-archmage"],
     ]);
+    expect(first.rewards).toEqual(second.rewards);
+    expect(first.rewards).toHaveLength(8);
     for (const reward of first.rewards) {
       expect(new Set(reward.coins)).toEqual(new Set(["basic", "fire", "mana"]));
       expect(reward.coins).toHaveLength(3);
@@ -231,23 +259,30 @@ describe("run progression", () => {
       first.rewards.slice(1).every((reward) => reward.skills.length === 2),
     ).toBe(true);
     expect(first.run.phase).toBe("victory");
-    expect(first.run.combatIndex).toBe(4);
-    expect(first.run.gold).toBe(175);
+    expect(first.run.combatIndex).toBe(9);
+    expect(first.run.gold).toBe(415);
   });
 
-  it("creates the P4.1 legacy graph and starts combat from the selected node", () => {
+  it("creates the active D9 graph and starts combat from the selected node", () => {
     const db = testDb();
     const run = newRun();
 
-    expect(run.graph).toEqual(legacyRunGraph());
-    expect(run.nodeChoices).toEqual([0, 0, 0, 0, 0]);
+    expect(run.graph).toEqual(generateRunGraph(run.runSeed, db));
+    expect(run.nodeChoices).toEqual(Array.from({ length: 10 }, () => 0));
     expect(run.shopRemovals).toBe(0);
-    expect(run.graph.layers.map((layer) => layer[0]?.kind)).toEqual([
-      "combat",
-      "combat",
-      "combat",
-      "combat",
-      "combat",
+    expect(run.shopPurchasedCoins).toBe(0);
+    expect(run.shopPurchasedSkills).toBe(0);
+    expect(run.graph.layers.map((layer) => layer.map((node) => node.kind))).toEqual([
+      ["combat"],
+      ["combat"],
+      ["shop", "combat"],
+      ["combat"],
+      ["elite"],
+      ["shop", "combat"],
+      ["combat"],
+      ["combat"],
+      ["shop"],
+      ["boss"],
     ]);
 
     const started = startRunCombat(
@@ -340,7 +375,7 @@ describe("run progression", () => {
     );
   });
 
-  it("uses fixed node gold rewards and reaches 175 gold after five legacy combats", () => {
+  it("uses fixed node gold rewards and reaches 415 gold on the fight-first graph", () => {
     const replay = replayRun("P4-GOLD");
 
     expect(nodeGoldReward("combat")).toBe(35);
@@ -348,7 +383,7 @@ describe("run progression", () => {
     expect(nodeGoldReward("boss")).toBe(100);
     expect(nodeGoldReward("shop")).toBe(0);
     expect(nodeGoldReward("event")).toBe(0);
-    expect(replay.run.gold).toBe(175);
+    expect(replay.run.gold).toBe(415);
   });
 
   it("carries lost HP into the next combat without healing", () => {
@@ -486,7 +521,8 @@ describe("run progression", () => {
     );
 
     const replaced = chooseSkillReward(run, skill, 2);
-    expect(replaced.phase).toBe("ready");
+    // 보상 완주 → 다음 레이어(분기 [상점|전투]) 진입: db 없이도 choose-node가 정확한 상태다
+    expect(replaced.phase).toBe("choose-node");
     expect(replaced.equippedSkills[2]).toBe(skill);
     expect(replaced.equippedSkills).toHaveLength(6);
   });
@@ -499,7 +535,7 @@ describe("run progression", () => {
     const skippedRemoval = resolveCoinRemoval(skippedCoin, null);
     const skippedSkill = skipSkillReward(skippedRemoval);
 
-    expect(skippedSkill.phase).toBe("ready");
+    expect(skippedSkill.phase).toBe("choose-node");
     expect(skippedSkill.bag).toEqual(originalBag);
     expect(skippedSkill.equippedSkills).toEqual(originalSkills);
   });
@@ -526,7 +562,7 @@ describe("run progression", () => {
     const selected = options?.[0];
     if (selected === undefined) throw new Error("missing fallback coin option");
     const ready = chooseCoinReward(fallback, selected);
-    expect(ready.phase).toBe("ready");
+    expect(ready.phase).toBe("choose-node");
     expect(ready.bag).toHaveLength(fallback.bag.length + 1);
     expect(ready.bag.at(-1)).toBe(selected);
   });
@@ -537,7 +573,7 @@ describe("run progression", () => {
 
     expect(fallback.phase).toBe("rewards");
     const ready = chooseCoinReward(fallback, null);
-    expect(ready.phase).toBe("ready");
+    expect(ready.phase).toBe("choose-node");
     expect(ready.bag).toEqual(originalBag);
   });
 
@@ -658,9 +694,11 @@ describe("run progression", () => {
       currentHp: 63,
       maxHp: 70,
       gold: 35,
-      graph: legacyRunGraph(),
-      nodeChoices: [0, 0, 0, 0, 0],
+      graph: generateRunGraph("SAVE-ROUND-TRIP", db),
+      nodeChoices: Array.from({ length: 10 }, () => 0),
       shopRemovals: 0,
+      shopPurchasedCoins: 0,
+      shopPurchasedSkills: 0,
       combatIndex: 1,
       attempt: 0,
       phase: "rewards",
