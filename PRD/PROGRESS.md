@@ -19,6 +19,7 @@ Phase 1 보류 항목을 명시적으로 유지한 채 Phase 2를 진행한다. 
 
 ## 완료
 
+- [x] **UX 피드백 라운드 — 인과 가독성 (ux-feedback-clarity)** (2026-07-11, Pumasi 3라운드+Fable, 배포 `9758500`) — 사용자 피드백(화상/위축 hover 무반응 · 기본/앞뒤 비직관 · "방금 무슨 일이" 혼란)을 정보·피드백 결함으로 진단하고 **수치·확률·콘텐츠 무변경**으로 수정. ① `keywords.tsx` 7종 용어 툴팁(hover/:focus-visible/클릭·탭 토글, Escape 억제 — WCAG 1.4.13, aria-describedby). ② `card-effects.tsx` 기본/앞면/뒷면/비용 배지 행 — **값 우선 표기**(피해 +3 · 동전마다), any 모드 접미 생략, keep-all 줄바꿈, 클리핑 시 카드 아트 양보(정보>장식, 하한 36px). ③ `resolution-summary.ts`+`resolution-ticket.tsx` 결산 티켓 — 면 칩→기본→발동 보너스(any 1회/per ×N)→상태→이벤트 정본 합계, 다음 커맨드/7초 제거. ④ `vfx.css` 절제 이벤트 VFX(피격·방어·화상·위축·면 확정 금/은 글로우, ≤350ms steps, reduced-motion 전면 비활성, 신규 에셋 0). ⑤ 어휘 정정 쇠약→**위축**. 감시자 협업: 워커의 effect-probe 유령 DOM 셰임 기각→가시 계약 재검증, 슬롯 인덱스 셀렉터 기각→텍스트 파생, 시각 판정 PASS 93 후에도 DOM 계측으로 행 클리핑 2건 적발·수정. 검증: typecheck·lint·test 226/226·build, ci:sim 4게이트·seed42 골든 불변, playtest **293어서션**(신규 S14~S18: 툴팁 4경로·수치 가시 기하·전 카드 클리핑 0·티켓 합계=HP 감소·쇠약 부재·reduced-motion), CI `29139918740`·Deploy `29139918769` green, 라이브 `index-CIEUWhdZ.js` 200 + 신규 문구 포함 확인. 결정 기록 `PRD/UX_FEEDBACK_DECISIONS.md`(변경/불변/보류 3건+진입 기준). 사람 게이트·Phase 3 보류 유지 — 이 라운드는 손맛 게이트를 대체하지 않는다
 - [x] **사람 게이트 전 백로그 (pre-human-backlog)** (2026-07-11, Pumasi 3워커+후속 2건+Fable, 배포 `7ea1a17`) — ① 소비 연료 직접 선택 규칙 확정·구현(조건부 보류 닫힘): count 1 = A15 자동 유지, count≥2 = 연료 지정 모드, 실행 coins[] 손패 순서 결정론, 순수 모듈+test-db 테스트. 감시자 지적으로 워커의 ref/DOM 폴백/캡처 중복 통합을 기각하고 최소 경로로 단순화시킨 뒤 수용(제거분 전부 공식 게이트에 불필요 입증). ② 다중 적 엔진 하네스 7테스트 — A7/B17 주장 최초 증거화, 엔진 결함 0, legalCommands target-0은 기준선 한계로 문서화. ③ CI playwright 캐시 + feedback-check 필수 편입 + sim:human 프로세스 레벨 CLI 테스트(`--` 회귀 포함; sim 무의존 원칙 유지 위해 node-shims 확장 — 워커 브리프의 typecheck 게이트 누락은 통합 게이트에서 적발·후속 수정). ④ `PRD/PHASE3_PREP.md` 스펙(타겟팅 UI — legalCommands 다중 target 열거를 진입 필수 전제로 명시, C1 지속형 골든, 용광로 UX, 콘텐츠 게이트 재계산 의무) — 구현은 전부 Phase 3 hold. 검증: typecheck·lint·test 211/211·build, ci:sim 4게이트, seed42 골든 불변, playtest 260어서션, feedback-check, CI `29128783038`·Deploy `29128783037` green, 라이브 `index-Cl5QyWAx.js` 200. content 수치 무변경, 사람 게이트 4건·Phase 3 보류 유지
 - [x] **사람 게이트 실행 도구 (human-gate-enablement)** (2026-07-11, Pumasi 3워커+Fable, 배포 `41bab3e`) — ① `pnpm sim:human`: human-run-trace JSON 디렉토리를 **코어 리플레이 대조**(runSeed+커맨드 재시뮬 → HP/플립/결과 사실 일치, contentVersion 드리프트 거부)로 검증하고 §8.3 사람 지표(N·평균 턴·스킬/턴·낭비율·속성 활용률·소비/2코인 기회 정규화·보상 선택·계산 가능 무효 태그)를 결정론 리포트로 집계. sim→core+content 의존 방향 유지, UI import 없음. 후속 수정 2건: pnpm 전달 `--` 토큰 허용, 스킬/턴을 %가 아닌 개수 표기(감시자 발견 `281.6%` → `2.82 (276/98)`). ② 거부 행동 사유 한국어 피드백 + ③ 프리뷰 자해·코인 생성 축 + ④ URL 시드 재현성 S13 + CI playtest 필수 잡 — PHASE1_HOLDS 4행 닫힘(증거 링크 포함). ⑤ `PRD/PLAYTEST_KIT.md` — 테스터 안내·M2/M4/M5/M6 통합 설문·진행자 집계 절차 (Fable 직접 작성). 검증: typecheck·lint·test 195/195·build, ci:sim 4게이트, seed42 골든 불변, playtest 260어서션(로컬+원격 CI), feedback-check, sim:human 2회 byte-identical(결정론 픽스처 N=5 — **도구 검증용이며 사람 증거 아님**). CI/Deploy `29110395064`/`29110395102` green, 라이브 `index-D7PQXBtO.js` 200. 수치 콘텐츠 무변경(T6.4 유지), 사람 게이트·Phase 3 보류 유지
 - [x] **M6 정책·지표·CRN·CI·로컬 텔레메트리** (2026-07-11, Pumasi+Fable) — Random/Aggro/Turtle/GreedyEV는 합법 명령과 공개 프리뷰만 사용하며 정책 RNG를 분리했다. `m6-trace-v1` 순수 fold, 정책×적 리포트, A=A 바이트 동일·fire-first/basic-first CRN, 정렬 이상 시드, 결과 화면 `플레이 로그 저장`을 구현했다. CI는 4정책×125=500런의 terminal/crash/invariant/seed42 네 게이트만 사용하고 밸런스는 report-only다. `sim:balance` 2회 11,023 bytes 완전 동일(SHA-256 `af430ad…34cbc`), 500/500 terminal·274승/226패·crash/invariant 0. Fable 판정에 따라 numeric change=none, Gatekeeper 수렴 70건과 소비/플립은 사람 질문으로 유지한다.
@@ -37,16 +38,16 @@ Phase 1 보류 항목을 명시적으로 유지한 채 Phase 2를 진행한다. 
 ## 마지막 검증 결과
 
 ```text
-M6 Pumasi 구현 후 (2026-07-11):
-typecheck 4/4 ✓ · lint ✓ · test 180/180 ✓ · build 4/4 ✓
-· ci:sim → 4정책 합계 500/500 terminal, crash 0, invariant 0, seed42 golden unchanged ✓
-· sim run --seed 42 --auto → victory, 5전투 4/3/4/4/5턴, 최종 HP 41 ✓
-· Random full-run 10,000/10,000 terminal, crash/invariant 0 ✓
-· A=A full trace byte identity + GreedyEV CRN 20쌍 terminal ✓
-· sim:balance 2회 byte-identical, 정책×적/소비·플립/Gatekeeper 수렴 리포트 ✓
-· Windows Chrome S1~S12 통과, 플레이 로그 버튼 포함 결과 패널 1280/1920 무겹침·오류 0 ✓
-· Fable T6.4: numeric change=none, 사람 데이터 전 수치 변경·Phase 3 금지
-· 원격 CI `29106628445`·Deploy `29106627867` green, 라이브 `index-QUN1fjyP.js`·URL 200 ✓
+UX 피드백 라운드 후 (2026-07-11, 배포 9758500):
+typecheck 4/4 ✓ · lint ✓ · test 25파일 226/226 ✓ · build 4/4 ✓
+· ci:sim → 500/500 terminal, crash 0, invariant 0, seed42 golden unchanged ✓
+· sim play --seed 42 --auto → victory 9턴 불변 ✓
+· playtest 293/293 ✓ (신규 S14~S18: 키워드 툴팁 hover/focus/클릭·탭/Escape/바깥/오발 방지,
+  카드 행 문법+수치 가시 기하+전 카드 클리핑 0+폭 ≤126 유지, 결산 티켓 합계=적 HP 감소,
+  쇠약 어휘 부재, vfx-reveal 등장·소멸+reduced-motion 무사고)
+· 독립 시각 판정 PASS 93/100 + 판정 후 클리핑 2건 DOM 계측 적발·수정·어서션 고정 ✓
+· 수치·확률·콘텐츠 무변경 (사람 데이터 전 수치 변경·Phase 3 금지 유지)
+· 원격 CI `29139918740`·Deploy `29139918769` green, 라이브 `index-CIEUWhdZ.js`·URL 200 ✓
 ```
 
 ## 실패 시도
@@ -56,7 +57,7 @@ typecheck 4/4 ✓ · lint ✓ · test 180/180 ✓ · build 4/4 ✓
 
 ## 현재 가장 안정적인 상태
 
-M6 `23ad82b` — Pumasi 자동화·독립 감사 PASS, CI `29106628445`·Deploy `29106627867` 성공, 라이브 번들에서 로컬 플레이 로그 기능과 URL 200 확인 완료.
+UX 피드백 라운드 `9758500` — 키워드 툴팁·카드 문법·결산 티켓·이벤트 VFX 통합, 시각 판정 PASS 93, CI `29139918740`·Deploy `29139918769` 성공, 라이브 번들 `index-CIEUWhdZ.js`에서 결산 티켓·위축 문구와 URL 200 확인 완료.
 
 ## 다음 단계
 
