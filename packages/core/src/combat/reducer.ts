@@ -146,7 +146,8 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
       block: 0,
       statuses: {},
       intent: intent.intent,
-      intentIndex: intent.index
+      intentIndex: intent.index,
+      nextAttackBonus: 0
     };
   });
 

@@ -309,8 +309,10 @@ describe('P3.3 heart-of-flame interaction regressions', () => {
 });
 
 describe('P3.4 shipped content goldens', () => {
-  it('ships the p3.4 version with legacy allowlist', () => {
-    expect(CONTENT_VERSION).toBe('0.8.0-p3.4');
+  it('ships the p4 version with legacy allowlist', () => {
+    // P4.2 선행: 몬스터 6종 가산 출하에 결속된 버전 승격 (감사 정책 — 콘텐츠 변경 없는 버전 유지 금지)
+    expect(CONTENT_VERSION).toBe('0.9.0-p4');
+    expect(LEGACY_CONTENT_VERSIONS).toContain('0.8.0-p3.4');
     expect(LEGACY_CONTENT_VERSIONS).toContain('0.7.0-p3.3');
     expect(LEGACY_CONTENT_VERSIONS).toContain('0.6.0-p3.2');
     expect(LEGACY_CONTENT_VERSIONS).toContain('0.5.0-m5');
@@ -357,6 +359,111 @@ describe('P3.4 shipped content goldens', () => {
       expect(String(contentDb.skills[skill]?.exclusiveTo)).toBe('frost-knight');
     }
     expect(contentDb.validate()).toEqual([]);
+  });
+});
+
+describe('P4.2 provisional enemy content goldens', () => {
+  // D2 조우 대역 산술: goblin+ghoul=70(2마리 65~85), thief+goblin=58(감전 압박 예외),
+  // ghoul+goblin+slime=86(3마리 75~95). 수치 전부 balance-provisional.
+  it('pins the six enemy definitions shipped under 0.9.0-p4', () => {
+    expect(CONTENT_VERSION).toBe('0.9.0-p4');
+    expect(enemies.goblin).toEqual({
+      id: 'goblin',
+      name: '고블린',
+      maxHp: 32,
+      intents: [
+        { id: 'stab', actions: [{ kind: 'attack', damage: 7 }] },
+        { id: 'hide', actions: [{ kind: 'block', amount: 5 }] },
+        { id: 'flurry', actions: [{ kind: 'attack', damage: 10 }] }
+      ]
+    });
+    expect(enemies.thief).toEqual({
+      id: 'thief',
+      name: '도적',
+      maxHp: 26,
+      intents: [
+        { id: 'ambush', actions: [{ kind: 'attack', damage: 6 }] },
+        {
+          id: 'weak-point',
+          actions: [
+            { kind: 'attack', damage: 6 },
+            { kind: 'applyStatus', status: 'shock', stacks: 1 }
+          ]
+        },
+        { id: 'evade', actions: [{ kind: 'block', amount: 7 }] }
+      ]
+    });
+    expect(enemies.ghoul).toEqual({
+      id: 'ghoul',
+      name: '구울',
+      maxHp: 38,
+      intents: [
+        { id: 'rotting-touch', actions: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1 }] },
+        { id: 'bite', actions: [{ kind: 'attack', damage: 8 }] },
+        {
+          id: 'devour',
+          actions: [
+            { kind: 'attack', damage: 7 },
+            { kind: 'heal', amount: 5 }
+          ]
+        }
+      ]
+    });
+    expect(enemies.mage).toEqual({
+      id: 'mage',
+      name: '마도사',
+      maxHp: 22,
+      intents: [
+        { id: 'mana-focus', actions: [{ kind: 'buffNextAttack', amount: 5 }] },
+        {
+          id: 'firebolt',
+          actions: [
+            { kind: 'attack', damage: 11 },
+            { kind: 'applyStatus', status: 'burn', stacks: 1 }
+          ]
+        },
+        { id: 'barrier', actions: [{ kind: 'block', amount: 8 }] }
+      ]
+    });
+    expect(enemies.slime).toEqual({
+      id: 'slime',
+      name: '슬라임',
+      maxHp: 16,
+      intents: [
+        { id: 'cling', actions: [{ kind: 'block', amount: 4 }] },
+        {
+          id: 'acidic-slime',
+          actions: [
+            { kind: 'attack', damage: 5 },
+            { kind: 'nextDrawPenalty', amount: 1 }
+          ]
+        },
+        { id: 'bounce', actions: [{ kind: 'attack', damage: 8 }] }
+      ]
+    });
+    expect(enemies['ember-archmage']).toEqual({
+      id: 'ember-archmage',
+      name: '잿불 마도왕',
+      maxHp: 150,
+      intents: [
+        { id: 'arcane-amplification', actions: [{ kind: 'buffNextAttack', amount: 8 }] },
+        { id: 'doom-fireball', actions: [{ kind: 'attack', damage: 20 }] },
+        {
+          id: 'ember-barrier',
+          actions: [
+            { kind: 'block', amount: 12 },
+            { kind: 'nextDrawPenalty', amount: 1 }
+          ]
+        }
+      ]
+    });
+    expect(contentDb.validate()).toEqual([]);
+  });
+
+  it('keeps the D2 encounter band arithmetic visible', () => {
+    expect(enemies.goblin.maxHp + enemies.ghoul.maxHp).toBe(70);
+    expect(enemies.thief.maxHp + enemies.goblin.maxHp).toBe(58);
+    expect(enemies.ghoul.maxHp + enemies.goblin.maxHp + enemies.slime.maxHp).toBe(86);
   });
 });
 
@@ -464,7 +571,7 @@ describe('P3.4 hostile coin proc rerouting regressions', () => {
 
 describe('M5 shipped content', () => {
   it('ships the M5 version, mana coin, skills, and fixed enemy definitions', () => {
-    expect(CONTENT_VERSION).toBe('0.8.0-p3.4');
+    expect(CONTENT_VERSION).toBe('0.9.0-p4');
     expect(coins.mana).toEqual({
       id: coinId('mana'),
       element: 'mana',

@@ -63,7 +63,7 @@ import {
 } from "./icons";
 import { coinNameFor, coinRewardDetailFor } from "./coin-info";
 import { Keyword } from "./keywords";
-import { buildResolutionSummary } from "./resolution-summary";
+import { buildResolutionSummary, statusKo } from "./resolution-summary";
 import { ResolutionTicket } from "./resolution-ticket";
 import type { ResolutionSummary } from "./resolution-summary";
 import {
@@ -309,6 +309,21 @@ const IntentBadge = ({ enemy }: { enemy: CombatState["enemies"][number] }) => (
         <span key={index}>
           <ShieldIcon scale={1.6} tone="steel" />
           {action.amount}
+        </span>
+      ) : action.kind === "applyStatus" ? (
+        <span key={index} aria-label={`${statusKo(action.status)} ${action.stacks} 부여`}>
+          <Keyword term={action.status}>
+            {statusKo(action.status)} {action.stacks}
+          </Keyword>
+        </span>
+      ) : action.kind === "heal" ? (
+        <span key={index} aria-label={`자가 회복 ${action.amount}`}>
+          회복 {action.amount}
+        </span>
+      ) : action.kind === "buffNextAttack" ? (
+        // 충전 타입 없음(사용자 확정) — 버프 의도로 표시, 강공 예고는 패턴 순서가 담당
+        <span key={index} aria-label={`버프: 다음 공격 +${action.amount}`}>
+          ↑ 공격 +{action.amount}
         </span>
       ) : (
         <span key={index} aria-label={`다음 드로우 ${action.amount} 감소`}>
@@ -2180,6 +2195,7 @@ const CombatBoard = ({
                 onTarget={
                   targetLegal ? () => confirmTargeting(index) : undefined
                 }
+                attackBuff={enemy.nextAttackBonus}
               />
             );
           })}
@@ -2660,6 +2676,7 @@ interface UnitPanelProps {
   targeting?: boolean;
   targetSelected?: boolean;
   onTarget?: () => void;
+  attackBuff?: number;
 }
 
 const UnitPanel = ({
@@ -2680,6 +2697,7 @@ const UnitPanel = ({
   targeting = false,
   targetSelected = false,
   onTarget,
+  attackBuff = 0,
 }: UnitPanelProps) => (
   <div
     className={`unit ${side} ${vfx.has(`unit-${unitKey}`) ? "vfx-hit" : ""} ${targeting ? "targetable" : ""} ${targetSelected ? "target-selected" : ""}`}
@@ -2731,6 +2749,14 @@ const UnitPanel = ({
               감전 {statusTurns(statuses, "shock")}
             </em>
           </Keyword>
+        ) : null}
+        {attackBuff > 0 ? (
+          <em
+            aria-label={`버프: 다음 공격 +${attackBuff}`}
+            className="attack-buff-chip"
+          >
+            ↑ 공격 +{attackBuff}
+          </em>
         ) : null}
       </div>
       <div aria-label={`체력 ${hp}/${maxHp}`} className="hp-bar">

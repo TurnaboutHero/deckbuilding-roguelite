@@ -32,6 +32,7 @@ export interface EnemyState extends UnitState {
   defId: EnemyDefId;
   intent: EnemyIntent;
   intentIndex: number;
+  nextAttackBonus: number;
 }
 
 export interface SlotState {

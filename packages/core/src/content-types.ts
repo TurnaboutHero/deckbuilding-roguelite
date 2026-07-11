@@ -86,7 +86,10 @@ export interface CharacterDef {
 export type EnemyAction =
   | { kind: 'attack'; damage: number; hits?: number }
   | { kind: 'block'; amount: number }
-  | { kind: 'nextDrawPenalty'; amount: number };
+  | { kind: 'nextDrawPenalty'; amount: number }
+  | { kind: 'applyStatus'; status: StatusId; stacks: number }
+  | { kind: 'heal'; amount: number }
+  | { kind: 'buffNextAttack'; amount: number };
 
 export interface EnemyIntent {
   id: string;

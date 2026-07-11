@@ -1126,6 +1126,20 @@ button:focus-visible {
   outline-offset: 1px;
 }
 
+/* 적 공격 버프 칩 — buffNextAttack (충전 타입 없음, 버프 의도 표기) */
+.attack-buff-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #6b3f1d;
+  border: 1px solid #c97b3a;
+  color: #ffd9a8;
+  font-style: normal;
+  font-size: 11px;
+}
+
 .pile-item-copy {
   display: flex;
   flex-direction: column;

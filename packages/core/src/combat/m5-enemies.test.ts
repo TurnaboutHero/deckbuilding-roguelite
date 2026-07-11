@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ContentDb } from '../content-types';
 import type { CharacterId, CoinDefId, EnemyDefId } from '../ids';
 import { createCombat, step } from './reducer';
+import { statusTurns } from './state';
 import type { CombatState } from './state';
 
 const id = <T extends string>(value: string) => value as T;
@@ -48,6 +49,58 @@ const testDb = (): ContentDb => ({
             { kind: 'attack', damage: 5 }
           ]
         }
+      ]
+    },
+    buffer: {
+      id: id<EnemyDefId>('buffer'),
+      name: '버퍼',
+      maxHp: 20,
+      intents: [
+        { id: 'focus', actions: [{ kind: 'buffNextAttack', amount: 4 }] },
+        { id: 'strike', actions: [{ kind: 'attack', damage: 5 }] },
+        { id: 'idle', actions: [] }
+      ]
+    },
+    stacker: {
+      id: id<EnemyDefId>('stacker'),
+      name: '중첩 버퍼',
+      maxHp: 20,
+      intents: [
+        { id: 'focus-1', actions: [{ kind: 'buffNextAttack', amount: 3 }] },
+        { id: 'focus-2', actions: [{ kind: 'buffNextAttack', amount: 4 }] },
+        { id: 'strike', actions: [{ kind: 'attack', damage: 3 }] }
+      ]
+    },
+    guardedBuffer: {
+      id: id<EnemyDefId>('guardedBuffer'),
+      name: '방어 버퍼',
+      maxHp: 20,
+      intents: [
+        { id: 'focus', actions: [{ kind: 'buffNextAttack', amount: 4 }] },
+        { id: 'guard', actions: [{ kind: 'block', amount: 2 }] }
+      ]
+    },
+    healer: {
+      id: id<EnemyDefId>('healer'),
+      name: '치유자',
+      maxHp: 10,
+      intents: [{ id: 'heal', actions: [{ kind: 'heal', amount: 5 }] }]
+    },
+    statusFiend: {
+      id: id<EnemyDefId>('statusFiend'),
+      name: '상태 악령',
+      maxHp: 20,
+      intents: [
+        {
+          id: 'double-shock-strike',
+          actions: [
+            { kind: 'applyStatus', status: 'shock', stacks: 1 },
+            { kind: 'applyStatus', status: 'shock', stacks: 1 },
+            { kind: 'attack', damage: 10 }
+          ]
+        },
+        { id: 'frostbite', actions: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1 }] },
+        { id: 'idle', actions: [] }
       ]
     }
   },
@@ -140,5 +193,115 @@ describe('M5 enemy actions', () => {
     }
 
     expect(run()).toEqual(first);
+  });
+
+  it('consumes buffNextAttack on the next attack once', () => {
+    const db = testDb();
+    let state = createCombat(
+      { character: id<CharacterId>('warrior'), enemies: [id<EnemyDefId>('buffer')] },
+      db,
+      'enemy-buff-once'
+    );
+
+    const buffed = endTurn(state, db);
+    expect(buffed.state.enemies[0]?.nextAttackBonus).toBe(4);
+    expect(buffed.events).toContainEqual({
+      type: 'enemyAttackBuffed',
+      enemy: 0,
+      amount: 4,
+      nextAttackBonus: 4
+    });
+
+    state = buffed.state;
+    const attacked = endTurn(state, db);
+    expect(attacked.state.player.hp).toBe(61);
+    expect(attacked.state.enemies[0]?.nextAttackBonus).toBe(0);
+    expect(attacked.events).toContainEqual({
+      type: 'damageDealt',
+      target: { type: 'player' },
+      amount: 9,
+      blocked: 0,
+      source: 'enemy'
+    });
+
+    const unbuffed = endTurn(attacked.state, db);
+    expect(unbuffed.state.player.hp).toBe(61);
+    expect(unbuffed.state.enemies[0]?.nextAttackBonus).toBe(0);
+  });
+
+  it('adds repeated buffNextAttack actions before consuming them on one attack', () => {
+    const db = testDb();
+    let state = createCombat(
+      { character: id<CharacterId>('warrior'), enemies: [id<EnemyDefId>('stacker')] },
+      db,
+      'enemy-buff-stack'
+    );
+
+    state = endTurn(state, db).state;
+    expect(state.enemies[0]?.nextAttackBonus).toBe(3);
+    state = endTurn(state, db).state;
+    expect(state.enemies[0]?.nextAttackBonus).toBe(7);
+
+    const attacked = endTurn(state, db);
+    expect(attacked.state.player.hp).toBe(60);
+    expect(attacked.state.enemies[0]?.nextAttackBonus).toBe(0);
+  });
+
+  it('keeps buffNextAttack while non-attack intents resolve', () => {
+    const db = testDb();
+    let state = createCombat(
+      { character: id<CharacterId>('warrior'), enemies: [id<EnemyDefId>('guardedBuffer')] },
+      db,
+      'enemy-buff-persist'
+    );
+
+    state = endTurn(state, db).state;
+    expect(state.enemies[0]?.nextAttackBonus).toBe(4);
+    state = endTurn(state, db).state;
+    expect(state.enemies[0]?.block).toBe(2);
+    expect(state.enemies[0]?.nextAttackBonus).toBe(4);
+  });
+
+  it('clamps enemy heal actions to maxHp', () => {
+    const db = testDb();
+    const initial = createCombat(
+      { character: id<CharacterId>('warrior'), enemies: [id<EnemyDefId>('healer')] },
+      db,
+      'enemy-heal-clamp'
+    );
+    const damaged = {
+      ...initial,
+      enemies: initial.enemies.map((enemy) => ({ ...enemy, hp: 8 }))
+    };
+
+    const healed = endTurn(damaged, db);
+    expect(healed.state.enemies[0]?.hp).toBe(10);
+    expect(healed.events).toContainEqual({ type: 'enemyHealed', enemy: 0, amount: 2, hp: 10 });
+  });
+
+  it('applies enemy statuses through the shared duration container and modifiers', () => {
+    const db = testDb();
+    let state = createCombat(
+      { character: id<CharacterId>('warrior'), enemies: [id<EnemyDefId>('statusFiend')] },
+      db,
+      'enemy-status-container'
+    );
+
+    const shocked = endTurn(state, db);
+    expect(statusTurns(shocked.state.player.statuses, 'shock')).toBe(2);
+    expect(shocked.state.player.hp).toBe(55);
+    expect(shocked.events.filter((event) => event.type === 'statusApplied')).toEqual([
+      { type: 'statusApplied', target: { type: 'player' }, status: 'shock', stacks: 1, turns: 1 },
+      { type: 'statusApplied', target: { type: 'player' }, status: 'shock', stacks: 1, turns: 1 }
+    ]);
+
+    state = shocked.state;
+    const frostbitten = endTurn(state, db);
+    expect(statusTurns(frostbitten.state.player.statuses, 'shock')).toBe(1);
+    expect(statusTurns(frostbitten.state.player.statuses, 'frostbite')).toBe(1);
+
+    const expired = endTurn(frostbitten.state, db);
+    expect(statusTurns(expired.state.player.statuses, 'shock')).toBe(0);
+    expect(statusTurns(expired.state.player.statuses, 'frostbite')).toBe(0);
   });
 });

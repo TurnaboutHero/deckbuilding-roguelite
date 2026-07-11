@@ -1,7 +1,7 @@
 import type { ContentDb, EnemyIntent } from '../content-types';
 import { rngFrom } from '../rng';
 import type { CombatEvent } from './events';
-import { applyBlock, applyDamage, checkCombatEnd } from './resolve/flip';
+import { applyBlock, applyDamage, applyEffectAtom, checkCombatEnd } from './resolve/flip';
 import { statusStacks } from './state';
 import type { CombatState } from './state';
 
@@ -64,19 +64,71 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
     const enemy = state.enemies[enemyIndex];
     if (enemy === undefined || enemy.hp <= 0) continue;
     for (const action of enemy.intent.actions) {
+      const actingEnemy = state.enemies[enemyIndex];
+      if (actingEnemy === undefined || actingEnemy.hp <= 0) break;
       if (action.kind === 'attack') {
         const hits = action.hits ?? 1;
+        const bonus = actingEnemy.nextAttackBonus;
+        if (bonus > 0) {
+          state = {
+            ...state,
+            enemies: state.enemies.map((candidate, index) =>
+              index === enemyIndex ? { ...candidate, nextAttackBonus: 0 } : candidate
+            )
+          };
+        }
         for (let hit = 0; hit < hits; hit += 1) {
-          state = applyDamage(state, { type: 'player' }, action.damage, 'enemy', events, { type: 'enemy', index: enemyIndex });
+          state = applyDamage(
+            state,
+            { type: 'player' },
+            action.damage + (hit === 0 ? bonus : 0),
+            'enemy',
+            events,
+            { type: 'enemy', index: enemyIndex }
+          );
           if (state.phase === 'defeat') return { state, events };
         }
       } else if (action.kind === 'block') {
         state = applyBlock(state, { type: 'enemy', index: enemyIndex }, action.amount, events);
-      } else {
+      } else if (action.kind === 'nextDrawPenalty') {
         if (action.amount < 0) throw new Error('next draw penalty amount cannot be negative');
         const nextDrawPenalty = state.player.nextDrawPenalty + action.amount;
         state = { ...state, player: { ...state.player, nextDrawPenalty } };
         events.push({ type: 'witherApplied', enemy: enemyIndex, amount: action.amount, nextDrawPenalty });
+      } else if (action.kind === 'applyStatus') {
+        state = applyEffectAtom(
+          state,
+          { kind: 'applyStatus', status: action.status, stacks: action.stacks, to: 'self' },
+          { type: 'player' },
+          db,
+          events
+        );
+      } else if (action.kind === 'heal') {
+        if (action.amount < 0) throw new Error('heal amount cannot be negative');
+        const before = state.enemies[enemyIndex];
+        if (before === undefined) continue;
+        const hp = Math.min(before.maxHp, before.hp + action.amount);
+        state = {
+          ...state,
+          enemies: state.enemies.map((candidate, index) => (index === enemyIndex ? { ...candidate, hp } : candidate))
+        };
+        events.push({ type: 'enemyHealed', enemy: enemyIndex, amount: hp - before.hp, hp });
+      } else if (action.kind === 'buffNextAttack') {
+        if (action.amount < 0) throw new Error('attack buff amount cannot be negative');
+        const before = state.enemies[enemyIndex];
+        if (before === undefined) continue;
+        const nextAttackBonus = before.nextAttackBonus + action.amount;
+        state = {
+          ...state,
+          enemies: state.enemies.map((candidate, index) =>
+            index === enemyIndex ? { ...candidate, nextAttackBonus } : candidate
+          )
+        };
+        events.push({ type: 'enemyAttackBuffed', enemy: enemyIndex, amount: action.amount, nextAttackBonus });
+      } else {
+        // 미래 행동 타입이 조용히 buff로 흘러들지 않도록 컴파일 타임 exhaustiveness 고정
+        const exhausted: never = action;
+        throw new Error(`unknown enemy action: ${JSON.stringify(exhausted)}`);
       }
     }
   }

@@ -28,6 +28,8 @@ export type CombatEvent =
   | { type: 'pileShuffled'; count: number }
   | { type: 'elementGranted'; coins: CoinUid[]; element: Element }
   | { type: 'witherApplied'; enemy: number; amount: number; nextDrawPenalty: number }
+  | { type: 'enemyHealed'; enemy: number; amount: number; hp: number }
+  | { type: 'enemyAttackBuffed'; enemy: number; amount: number; nextAttackBonus: number }
   | { type: 'intentRevealed'; enemy: number; intent: EnemyIntent }
   | { type: 'turnStarted'; turn: number }
   | { type: 'combatEnded'; result: 'victory' | 'defeat'; turns: number };

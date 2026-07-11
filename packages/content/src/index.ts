@@ -4,8 +4,10 @@ import type { CharacterDef, CoinDef, ContentDb, EnemyDef, SkillDef } from '@game
 
 // P3.2 승격: 수호자·마나 스킬·exclusiveTo 시대. m5 콘텐츠는 현 버전의 부분집합이고
 // 기존 수치가 불변이므로 m5 저장은 안전하게 로드(마이그레이션)할 수 있다.
-export const CONTENT_VERSION = '0.8.0-p3.4';
-export const LEGACY_CONTENT_VERSIONS: readonly string[] = ['0.7.0-p3.3', '0.6.0-p3.2', '0.5.0-m5'];
+export const CONTENT_VERSION = '0.9.0-p4';
+export const LEGACY_CONTENT_VERSIONS: readonly string[] = ['0.8.0-p3.4', '0.7.0-p3.3', '0.6.0-p3.2', '0.5.0-m5'];
+// p3.4→p4 호환 근거: 몬스터 6종 가산뿐(플레이어 콘텐츠·기존 수치 불변)이라 기존 저장의
+// 모든 참조가 유효하다. 신규 적은 신규 조우(P4.2+ 그래프)에서만 등장한다.
 // p3.2→p3.3 호환 근거: 스킬 3종 가산뿐(수치 불변)이라 기존 저장의 모든 참조가 유효하다.
 // rewards 저장의 유일한 위험 형상(공용 풀 소진 fallback)은 p3.2 실콘텐츠에서 도달 불가
 // (전사 공용 9종 − 장착 6 = 미보유 ≥3 ≥ 2) — 공허 엣지, run-storage 테스트로 고정.
@@ -487,6 +489,98 @@ export const enemies = {
         actions: [
           { kind: 'block', amount: 13 },
           { kind: 'attack', damage: 6 }
+        ]
+      }
+    ]
+  },
+  // P4.2 선행 다중 적 콘텐츠 — D2 정본 수치 그대로, 전부 balance-provisional.
+  // 조우 대역 산술(D2): goblin+ghoul=70, thief+goblin=58(감전 압박 예외), ghoul+goblin+slime=86.
+  goblin: {
+    id: enemy('goblin'),
+    name: '고블린',
+    maxHp: 32,
+    intents: [
+      { id: 'stab', actions: [{ kind: 'attack', damage: 7 }] },
+      { id: 'hide', actions: [{ kind: 'block', amount: 5 }] },
+      { id: 'flurry', actions: [{ kind: 'attack', damage: 10 }] }
+    ]
+  },
+  thief: {
+    id: enemy('thief'),
+    name: '도적',
+    maxHp: 26,
+    intents: [
+      { id: 'ambush', actions: [{ kind: 'attack', damage: 6 }] },
+      {
+        id: 'weak-point',
+        actions: [
+          { kind: 'attack', damage: 6 },
+          { kind: 'applyStatus', status: 'shock', stacks: 1 }
+        ]
+      },
+      { id: 'evade', actions: [{ kind: 'block', amount: 7 }] }
+    ]
+  },
+  ghoul: {
+    id: enemy('ghoul'),
+    name: '구울',
+    maxHp: 38,
+    intents: [
+      { id: 'rotting-touch', actions: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1 }] },
+      { id: 'bite', actions: [{ kind: 'attack', damage: 8 }] },
+      {
+        id: 'devour',
+        actions: [
+          { kind: 'attack', damage: 7 },
+          { kind: 'heal', amount: 5 }
+        ]
+      }
+    ]
+  },
+  mage: {
+    id: enemy('mage'),
+    name: '마도사',
+    maxHp: 22,
+    intents: [
+      { id: 'mana-focus', actions: [{ kind: 'buffNextAttack', amount: 5 }] },
+      {
+        id: 'firebolt',
+        actions: [
+          { kind: 'attack', damage: 11 },
+          { kind: 'applyStatus', status: 'burn', stacks: 1 }
+        ]
+      },
+      { id: 'barrier', actions: [{ kind: 'block', amount: 8 }] }
+    ]
+  },
+  slime: {
+    id: enemy('slime'),
+    name: '슬라임',
+    maxHp: 16,
+    intents: [
+      { id: 'cling', actions: [{ kind: 'block', amount: 4 }] },
+      {
+        id: 'acidic-slime',
+        actions: [
+          { kind: 'attack', damage: 5 },
+          { kind: 'nextDrawPenalty', amount: 1 }
+        ]
+      },
+      { id: 'bounce', actions: [{ kind: 'attack', damage: 8 }] }
+    ]
+  },
+  'ember-archmage': {
+    id: enemy('ember-archmage'),
+    name: '잿불 마도왕',
+    maxHp: 150,
+    intents: [
+      { id: 'arcane-amplification', actions: [{ kind: 'buffNextAttack', amount: 8 }] },
+      { id: 'doom-fireball', actions: [{ kind: 'attack', damage: 20 }] },
+      {
+        id: 'ember-barrier',
+        actions: [
+          { kind: 'block', amount: 12 },
+          { kind: 'nextDrawPenalty', amount: 1 }
         ]
       }
     ]
