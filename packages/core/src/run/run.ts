@@ -4,7 +4,7 @@ import { derive, rngFrom, seedFromString } from "../rng";
 import type { Rng } from "../rng";
 import { createCombat } from "../combat/reducer";
 import type { CombatState } from "../combat/state";
-import { RUN_ENCOUNTERS } from "./encounters";
+import { legacyRunGraph, nodeGoldReward } from "./graph";
 import { RUN_SAVE_VERSION } from "./types";
 import type {
   CreateRunConfig,
@@ -130,6 +130,59 @@ const requirePendingRewards = (run: RunState): PendingRewards => {
   return run.pendingRewards;
 };
 
+// P4.1 코어 불변식 (통합 감사 2차): 정상 내부 흐름 가정으로 검증을 우회하지 않도록
+// 모든 public 진입점(start·settle, 향후 shop/event 포함)이 공유하는 단일 헬퍼.
+const assertRunGraphInvariants = (run: RunState): void => {
+  if (!Number.isInteger(run.gold) || run.gold < 0)
+    throw new Error("gold must be a non-negative integer");
+  if (!Number.isInteger(run.shopRemovals) || run.shopRemovals < 0)
+    throw new Error("shop removals must be a non-negative integer");
+  if (run.graph.layers.length === 0)
+    throw new Error("run graph must have at least one layer");
+  if (run.nodeChoices.length !== run.graph.layers.length)
+    throw new Error("node choices must cover every layer");
+  // 전 레이어 검사 (감사 3차): 현재 레이어만 보면 미래 레이어의 빈 층·범위 밖
+  // 선택이 저장을 타고 살아남는다.
+  for (let layer = 0; layer < run.graph.layers.length; layer += 1) {
+    const nodes = run.graph.layers[layer];
+    if (nodes === undefined || nodes.length === 0)
+      throw new Error(`run graph layer ${layer} is empty`);
+    const choice = run.nodeChoices[layer];
+    if (
+      choice === undefined ||
+      !Number.isInteger(choice) ||
+      choice < 0 ||
+      choice >= nodes.length
+    ) {
+      throw new Error(`node choice for layer ${layer} is out of range`);
+    }
+  }
+};
+
+const currentRunNode = (run: RunState) => {
+  if (
+    !Number.isInteger(run.combatIndex) ||
+    run.combatIndex < 0 ||
+    run.combatIndex >= run.graph.layers.length
+  ) {
+    throw new Error("combat index is out of range");
+  }
+  const layer = run.graph.layers[run.combatIndex];
+  const choice = run.nodeChoices[run.combatIndex];
+  if (
+    layer === undefined ||
+    choice === undefined ||
+    !Number.isInteger(choice) ||
+    choice < 0 ||
+    choice >= layer.length
+  ) {
+    throw new Error("run node choice is out of range");
+  }
+  const node = layer[choice];
+  if (node === undefined) throw new Error("run node does not exist");
+  return node;
+};
+
 const requireCoinChoiceResolved = (pending: PendingRewards): void => {
   if (!pending.coinChoiceResolved)
     throw new Error("coin reward must be resolved first");
@@ -226,6 +279,7 @@ export const createRun = (config: CreateRunConfig, db: ContentDb): RunState => {
       throw new Error(`unknown starting skill: ${String(skill)}`);
   }
 
+  const graph = legacyRunGraph();
   return {
     version: RUN_SAVE_VERSION,
     contentVersion: config.contentVersion,
@@ -236,6 +290,9 @@ export const createRun = (config: CreateRunConfig, db: ContentDb): RunState => {
     bag: [...character.startingBag],
     equippedSkills: equippedSkills(character.startingSkills),
     gold: 0,
+    graph,
+    nodeChoices: Array.from({ length: graph.layers.length }, () => 0),
+    shopRemovals: 0,
     combatIndex: 0,
     attempt: 0,
     phase: "ready",
@@ -251,7 +308,7 @@ export const startRunCombat = (
   if (
     !Number.isInteger(run.combatIndex) ||
     run.combatIndex < 0 ||
-    run.combatIndex >= RUN_ENCOUNTERS.length
+    run.combatIndex >= run.graph.layers.length
   ) {
     throw new Error("combat index is out of range");
   }
@@ -264,8 +321,13 @@ export const startRunCombat = (
   ) {
     throw new Error("carried HP is out of range");
   }
-  const enemies = RUN_ENCOUNTERS[run.combatIndex];
-  if (enemies === undefined) throw new Error("encounter does not exist");
+  assertRunGraphInvariants(run);
+  const node = currentRunNode(run);
+  if (node.kind !== "combat" && node.kind !== "elite" && node.kind !== "boss")
+    throw new Error("current node is not a combat node");
+  const enemies = node.encounter;
+  if (enemies === undefined || enemies.length === 0)
+    throw new Error("encounter does not exist");
   const combat = createCombat(
     {
       character: run.character,
@@ -296,20 +358,31 @@ export const settleRunCombat = (
     throw new Error("combat has not ended");
   if (combat.player.maxHp !== run.maxHp)
     throw new Error("combat max HP does not match the run");
+  assertRunGraphInvariants(run);
 
   const currentHp = combat.player.hp;
   if (combat.phase === "defeat") {
     return { ...run, currentHp, phase: "defeat", pendingRewards: undefined };
   }
 
-  if (run.combatIndex === RUN_ENCOUNTERS.length - 1) {
-    return { ...run, currentHp, phase: "victory", pendingRewards: undefined };
+  const node = currentRunNode(run);
+  const gold = run.gold + nodeGoldReward(node.kind);
+
+  if (run.combatIndex === run.graph.layers.length - 1) {
+    return {
+      ...run,
+      currentHp,
+      gold,
+      phase: "victory",
+      pendingRewards: undefined,
+    };
   }
 
   const pendingRewards = pendingRewardsFor(run, run.combatIndex, db);
   return {
     ...run,
     currentHp,
+    gold,
     combatIndex: run.combatIndex + 1,
     attempt: 0,
     phase: "rewards",

@@ -10,6 +10,7 @@ import type {
 } from "../ids";
 import type { CombatState } from "../combat/state";
 import { RUN_ENCOUNTERS } from "./encounters";
+import { legacyRunGraph, nodeGoldReward } from "./graph";
 import {
   rewardEligibleSkillIds,
   chooseCoinReward,
@@ -231,6 +232,123 @@ describe("run progression", () => {
     ).toBe(true);
     expect(first.run.phase).toBe("victory");
     expect(first.run.combatIndex).toBe(4);
+    expect(first.run.gold).toBe(175);
+  });
+
+  it("creates the P4.1 legacy graph and starts combat from the selected node", () => {
+    const db = testDb();
+    const run = newRun();
+
+    expect(run.graph).toEqual(legacyRunGraph());
+    expect(run.nodeChoices).toEqual([0, 0, 0, 0, 0]);
+    expect(run.shopRemovals).toBe(0);
+    expect(run.graph.layers.map((layer) => layer[0]?.kind)).toEqual([
+      "combat",
+      "combat",
+      "combat",
+      "combat",
+      "combat",
+    ]);
+
+    const started = startRunCombat(
+      {
+        ...run,
+        graph: {
+          layers: [
+            [
+              {
+                id: "custom",
+                kind: "combat",
+                encounter: [id<EnemyDefId>("gatekeeper")],
+              },
+            ],
+          ],
+        },
+        nodeChoices: [0],
+      },
+      db,
+    );
+    expect(started.combat.enemies.map((enemy) => String(enemy.defId))).toEqual([
+      "gatekeeper",
+    ]);
+  });
+
+  it("guards graph invariants at every public entry point (P4.1 통합 감사)", () => {
+    const db = testDb();
+    const run = newRun();
+
+    // 비전투 노드·빈 encounter에서 전투 시작 거부 — kind/payload 계약
+    expect(() =>
+      startRunCombat(
+        {
+          ...run,
+          graph: { layers: [[{ id: "shop-0", kind: "shop" }]] },
+          nodeChoices: [0],
+        },
+        db,
+      ),
+    ).toThrow("current node is not a combat node");
+    expect(() =>
+      startRunCombat(
+        {
+          ...run,
+          graph: {
+            layers: [[{ id: "empty-0", kind: "combat", encounter: [] }]],
+          },
+          nodeChoices: [0],
+        },
+        db,
+      ),
+    ).toThrow("encounter does not exist");
+    expect(() => startRunCombat({ ...run, shopRemovals: -1 }, db)).toThrow(
+      "shop removals must be a non-negative integer",
+    );
+
+    // settle을 잘못된 run으로 직접 호출해도 동일 불변식이 막는다 —
+    // 정상 내부 흐름(start를 거친 run) 가정으로 검증을 우회하지 않는다.
+    const started = startRunCombat(run, db);
+    const ended = endedCombat(started.combat, "victory");
+    expect(() =>
+      settleRunCombat({ ...started.run, gold: -1 }, ended, db),
+    ).toThrow("gold must be a non-negative integer");
+    expect(() =>
+      settleRunCombat({ ...started.run, nodeChoices: [0] }, ended, db),
+    ).toThrow("node choices must cover every layer");
+
+    // 미래 레이어 손상도 거부 (감사 3차) — 빈 미래 층 / 범위 밖 미래 선택
+    const futureEmpty = {
+      ...run,
+      graph: {
+        layers: [
+          [{ id: "c-0", kind: "combat" as const, encounter: run.graph.layers[0]![0]!.encounter }],
+          [],
+        ],
+      },
+      nodeChoices: [0, 0],
+    };
+    expect(() => startRunCombat(futureEmpty, db)).toThrow(
+      "run graph layer 1 is empty",
+    );
+    const futureOutOfRange = {
+      ...started.run,
+      nodeChoices: started.run.nodeChoices.map((choice, index) =>
+        index === started.run.graph.layers.length - 1 ? 5 : choice,
+      ),
+    };
+    expect(() => settleRunCombat(futureOutOfRange, ended, db)).toThrow(
+      `node choice for layer ${started.run.graph.layers.length - 1} is out of range`,
+    );
+  });
+
+  it("uses fixed node gold rewards and reaches 175 gold after five legacy combats", () => {
+    const replay = replayRun("P4-GOLD");
+
+    expect(nodeGoldReward("combat")).toBe(35);
+    expect(nodeGoldReward("elite")).toBe(70);
+    expect(nodeGoldReward("boss")).toBe(100);
+    expect(nodeGoldReward("shop")).toBe(0);
+    expect(nodeGoldReward("event")).toBe(0);
+    expect(replay.run.gold).toBe(175);
   });
 
   it("carries lost HP into the next combat without healing", () => {
@@ -539,7 +657,10 @@ describe("run progression", () => {
       runSeed: "SAVE-ROUND-TRIP",
       currentHp: 63,
       maxHp: 70,
-      gold: 0,
+      gold: 35,
+      graph: legacyRunGraph(),
+      nodeChoices: [0, 0, 0, 0, 0],
+      shopRemovals: 0,
       combatIndex: 1,
       attempt: 0,
       phase: "rewards",

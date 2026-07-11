@@ -1,10 +1,10 @@
 import type { CharacterId, CoinDefId, SkillId } from '../ids';
+import type { RunGraph } from './graph';
 
-// v2 (2026-07-11, P3.2): 캐릭터 선택·exclusiveTo 인지 검증 시대 표시 — 형태 변경은 없고
-// 증거 계약 §2에 따라 검증 규칙 변경(전용 풀 경계)을 버전으로 명시한다. v1은 명시적
-// 마이그레이션으로 로드하며(전부 warrior 시대 저장), 미지의 미래 버전은 거부한다.
-export const RUN_SAVE_VERSION = 2 as const;
-export const LEGACY_RUN_SAVE_VERSIONS = [1] as const;
+// v3 (2026-07-12, P4.1): combatIndex 이름은 저장 churn 최소화를 위해 유지하지만,
+// 의미는 선형 전투 번호에서 "현재 런 그래프 레이어 인덱스"로 일반화한다.
+export const RUN_SAVE_VERSION = 3 as const;
+export const LEGACY_RUN_SAVE_VERSIONS = [1, 2] as const;
 
 export type RunPhase = 'ready' | 'combat' | 'rewards' | 'victory' | 'defeat';
 
@@ -28,6 +28,9 @@ export interface RunSave {
   bag: CoinDefId[];
   equippedSkills: EquippedSkills;
   gold: number;
+  graph: RunGraph;
+  nodeChoices: number[];
+  shopRemovals: number;
   combatIndex: number;
   attempt: number;
   phase: RunPhase;

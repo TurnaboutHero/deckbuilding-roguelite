@@ -1,5 +1,6 @@
 import { CONTENT_VERSION as CURRENT_CONTENT_VERSION, contentDb } from "@game/content";
 import {
+  RUN_ENCOUNTERS,
   RUN_SAVE_VERSION,
   chooseCoinReward,
   createRun,
@@ -34,6 +35,16 @@ const GUARDIAN_STARTING_SKILLS = [
   ...(contentDb.characters.guardian?.startingSkills ?? []),
 ];
 
+const legacyGraph = (): RunSave["graph"] => ({
+  layers: RUN_ENCOUNTERS.map((encounter, index) => [
+    {
+      id: `legacy-combat-${index}`,
+      kind: "combat" as const,
+      encounter: [...encounter],
+    },
+  ]),
+});
+
 const readySave = (): RunSave => ({
   version: RUN_SAVE_VERSION,
   contentVersion: CONTENT_VERSION,
@@ -44,6 +55,9 @@ const readySave = (): RunSave => ({
   bag: [...STARTING_BAG.slice(1), "mana"] as never,
   equippedSkills: [...STARTING_SKILLS.slice(0, 5), "smash"] as never,
   gold: 40,
+  graph: legacyGraph(),
+  nodeChoices: [0, 0, 0, 0, 0],
+  shopRemovals: 0,
   combatIndex: 2,
   attempt: 1,
   phase: "ready",
@@ -107,6 +121,13 @@ class MemoryStorage implements StorageLike {
 
 const rawWith = (overrides: Record<string, unknown>): string =>
   JSON.stringify({ ...readySave(), ...overrides });
+const legacyRawWith = (overrides: Record<string, unknown>): string => {
+  const legacy = { ...readySave() } as Record<string, unknown>;
+  delete legacy.graph;
+  delete legacy.nodeChoices;
+  delete legacy.shopRemovals;
+  return JSON.stringify({ ...legacy, ...overrides });
+};
 const parse = (raw: string): RunSave | null =>
   parseRunSave(raw, CONTENT_VERSION, contentDb);
 const serialize = (save: RunSave): string => serializeRunSave(save, contentDb);
@@ -220,6 +241,9 @@ describe("run save serialization boundary", () => {
       bag: [...GUARDIAN_STARTING_BAG] as never,
       equippedSkills: [...GUARDIAN_STARTING_SKILLS] as never,
       gold: 0,
+      graph: legacyGraph(),
+      nodeChoices: [0, 0, 0, 0, 0],
+      shopRemovals: 0,
       combatIndex: 0,
       attempt: 0,
       phase: "combat",
@@ -258,16 +282,21 @@ describe("run save serialization boundary", () => {
     expect(parse(rawWith({ contentVersion: "9.9.9-unknown" }))).toBeNull();
   });
 
-  it("migrates v1 saves explicitly and rejects unknown versions", () => {
-    // v1 → v2: 형태 동일, warrior 시대 저장 보존 (증거 계약 §2 — 명시 마이그레이션)
+  it("migrates v2 and v1 saves explicitly to v3 and rejects unknown versions", () => {
+    // v1 → v2 → v3: 선형 5전투 저장을 레거시 그래프로 감싼다 (증거 계약 §2 — 명시 마이그레이션)
     // 0.6.0-p3.2 레거시 콘텐츠 버전도 안전 로드 + 현 버전 정규화 (p3.3 가산 확장 — 공허 엣지 근거는 content index 주석)
-    const p32 = parse(rawWith({ contentVersion: "0.6.0-p3.2" }));
+    const p32 = parse(legacyRawWith({ version: 2, contentVersion: "0.6.0-p3.2" }));
     expect(p32).toEqual(readySave());
     expect(p32?.contentVersion).toBe(CURRENT_CONTENT_VERSION);
-    const migrated = parse(rawWith({ version: 1 }));
+    const migratedV2 = parse(legacyRawWith({ version: 2, gold: 77 }));
+    expect(migratedV2).toEqual({ ...readySave(), gold: 77 });
+    expect(migratedV2?.shopRemovals).toBe(0);
+    expect(migratedV2?.nodeChoices).toEqual([0, 0, 0, 0, 0]);
+    expect(migratedV2?.graph).toEqual(legacyGraph());
+    const migrated = parse(legacyRawWith({ version: 1 }));
     expect(migrated).toEqual(readySave());
     expect(migrated?.version).toBe(RUN_SAVE_VERSION);
-    expect(parse(rawWith({ version: 0 }))).toBeNull();
+    expect(parse(legacyRawWith({ version: 0 }))).toBeNull();
     expect(parse(rawWith({ version: RUN_SAVE_VERSION + 1 }))).toBeNull();
   });
 
@@ -287,6 +316,7 @@ describe("run save serialization boundary", () => {
     const context = {
       coins: contentDb.coins,
       characters: contentDb.characters,
+      enemies: contentDb.enemies,
       skills: Object.fromEntries(
         [...shared, ...exclusiveIds].map((id) => [id, contentDb.skills[id]]),
       ),
@@ -419,6 +449,112 @@ describe("run save serialization boundary", () => {
     ],
     ["negative gold", { gold: -1 }],
     ["unsafe gold", { gold: Number.MAX_SAFE_INTEGER + 1 }],
+    ["missing graph", { graph: undefined }],
+    ["empty graph", { graph: { layers: [] } }],
+    ["empty graph layer", { graph: { layers: [[], [], [], [], []] } }],
+    ["duplicate graph node id", {
+      graph: {
+        layers: legacyGraph().layers.map((layer, index) => [
+          { ...layer[0]!, id: index < 2 ? "duplicate" : layer[0]!.id },
+        ]),
+      },
+    }],
+    ["missing node choices", { nodeChoices: undefined }],
+    ["short node choices", { nodeChoices: [0, 0, 0, 0] }],
+    ["out-of-range node choice", { nodeChoices: [0, 1, 0, 0, 0] }],
+    ["negative shop removals", { shopRemovals: -1 }],
+    // 노드 종류별 payload 계약 (통합 감사): kind와 payload 불일치는 전부 거부
+    [
+      "unknown encounter enemy",
+      {
+        graph: {
+          layers: legacyGraph().layers.map((layer, index) =>
+            index === 0 ? [{ ...layer[0]!, encounter: ["dragon"] }] : layer,
+          ),
+        },
+      },
+    ],
+    [
+      "combat node without encounter",
+      {
+        graph: {
+          layers: legacyGraph().layers.map((layer, index) =>
+            index === 0 ? [{ id: "bare-combat", kind: "combat" }] : layer,
+          ),
+        },
+      },
+    ],
+    [
+      "combat node with empty encounter",
+      {
+        graph: {
+          layers: legacyGraph().layers.map((layer, index) =>
+            index === 0 ? [{ ...layer[0]!, encounter: [] }] : layer,
+          ),
+        },
+      },
+    ],
+    [
+      "combat node with eventId",
+      {
+        graph: {
+          layers: legacyGraph().layers.map((layer, index) =>
+            index === 0 ? [{ ...layer[0]!, eventId: "ambush" }] : layer,
+          ),
+        },
+      },
+    ],
+    [
+      "event node without eventId",
+      {
+        graph: {
+          layers: legacyGraph().layers.map((layer, index) =>
+            index === 1 ? [{ id: "evt-1", kind: "event" }] : layer,
+          ),
+        },
+      },
+    ],
+    [
+      "event node with encounter",
+      {
+        graph: {
+          layers: legacyGraph().layers.map((layer, index) =>
+            index === 1
+              ? [
+                  {
+                    id: "evt-1",
+                    kind: "event",
+                    eventId: "ambush",
+                    encounter: ["raider"],
+                  },
+                ]
+              : layer,
+          ),
+        },
+      },
+    ],
+    [
+      "shop node with encounter",
+      {
+        graph: {
+          layers: legacyGraph().layers.map((layer, index) =>
+            index === 1
+              ? [{ id: "shop-1", kind: "shop", encounter: ["raider"] }]
+              : layer,
+          ),
+        },
+      },
+    ],
+    [
+      "shop node with eventId",
+      {
+        graph: {
+          layers: legacyGraph().layers.map((layer, index) =>
+            index === 1 ? [{ id: "shop-1", kind: "shop", eventId: "ambush" }] : layer,
+          ),
+        },
+      },
+    ],
     ["fractional combat index", { combatIndex: 1.5 }],
     ["out-of-range combat index", { combatIndex: 5 }],
     [
@@ -444,6 +580,20 @@ describe("run save serialization boundary", () => {
     ],
   ])("rejects %s", (_label, overrides) => {
     expect(parse(rawWith(overrides))).toBeNull();
+  });
+
+  it("accepts kind-consistent shop/event nodes (payload 계약 수용 측)", () => {
+    const graph = {
+      layers: legacyGraph().layers.map((layer, index) =>
+        index === 1
+          ? [{ id: "evt-1", kind: "event" as const, eventId: "ambush" }]
+          : index === 3
+            ? [{ id: "shop-3", kind: "shop" as const }]
+            : layer,
+      ),
+    };
+    const save = { ...readySave(), graph };
+    expect(parse(JSON.stringify(save))).toEqual(save);
   });
 
   it("enforces the untouched character start boundary", () => {
