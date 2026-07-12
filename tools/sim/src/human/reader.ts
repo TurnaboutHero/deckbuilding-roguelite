@@ -295,7 +295,23 @@ const sanitizeReward = (value: unknown, label: string): HumanRewardFact => {
   };
 };
 
-const sanitizePathFact = (value: unknown, label: string): HumanRunTraceLike["path"][number] => {
+// null 또는 유계 문자열 — v3 treasure/passive-reward 사실의 passiveId
+const nullableStringValue = (
+  object: JsonObject,
+  key: string,
+  label: string,
+): string | null => {
+  if (object[key] === null) return null;
+  return stringValue(object, key, label);
+};
+
+const sanitizePathFact = (
+  value: unknown,
+  label: string,
+  // v3 가산 사실(rest/treasure/passive-reward, buy-passive)은 v3 로그에서만 허용 —
+  // v2 어휘는 불변으로 유지한다 (가산 원칙).
+  allowV3: boolean,
+): HumanRunTraceLike["path"][number] => {
   const object = objectValue(value, label);
   const layer = nonNegativeInteger(object, "layer", label);
   if (object.type === "choose-node") {
@@ -312,6 +328,23 @@ const sanitizePathFact = (value: unknown, label: string): HumanRunTraceLike["pat
       ? { layer, type: "event", action }
       : { layer, type: "event", action, choice };
   }
+  if (allowV3 && object.type === "rest") {
+    const choice = literalValue(
+      object.choice,
+      ["heal", "upgrade"] as const,
+      `${label}.choice`,
+    );
+    const slot = optionalIndex(object, "slot", label);
+    return slot === undefined
+      ? { layer, type: "rest", choice }
+      : { layer, type: "rest", choice, slot };
+  }
+  if (allowV3 && object.type === "treasure") {
+    return { layer, type: "treasure", passiveId: nullableStringValue(object, "passiveId", label) };
+  }
+  if (allowV3 && object.type === "passive-reward") {
+    return { layer, type: "passive-reward", passiveId: nullableStringValue(object, "passiveId", label) };
+  }
   if (object.type !== "shop") throw new Error(`${label}.type is unsupported`);
   const actions = boundedArray(object.actions, `${label}.actions`, 64).map((action, index) => {
     const entry = objectValue(action, `${label}.actions[${index}]`);
@@ -325,6 +358,8 @@ const sanitizePathFact = (value: unknown, label: string): HumanRunTraceLike["pat
       };
     if (entry.kind === "remove-coin")
       return { kind: "remove-coin" as const, bagIndex: nonNegativeInteger(entry, "bagIndex", label) };
+    if (allowV3 && entry.kind === "buy-passive")
+      return { kind: "buy-passive" as const, option: nonNegativeInteger(entry, "option", label) };
     if (entry.kind === "leave") return { kind: "leave" as const };
     throw new Error(`${label}.actions[${index}].kind is unsupported`);
   });
@@ -333,8 +368,12 @@ const sanitizePathFact = (value: unknown, label: string): HumanRunTraceLike["pat
 
 const sanitizeTrace = (value: unknown): HumanRunTraceLike => {
   const object = objectValue(value, "trace");
-  // v2 (P4.3): path 사실 필수 — v1(그래프 이전) 로그는 콘텐츠 드리프트와 같은 이유로 거부
-  if (object.schemaVersion !== 2) throw new Error("schemaVersion is unsupported");
+  // v2 (P4.3): path 사실 필수 — v1(그래프 이전) 로그는 콘텐츠 드리프트와 같은 이유로 거부.
+  // v3 (P6): rest/treasure/passive-reward/buy-passive 가산 사실 허용. v2는 레거시
+  // (무 rest/treasure) 그래프에서만 재생 가능하므로 그대로 수용한다.
+  if (object.schemaVersion !== 2 && object.schemaVersion !== 3)
+    throw new Error("schemaVersion is unsupported");
+  const schemaVersion = object.schemaVersion;
   if (object.source !== "human") throw new Error("source must be human");
   const contentVersion = stringValue(object, "contentVersion", "trace");
   if (contentVersion !== CONTENT_VERSION) {
@@ -347,7 +386,7 @@ const sanitizeTrace = (value: unknown): HumanRunTraceLike => {
       ? undefined
       : nonNegativeInteger(object, "finalHp", "trace");
   return {
-    schemaVersion: 2,
+    schemaVersion,
     source: "human",
     runSeed: stringValue(object, "runSeed", "trace"),
     contentVersion,
@@ -360,8 +399,14 @@ const sanitizeTrace = (value: unknown): HumanRunTraceLike => {
     rewards: boundedArray(object.rewards, "trace.rewards", 128).map(
       (reward, index) => sanitizeReward(reward, `trace.rewards[${index}]`),
     ),
-    path: boundedArray(object.path, "trace.path", 64).map((fact, index) =>
-      sanitizePathFact(fact, `trace.path[${index}]`),
+    // v3: 3막×10방문 그래프는 v2 상한 64를 넘을 수 있다 (레이어당 choose-node +
+    // 노드 사실 + 보상 패시브 사실) — 128로 상향, v2는 기존 상한 유지.
+    path: boundedArray(
+      object.path,
+      "trace.path",
+      schemaVersion === 3 ? 128 : 64,
+    ).map((fact, index) =>
+      sanitizePathFact(fact, `trace.path[${index}]`, schemaVersion === 3),
     ),
     result: literalValue(
       object.result,

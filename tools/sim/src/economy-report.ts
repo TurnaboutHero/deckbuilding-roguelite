@@ -5,12 +5,15 @@ import {
   buyShopRemoval,
   buyShopSkill,
   chooseCoinReward,
+  choosePassiveReward,
   chooseRunNode,
   chooseSkillReward,
+  claimTreasure,
   createRun,
   declineEvent,
   leaveShop,
   resolveCoinRemoval,
+  restHeal,
   settleRunCombat,
   skipSkillReward,
   startRunCombat,
@@ -118,6 +121,9 @@ interface P4EconomyCell {
     }[];
   };
   readonly exposureRate: Record<(typeof COIN_IDS)[number], Ratio>;
+  // P6 D1 텔레메트리 — 후보 생성 분포와 실제 방문 분포는 반드시 구분해 기록한다
+  readonly generatedKindCounts: NodeKindCounts;
+  readonly visitedKindCounts: NodeKindCounts;
   readonly events: {
     readonly reachRate: Ratio;
     readonly typeDistribution: readonly {
@@ -161,6 +167,54 @@ export interface P4EconomyReport {
   };
 }
 
+// P6 D1 — 노드 종류 분포 카운트 (생성 vs 방문 구분 기록용)
+const NODE_KIND_IDS = [
+  "boss",
+  "combat",
+  "elite",
+  "event",
+  "rest",
+  "shop",
+  "treasure",
+] as const;
+type NodeKindCounts = Record<(typeof NODE_KIND_IDS)[number], number>;
+
+const emptyNodeKindCounts = (): NodeKindCounts =>
+  Object.fromEntries(NODE_KIND_IDS.map((kind) => [kind, 0])) as NodeKindCounts;
+
+// 후보 생성 분포: 그래프 전 레이어의 모든 후보 노드 kind 합계
+const generatedKindCountsOf = (run: RunState): NodeKindCounts => {
+  const counts = emptyNodeKindCounts();
+  for (const layer of run.graph.layers) {
+    for (const node of layer) counts[node.kind] += 1;
+  }
+  return counts;
+};
+
+// 실제 방문 분포: 선택된 노드만 — includeCurrent는 현 레이어 방문 확정(터미널) 여부
+const visitedKindCountsOf = (
+  run: RunState,
+  includeCurrent: boolean,
+): NodeKindCounts => {
+  const counts = emptyNodeKindCounts();
+  const upper = Math.min(
+    includeCurrent ? run.combatIndex : run.combatIndex - 1,
+    run.graph.layers.length - 1,
+  );
+  for (let layer = 0; layer <= upper; layer += 1) {
+    const node = run.graph.layers[layer]?.[run.nodeChoices[layer] ?? 0];
+    if (node !== undefined) counts[node.kind] += 1;
+  }
+  return counts;
+};
+
+const addNodeKindCounts = (
+  target: NodeKindCounts,
+  source: NodeKindCounts,
+): void => {
+  for (const kind of NODE_KIND_IDS) target[kind] += source[kind];
+};
+
 interface RunEconomyTrace {
   readonly result: "victory" | "defeat" | "crash" | "nonterminal";
   readonly crash: string | null;
@@ -177,6 +231,8 @@ interface RunEconomyTrace {
   readonly removals: number;
   readonly exposedCoins: readonly string[];
   readonly events: readonly EventTrace[];
+  readonly generatedKindCounts: NodeKindCounts;
+  readonly visitedKindCounts: NodeKindCounts;
 }
 
 interface EventTrace {
@@ -201,6 +257,8 @@ interface MutableCell {
   bankruptShopVisits: number;
   unmetDemandShopVisits: number;
   eventReachedRuns: number;
+  readonly generatedKindCounts: NodeKindCounts;
+  readonly visitedKindCounts: NodeKindCounts;
   readonly completedCombats: number[];
   readonly finalGold: number[];
   readonly finalHp: number[];
@@ -376,8 +434,15 @@ const resolveRewards = (
     preferredCoinReward(input, buildPolicy),
     contentDb,
   );
-  const basicIndex = run.bag.findIndex((id) => String(id) === "basic");
-  run = resolveCoinRemoval(run, basicIndex >= 0 ? basicIndex : null, contentDb);
+  // P6 신스펙: 제거 단계는 레거시(v5 흐름) 보상에만 존재 — 페이즈/미해결 가드
+  // (코인 선택만으로 rewards가 완결될 수 있다: coinRemovalResolved 고정 true)
+  if (
+    run.phase === "rewards" &&
+    run.pendingRewards?.coinRemovalResolved === false
+  ) {
+    const basicIndex = run.bag.findIndex((id) => String(id) === "basic");
+    run = resolveCoinRemoval(run, basicIndex >= 0 ? basicIndex : null, contentDb);
+  }
   if (
     run.phase === "rewards" &&
     run.pendingRewards?.coinChoiceResolved === false &&
@@ -400,14 +465,23 @@ const resolveRewards = (
       buildPolicy.skillRewardPriority
         .map((skillId) => offered.find((skill) => String(skill) === skillId))
         .find((skill): skill is SkillId => skill !== undefined) ?? null;
-    return selected === null
-      ? skipSkillReward(run, contentDb)
-      : chooseSkillReward(
-          run,
-          selected,
-          replacementSlot(run, buildPolicy),
-          contentDb,
-        );
+    run =
+      selected === null
+        ? skipSkillReward(run, contentDb)
+        : chooseSkillReward(
+            run,
+            selected,
+            replacementSlot(run, buildPolicy),
+            contentDb,
+          );
+  }
+  // P6 보스 보상 패시브 — 심 정책과 동일: 첫 제안 선택(결정론). balance-provisional.
+  if (
+    run.phase === "rewards" &&
+    run.pendingRewards?.passiveChoiceResolved === false
+  ) {
+    const offered = run.pendingRewards.passiveOptions ?? [];
+    run = choosePassiveReward(run, offered[0] ?? null, contentDb);
   }
   return run;
 };
@@ -604,6 +678,8 @@ const simulateEconomyRun = (
   );
   const buildPolicy = resolveBuildPolicy(characterId, "baseline");
   const policy = createPolicy(combatPolicyId, { runSeed: seed, episodeIndex: 0 });
+  // P6 D1 — 생성 분포는 그래프 확정 시점(런 생성)에 고정된다
+  const generatedKindCounts = generatedKindCountsOf(run);
 
   try {
     for (
@@ -643,6 +719,17 @@ const simulateEconomyRun = (
         invariantViolations.push(...runInvariantViolations(run));
         continue;
       }
+      // P6 D1 — 심 정책: 휴식=회복, 보물=개봉 (run-sim.ts와 동일한 결정론 최소 정책)
+      if (run.phase === "rest") {
+        run = restHeal(run, contentDb);
+        invariantViolations.push(...runInvariantViolations(run));
+        continue;
+      }
+      if (run.phase === "treasure") {
+        run = claimTreasure(run, contentDb);
+        invariantViolations.push(...runInvariantViolations(run));
+        continue;
+      }
       if (run.phase !== "ready") {
         throw new Error(`unexpected run phase before combat: ${run.phase}`);
       }
@@ -671,6 +758,9 @@ const simulateEconomyRun = (
           removals: run.shopRemovals,
           exposedCoins: [...exposedCoins].sort(compareText),
           events,
+          generatedKindCounts,
+          // 전투가 실제로 벌어진 현 레이어는 방문으로 센다
+          visitedKindCounts: visitedKindCountsOf(run, true),
         };
       }
       run = settleRunCombat(started.run, combat.state, contentDb);
@@ -709,6 +799,9 @@ const simulateEconomyRun = (
         removals: run.shopRemovals,
         exposedCoins: [...exposedCoins].sort(compareText),
         events,
+        generatedKindCounts,
+        // 현 레이어는 아직 방문 확정 전(선택 미완)일 수 있어 제외한다
+        visitedKindCounts: visitedKindCountsOf(run, false),
       };
     }
     return {
@@ -727,6 +820,8 @@ const simulateEconomyRun = (
       removals: run.shopRemovals,
       exposedCoins: [...exposedCoins].sort(compareText),
       events,
+      generatedKindCounts,
+      visitedKindCounts: visitedKindCountsOf(run, true),
     };
   } catch (error) {
     return {
@@ -745,6 +840,8 @@ const simulateEconomyRun = (
       removals: run.shopRemovals,
       exposedCoins: [...exposedCoins].sort(compareText),
       events,
+      generatedKindCounts,
+      visitedKindCounts: visitedKindCountsOf(run, false),
     };
   }
 };
@@ -766,6 +863,8 @@ const newCell = (
   bankruptShopVisits: 0,
   unmetDemandShopVisits: 0,
   eventReachedRuns: 0,
+  generatedKindCounts: emptyNodeKindCounts(),
+  visitedKindCounts: emptyNodeKindCounts(),
   completedCombats: [],
   finalGold: [],
   finalHp: [],
@@ -810,6 +909,8 @@ const observeRun = (cell: MutableCell, trace: RunEconomyTrace): void => {
   }
   cell.bossReached += trace.reachedBoss ? 1 : 0;
   cell.wins += trace.result === "victory" ? 1 : 0;
+  addNodeKindCounts(cell.generatedKindCounts, trace.generatedKindCounts);
+  addNodeKindCounts(cell.visitedKindCounts, trace.visitedKindCounts);
   cell.shopVisits += trace.shopVisits;
   cell.bankruptShopVisits += trace.bankruptShopVisits;
   cell.unmetDemandShopVisits += trace.unmetDemandShopVisits;
@@ -890,6 +991,8 @@ const finalizeCell = (cell: MutableCell): P4EconomyCell => {
     exposureRate: Object.fromEntries(
       COIN_IDS.map((id) => [id, ratio(cell.exposures.get(id) ?? 0, cell.runs)]),
     ) as Record<(typeof COIN_IDS)[number], Ratio>,
+    generatedKindCounts: { ...cell.generatedKindCounts },
+    visitedKindCounts: { ...cell.visitedKindCounts },
     events: {
       reachRate: ratio(cell.eventReachedRuns, cell.runs),
       typeDistribution: eventTypes.map((eventType) => ({

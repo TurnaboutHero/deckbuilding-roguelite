@@ -4,7 +4,6 @@ import {
   RUN_SAVE_VERSION,
   chooseCoinReward,
   createRun,
-  resolveCoinRemoval,
   settleRunCombat,
   startRunCombat,
   type CombatState,
@@ -63,6 +62,12 @@ const readySave = (): RunSave => ({
   eventCombats: 0,
   eventCoinGains: 0,
   eventCoinLosses: 0,
+  upgradedSlots: [false, false, false, false, false, false] as never,
+  acquiredPassives: [] as never,
+  shopPurchasedPassives: 0,
+  treasureOpened: 0,
+  restHeals: 0,
+  restUpgrades: 0,
   combatIndex: 2,
   attempt: 1,
   phase: "ready",
@@ -104,6 +109,12 @@ const freshSave = (): RunSave => ({
   bag: [...STARTING_BAG] as never,
   equippedSkills: [...STARTING_SKILLS] as never,
   gold: 0,
+  upgradedSlots: [false, false, false, false, false, false] as never,
+  acquiredPassives: [] as never,
+  shopPurchasedPassives: 0,
+  treasureOpened: 0,
+  restHeals: 0,
+  restUpgrades: 0,
   combatIndex: 0,
   attempt: 0,
 });
@@ -189,6 +200,12 @@ describe("run save serialization boundary", () => {
     const resumed = { ...readySave(), attempt: 7, phase: "combat" as const };
     const victory = {
       ...readySave(),
+      upgradedSlots: [false, false, false, false, false, false] as never,
+      acquiredPassives: [] as never,
+      shopPurchasedPassives: 0,
+      treasureOpened: 0,
+      restHeals: 0,
+      restUpgrades: 0,
       combatIndex: 4,
       attempt: 3,
       phase: "victory" as const,
@@ -254,6 +271,12 @@ describe("run save serialization boundary", () => {
       eventCombats: 0,
       eventCoinGains: 0,
       eventCoinLosses: 0,
+      upgradedSlots: [false, false, false, false, false, false] as never,
+      acquiredPassives: [] as never,
+      shopPurchasedPassives: 0,
+      treasureOpened: 0,
+      restHeals: 0,
+      restUpgrades: 0,
       combatIndex: 0,
       attempt: 0,
       phase: "combat",
@@ -331,6 +354,12 @@ describe("run save serialization boundary", () => {
       ...readySave(),
       graph,
       nodeChoices: [0, 0, 0],
+      upgradedSlots: [false, false, false, false, false, false] as never,
+      acquiredPassives: [] as never,
+      shopPurchasedPassives: 0,
+      treasureOpened: 0,
+      restHeals: 0,
+      restUpgrades: 0,
       combatIndex: 2,
       bag: [...STARTING_BAG, "fire", "mana"] as never,
       equippedSkills: [
@@ -359,6 +388,12 @@ describe("run save serialization boundary", () => {
       ...readySave(),
       graph,
       nodeChoices: [0, 0],
+      upgradedSlots: [false, false, false, false, false, false] as never,
+      acquiredPassives: [] as never,
+      shopPurchasedPassives: 0,
+      treasureOpened: 0,
+      restHeals: 0,
+      restUpgrades: 0,
       combatIndex: 1,
       attempt: 0,
       phase: "shop",
@@ -651,6 +686,12 @@ describe("run save serialization boundary", () => {
     [
       "reward at encounter zero",
       {
+        upgradedSlots: [false, false, false, false, false, false] as never,
+        acquiredPassives: [] as never,
+        shopPurchasedPassives: 0,
+        treasureOpened: 0,
+        restHeals: 0,
+        restUpgrades: 0,
         combatIndex: 0,
         phase: "rewards",
         attempt: 0,
@@ -715,6 +756,12 @@ describe("run save serialization boundary", () => {
       parse(
         JSON.stringify({
           ...freshSave(),
+          upgradedSlots: [false, false, false, false, false, false] as never,
+          acquiredPassives: [] as never,
+          shopPurchasedPassives: 0,
+          treasureOpened: 0,
+          restHeals: 0,
+          restUpgrades: 0,
           combatIndex: 1,
           equippedSkills: [...STARTING_SKILLS.slice(0, 5), "smash"],
         }),
@@ -833,7 +880,10 @@ describe("run save serialization boundary", () => {
     ).toThrow("cannot serialize an invalid run save");
   });
 
-  it("accepts the exact core-produced B2 fallback select and skip lifecycle", () => {
+  // P6 보상 신스펙: 제거/폴백 단계는 코어가 새 런에서 더 이상 만들지 않는다
+  // (coinRemovalResolved 고정 true — 코인 선택만으로 보상 완결). 핸드크래프트 B2
+  // 폴백 저장 검증은 위 라운드트립 테스트가 레거시 계약으로 계속 커버한다.
+  it("accepts the exact core-produced P6 reward lifecycle (coin-only completion)", () => {
     const created = createRun(
       {
         contentVersion: CONTENT_VERSION,
@@ -843,25 +893,29 @@ describe("run save serialization boundary", () => {
       exhaustedSkillContext,
     );
     const first = startRunCombat(created, exhaustedSkillContext);
-    const firstRewards = settleRunCombat(
+    const rewardsStage = settleRunCombat(
       first.run,
       wonCombat(first.combat, 64),
       exhaustedSkillContext,
     );
-    const secondReady = resolveCoinRemoval(
-      chooseCoinReward(firstRewards, null),
-      null,
-    );
-    const second = startRunCombat(secondReady, exhaustedSkillContext);
-    const normalCoinStage = settleRunCombat(
-      second.run,
-      wonCombat(second.combat, 59),
-      exhaustedSkillContext,
-    );
-    const afterNormalCoin = chooseCoinReward(normalCoinStage, null);
-    const fallbackCoinStage = resolveCoinRemoval(afterNormalCoin, null);
+    expect(rewardsStage.phase).toBe("rewards");
+    expect(rewardsStage.pendingRewards?.coinRemovalResolved).toBe(true);
+    expect(
+      parseRunSave(
+        serializeRunSave(rewardsStage, exhaustedSkillContext),
+        CONTENT_VERSION,
+        exhaustedSkillContext,
+      ),
+    ).toEqual(rewardsStage);
 
-    for (const save of [normalCoinStage, afterNormalCoin, fallbackCoinStage]) {
+    const offered = rewardsStage.pendingRewards?.coinOptions[0];
+    if (offered === undefined) throw new Error("missing coin option");
+    // 선택과 스킵 모두 코인 한 번으로 보상이 완결되고 다음 레이어로 진입한다
+    const selectedNext = chooseCoinReward(rewardsStage, offered, exhaustedSkillContext);
+    const skippedNext = chooseCoinReward(rewardsStage, null, exhaustedSkillContext);
+    for (const save of [selectedNext, skippedNext]) {
+      expect(save.phase).not.toBe("rewards");
+      expect(save.pendingRewards).toBeUndefined();
       expect(
         parseRunSave(
           serializeRunSave(save, exhaustedSkillContext),
@@ -870,25 +924,30 @@ describe("run save serialization boundary", () => {
         ),
       ).toEqual(save);
     }
+  });
 
-    const selected = fallbackCoinStage.pendingRewards?.coinOptions[0];
-    if (selected === undefined) throw new Error("missing fallback option");
-    const selectedReady = chooseCoinReward(fallbackCoinStage, selected);
-    const skippedReady = chooseCoinReward(fallbackCoinStage, null);
-    expect(
-      parseRunSave(
-        serializeRunSave(selectedReady, exhaustedSkillContext),
-        CONTENT_VERSION,
-        exhaustedSkillContext,
-      ),
-    ).toEqual(selectedReady);
-    expect(
-      parseRunSave(
-        serializeRunSave(skippedReady, exhaustedSkillContext),
-        CONTENT_VERSION,
-        exhaustedSkillContext,
-      ),
-    ).toEqual(skippedReady);
+  it("migrates v5 saves to v6 with P6 defaults and round-trips (레거시 단일 막 래핑)", () => {
+    // P6 D1: v5 그래프는 acts 부재 = 단일 레거시 막으로 감싸 진행 중 런을 보존하고,
+    // 신규 필드(강화 슬롯·패시브·카운터)는 기본값으로 승격한다.
+    const v5 = { ...readySave(), version: 5 } as Record<string, unknown>;
+    delete v5.upgradedSlots;
+    delete v5.acquiredPassives;
+    delete v5.shopPurchasedPassives;
+    delete v5.treasureOpened;
+    delete v5.restHeals;
+    delete v5.restUpgrades;
+    const migrated = parse(JSON.stringify(v5));
+    expect(migrated).toEqual(readySave());
+    expect(migrated?.version).toBe(RUN_SAVE_VERSION);
+    expect(migrated?.graph.acts).toBeUndefined();
+    expect(migrated?.upgradedSlots).toEqual([false, false, false, false, false, false]);
+    expect(migrated?.acquiredPassives).toEqual([]);
+    expect(migrated?.treasureOpened).toBe(0);
+    expect(migrated?.restHeals).toBe(0);
+    expect(migrated?.restUpgrades).toBe(0);
+    // 마이그레이션 결과는 v6 저장으로 라운드트립한다
+    if (migrated === null) throw new Error("v5 migration failed");
+    expect(parse(serialize(migrated))).toEqual(migrated);
   });
 
   it("rejects malformed or contradictory B2 fallback coin stages", () => {

@@ -1,11 +1,12 @@
 import type {
   StatusId, ContentDb, EffectAtom, FlipSkillDef, TargetRef } from '../../content-types';
 import { effectiveElements } from '../../content-types';
-import type { CoinUid, Face, SlotId } from '../../ids';
+import type { EquipmentDefId, CoinUid, Face, SlotId } from '../../ids';
 import { rngFrom } from '../../rng';
 import type { CombatEvent } from '../events';
-import { statusTurns } from '../state';
+import { statusStacks, statusTurns } from '../state';
 import type { CombatState, StatusState, TurnTriggerInstance } from '../state';
+import { actSummon, addSummon, defaultEquipmentId, tickSummonDuration } from '../summons';
 
 export interface ResolveResult {
   state: CombatState;
@@ -13,6 +14,10 @@ export interface ResolveResult {
 }
 
 interface ApplyEffectOptions {
+  // P6 D6 — 소환 원자 컨텍스트: 이번 플립의 뒷면 수, 명시 선택 파라미터
+  tailsCount?: number;
+  chosenEquipment?: EquipmentDefId;
+  chosenSummon?: number;
   suppressTurnTriggers?: boolean;
   turnTriggerScope?: readonly TurnTriggerInstance[];
 }
@@ -253,6 +258,67 @@ export const applyEffectAtom = (
         turnTriggers: [...state.turnTriggers, { uid: state.nextTurnTriggerUid, trigger: atom.trigger }]
       };
     }
+    // P6 D5 — 화상 수치 참조 폭발 (스택 비소비)
+    case 'damagePerTargetBurn': {
+      if (target.type !== 'enemy' || !isAliveEnemy(state, target.index)) return state;
+      const stacks = statusStacks(state.enemies[target.index]?.statuses ?? {}, 'burn');
+      if (stacks <= 0) return state;
+      const damaged = applyDamage(state, target, stacks * atom.amountPerStack, 'skill', events, { type: 'player' });
+      return options?.suppressTurnTriggers !== true
+        ? fireTurnTriggers(damaged, 'onDamageDealt', target, db, events, options?.turnTriggerScope)
+        : damaged;
+    }
+    // P6 D5 — 과열: 손의 화염 코인 수 참조
+    case 'damagePerFireInHand': {
+      if (target.type !== 'enemy' || !isAliveEnemy(state, target.index)) return state;
+      const fireInHand = state.zones.hand.filter((coin) => {
+        const instance = state.coins[Number(coin)];
+        return instance !== undefined && effectiveElements(instance, db).includes('fire');
+      }).length;
+      if (fireInHand <= 0) return state;
+      const damaged = applyDamage(state, target, fireInHand * atom.amountPerCoin, 'skill', events, { type: 'player' });
+      return options?.suppressTurnTriggers !== true
+        ? fireTurnTriggers(damaged, 'onDamageDealt', target, db, events, options?.turnTriggerScope)
+        : damaged;
+    }
+    // P6 D6 — 마력 갑주: 현재 방어 참조 피해 (방어 비소모)
+    case 'damagePerBlock': {
+      if (target.type !== 'enemy' || !isAliveEnemy(state, target.index)) return state;
+      const block = state.player.block;
+      if (block <= 0) return state;
+      const damaged = applyDamage(state, target, block * atom.amountPerBlock, 'skill', events, { type: 'player' });
+      return options?.suppressTurnTriggers !== true
+        ? fireTurnTriggers(damaged, 'onDamageDealt', target, db, events, options?.turnTriggerScope)
+        : damaged;
+    }
+    // P6 D6 — 소환 (뒷면당 지속 연장)
+    case 'summonEquipment': {
+      const equipmentId =
+        atom.equipment === 'chosen'
+          ? (options?.chosenEquipment ?? defaultEquipmentId(db))
+          : atom.equipment;
+      if (equipmentId === undefined) return state;
+      const duration =
+        atom.duration + (atom.durationPerTails ?? 0) * (options?.tailsCount ?? 0);
+      return addSummon(state, equipmentId, duration, db, events);
+    }
+    // P6 D6 — 명령: 선택(기본: 최고령) 소환 즉시 행동 + 지속 -1
+    case 'commandChosenSummon': {
+      if (state.summons.length === 0) return state;
+      const uid = options?.chosenSummon ?? state.summons[0]!.uid;
+      const index = state.summons.findIndex((summon) => summon.uid === uid);
+      if (index < 0) return state;
+      const bonus = atom.bonusPerTails * (options?.tailsCount ?? 0);
+      const acted = actSummon(state, index, bonus, db, events);
+      if (acted.phase === 'victory' || acted.phase === 'defeat') return acted;
+      return tickSummonDuration(acted, uid, events);
+    }
+    // P6 D6 — 마나 병기: 전체 소환 강화 (이번 전투 지속)
+    case 'empowerSummons':
+      return {
+        ...state,
+        summons: state.summons.map((summon) => ({ ...summon, enhance: summon.enhance + atom.amount }))
+      };
   }
 };
 
@@ -344,7 +410,8 @@ export const resolveFlip = (
   skill: FlipSkillDef,
   target: number | undefined,
   db: ContentDb,
-  chosen?: readonly CoinUid[]
+  chosen?: readonly CoinUid[],
+  summonChoice?: { chosenEquipment?: EquipmentDefId; chosenSummon?: number }
 ): ResolveResult => {
   if (input.skillUsesThisTurn >= 3) throw new Error('skill use cap reached');
   const slotState = input.slots[Number(slot)];
@@ -391,8 +458,14 @@ export const resolveFlip = (
   }
   state = { ...state, rng: { ...state.rng, flip: rng.snapshot() } };
 
+  const tailsCount = faces.filter((face) => face === 'tails').length;
   for (const atom of collectEffects(skill, faces)) {
-    state = applyEffectAtom(state, atom, skillTarget, db, events, chosen, { turnTriggerScope });
+    state = applyEffectAtom(state, atom, skillTarget, db, events, chosen, {
+      turnTriggerScope,
+      tailsCount,
+      chosenEquipment: summonChoice?.chosenEquipment,
+      chosenSummon: summonChoice?.chosenSummon
+    });
     if (state.phase === 'victory' || state.phase === 'defeat') return finish(state);
   }
 

@@ -2,7 +2,8 @@ import type { CombatEvent, CombatState, Command } from "@game/core";
 
 // v2 (P4.3): 런 그래프 경로 사실(path) 추가 — 갈림길 선택·상점 행동이 없으면
 // 리플레이가 비전투 노드를 통과할 수 없다. v1은 그래프 이전 세대라 거부한다.
-export const HUMAN_RUN_SCHEMA_VERSION = 2 as const;
+// v3 (P6): rest/treasure/패시브 경로 사실 가산 — v2 로그는 레거시 그래프 한정 재생
+export const HUMAN_RUN_SCHEMA_VERSION = 3 as const;
 export const UI_BUILD_IDENTIFIER = "m6-ui-local-telemetry";
 
 type RunResult = "in-progress" | "victory" | "defeat";
@@ -12,7 +13,7 @@ type RewardResolution = "selected" | "skipped" | "declined";
 export type TelemetryCommand =
   | { type: "placeCoin"; coin: number; slot: number }
   | { type: "unplaceCoin"; coin: number }
-  | { type: "useFlipSkill"; slot: number; target?: number }
+  | { type: "useFlipSkill"; slot: number; target?: number; chosen?: number[]; chosenEquipment?: string; chosenSummon?: number }
   | {
       type: "useConsumeSkill";
       slot: number;
@@ -75,13 +76,18 @@ export interface HumanRewardFact {
 export type HumanShopAction =
   | { kind: "buy-coin"; option: number }
   | { kind: "buy-skill"; option: number; slot: number }
+  | { kind: "buy-passive"; option: number }
   | { kind: "remove-coin"; bagIndex: number }
   | { kind: "leave" };
 
 export type HumanPathFact =
   | { layer: number; type: "choose-node"; choice: number }
   | { layer: number; type: "shop"; actions: HumanShopAction[] }
-  | { layer: number; type: "event"; action: "accept" | "decline"; choice?: number };
+  | { layer: number; type: "event"; action: "accept" | "decline"; choice?: number }
+  // P6 v3 — 휴식/보물/보상 패시브 경로 사실 (사실 없으면 리플레이 mismatch)
+  | { layer: number; type: "rest"; choice: "heal" | "upgrade"; slot?: number }
+  | { layer: number; type: "treasure"; passiveId: string | null }
+  | { layer: number; type: "passive-reward"; passiveId: string | null };
 
 export interface HumanRunTrace {
   schemaVersion: typeof HUMAN_RUN_SCHEMA_VERSION;
@@ -170,13 +176,18 @@ const commandFact = (command: Command): TelemetryCommand => {
     return { type: command.type, coin: Number(command.coin) };
   }
   if (command.type === "useFlipSkill") {
-    return command.target === undefined
-      ? { type: command.type, slot: Number(command.slot) }
-      : {
-          type: command.type,
-          slot: Number(command.slot),
-          target: command.target,
-        };
+    // P6 v3 — 선택 파라미터(기본 코인/장비/소환)를 사실로 보존해 리플레이가 발명된
+    // 기본값에 의존하지 않게 한다 (v2는 chosen을 제안 재구성에 맡겼다 — 가산 유지).
+    const fact: TelemetryCommand = {
+      type: command.type,
+      slot: Number(command.slot),
+    };
+    if (command.target !== undefined) fact.target = command.target;
+    if (command.chosen !== undefined) fact.chosen = command.chosen.map(Number);
+    if (command.chosenEquipment !== undefined)
+      fact.chosenEquipment = String(command.chosenEquipment);
+    if (command.chosenSummon !== undefined) fact.chosenSummon = command.chosenSummon;
+    return fact;
   }
   if (command.type === "useConsumeSkill") {
     const fact: TelemetryCommand = {
@@ -391,6 +402,42 @@ export const recordHumanShopAction = (
     ],
   };
 };
+
+// P6 v3 — 휴식/보물/보상 패시브 경로 사실 레코더
+export const recordHumanRestChoice = (
+  trace: HumanRunTrace,
+  input: { layer: number; choice: "heal" | "upgrade"; slot?: number },
+): HumanRunTrace => ({
+  ...trace,
+  path: [
+    ...trace.path,
+    input.slot === undefined
+      ? { layer: input.layer, type: "rest", choice: input.choice }
+      : { layer: input.layer, type: "rest", choice: input.choice, slot: input.slot },
+  ],
+});
+
+export const recordHumanTreasure = (
+  trace: HumanRunTrace,
+  input: { layer: number; passiveId: string | null },
+): HumanRunTrace => ({
+  ...trace,
+  path: [
+    ...trace.path,
+    { layer: input.layer, type: "treasure", passiveId: input.passiveId },
+  ],
+});
+
+export const recordHumanPassiveReward = (
+  trace: HumanRunTrace,
+  input: { layer: number; passiveId: string | null },
+): HumanRunTrace => ({
+  ...trace,
+  path: [
+    ...trace.path,
+    { layer: input.layer, type: "passive-reward", passiveId: input.passiveId },
+  ],
+});
 
 export const recordHumanEventAction = (
   trace: HumanRunTrace,

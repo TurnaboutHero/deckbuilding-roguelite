@@ -92,16 +92,17 @@ describe("rewardViewStage — 코어 보상 플래그의 UI 단계 투영", () =
     ).toBe("skill");
   });
 
-  it("B2 소진 스킬 풀의 두 번째 코인 단계를 명시적으로 표시한다", () => {
-    expect(
-      rewardViewStage(
-        rewardRun({
-          coinChoiceResolved: false,
-          coinRemovalResolved: true,
-          skillChoiceResolved: true,
-        }),
-      ),
-    ).toBe("fallback-coin");
+  it("B2 소진 스킬 풀의 두 번째 코인 단계를 명시적으로 표시한다 (레거시 그래프 한정)", () => {
+    const run = rewardRun({
+      coinChoiceResolved: false,
+      coinRemovalResolved: true,
+      skillChoiceResolved: true,
+    });
+    // v5 소진 풀 대체 코인은 레거시(acts 부재) 그래프 전용 — P6 그래프에서 같은
+    // 플래그 형상은 일반 코인 단계다 (하네스 감사 오분류 수정 고정)
+    const legacy = { ...run, graph: { layers: run.graph.layers } };
+    expect(rewardViewStage(legacy)).toBe("fallback-coin");
+    expect(rewardViewStage(run)).toBe("coin");
   });
 
   it("보상 단계가 아니거나 모든 선택이 끝나면 패널이 없다", () => {

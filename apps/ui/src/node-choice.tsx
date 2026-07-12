@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 
 export interface NodeOption {
   index: number;
-  kind: "combat" | "elite" | "shop" | "event" | "boss";
+  kind: "combat" | "elite" | "shop" | "event" | "boss" | "rest" | "treasure";
   title: string;
   detail: string;
 }

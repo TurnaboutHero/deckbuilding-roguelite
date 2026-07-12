@@ -1,5 +1,5 @@
 import type { CoinInstance, EnemyIntent, StatusId, TurnTriggerDef } from '../content-types';
-import type { CoinUid, EnemyDefId, SkillId, SlotId } from '../ids';
+import type { CharacterId, PassiveId, EquipmentDefId, CoinUid, EnemyDefId, SkillId, SlotId } from '../ids';
 import type { Rng, RngSnapshot } from '../rng';
 import type { CombatEvent } from './events';
 
@@ -68,7 +68,22 @@ export interface CombatState {
   rngImpl?: { flip?: Rng; shuffle?: Rng; ai?: Rng };
   nextUid: number;
   nextTurnTriggerUid: number;
+  // P6 — 훅 실행 컨텍스트(리듀서가 매 턴 참조)와 막별 적 스케일. 전투는 저장 대상이
+  // 아니며 런 상태에서 결정론 재구성된다.
+  characterId: CharacterId;
+  passives: PassiveId[];
+  enemyScale: number;
+  // P6 D6 — 소환 장비 슬롯 (최대 3, 배열 순서 = 소환 순서 = 행동 순서)
+  summons: SummonState[];
+  nextSummonUid: number;
   events: CombatEvent[];
+}
+
+export interface SummonState {
+  uid: number;
+  defId: EquipmentDefId;
+  duration: number;
+  enhance: number;
 }
 
 export const clonePlaced = (placed: Record<SlotId, CoinUid[]>): Record<SlotId, CoinUid[]> => {

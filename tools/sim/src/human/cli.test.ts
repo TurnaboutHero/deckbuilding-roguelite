@@ -6,12 +6,15 @@ import { join } from "node:path";
 import { CONTENT_VERSION, contentDb } from "@game/content";
 import {
   acceptEvent,
+  choosePassiveReward,
   chooseRunNode,
+  claimTreasure,
   declineEvent,
   leaveShop,
   chooseCoinReward,
   createRun,
   resolveCoinRemoval,
+  restHeal,
   settleRunCombat,
   skipSkillReward,
   startRunCombat,
@@ -125,14 +128,20 @@ const resolveRewards = (trace: HumanRunTraceLike, input: RunState): RunState => 
     resolution: coinChoice === null ? "skipped" : "selected",
   });
   let run = chooseCoinReward(input, coinChoice, contentDb);
-  trace.rewards.push({
-    combatIndex: completedCombatIndex,
-    stage: "removal",
-    options: run.bag.map(String),
-    choice: null,
-    resolution: "skipped",
-  });
-  run = resolveCoinRemoval(run, null, contentDb);
+  // P6 신스펙: 제거 단계는 레거시 흐름에만 존재 — 페이즈/플래그 가드 필수
+  if (
+    run.phase === "rewards" &&
+    run.pendingRewards?.coinRemovalResolved === false
+  ) {
+    trace.rewards.push({
+      combatIndex: completedCombatIndex,
+      stage: "removal",
+      options: run.bag.map(String),
+      choice: null,
+      resolution: "skipped",
+    });
+    run = resolveCoinRemoval(run, null, contentDb);
+  }
   if (
     run.phase === "rewards" &&
     run.pendingRewards?.coinChoiceResolved === false &&
@@ -158,6 +167,20 @@ const resolveRewards = (trace: HumanRunTraceLike, input: RunState): RunState => 
     });
     run = skipSkillReward(run, contentDb);
   }
+  // P6 D2 — 보스 보상 패시브: v3 경로 사실(passive-reward)로 기록
+  if (
+    run.phase === "rewards" &&
+    run.pendingRewards?.passiveChoiceResolved === false
+  ) {
+    const offered = run.pendingRewards.passiveOptions ?? [];
+    const passiveChoice = offered[0] ?? null;
+    trace.path.push({
+      layer: run.combatIndex,
+      type: "passive-reward",
+      passiveId: passiveChoice === null ? null : String(passiveChoice),
+    });
+    run = choosePassiveReward(run, passiveChoice, contentDb);
+  }
   return run;
 };
 
@@ -167,7 +190,7 @@ const makeTrace = (seed: string): HumanRunTraceLike => {
     contentDb,
   );
   const trace: HumanRunTraceLike = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     source: "human",
     runSeed: seed,
     contentVersion: CONTENT_VERSION,
@@ -215,7 +238,14 @@ const makeTrace = (seed: string): HumanRunTraceLike => {
     });
     run = settleRunCombat(started.run, state, contentDb);
     run = resolveRewards(trace, run);
-    while (run.phase === "choose-node" || run.phase === "shop" || run.phase === "event") {
+    // P6 v3: rest(회복 고정)·treasure(개봉) 노드도 경로 사실로 기록한다
+    while (
+      run.phase === "choose-node" ||
+      run.phase === "shop" ||
+      run.phase === "event" ||
+      run.phase === "rest" ||
+      run.phase === "treasure"
+    ) {
       const layer = run.combatIndex;
       if (run.phase === "choose-node") {
         const options = run.graph.layers[layer] ?? [];
@@ -226,6 +256,17 @@ const makeTrace = (seed: string): HumanRunTraceLike => {
       } else if (run.phase === "shop") {
         trace.path.push({ layer, type: "shop", actions: [{ kind: "leave" }] });
         run = leaveShop(run, contentDb);
+      } else if (run.phase === "rest") {
+        trace.path.push({ layer, type: "rest", choice: "heal" });
+        run = restHeal(run, contentDb);
+      } else if (run.phase === "treasure") {
+        const passiveId = run.pendingTreasure?.passiveOption ?? null;
+        trace.path.push({
+          layer,
+          type: "treasure",
+          passiveId: passiveId === null ? null : String(passiveId),
+        });
+        run = claimTreasure(run, contentDb);
       } else {
         const event = contentDb.events?.[String(run.pendingEvent?.eventId)];
         const action = event?.risk === "combat" ? "accept" : "decline";

@@ -5,13 +5,13 @@ import {
   completedCombatCount,
   nodeGoldReward,
   rolledEventIdFor,
-  rewardEligibleSkillIds,
   signatureElement,
   type CharacterId,
   type CoinDefId,
   type ContentDb,
   type EquippedSkills,
   type EventDefId,
+  type PassiveId,
   type PendingRewards,
   type PendingShop,
   type RunPhase,
@@ -46,7 +46,7 @@ export interface StorageLike {
 
 export type RunValidationContext = Pick<
   ContentDb,
-  "characters" | "coins" | "skills" | "enemies" | "events"
+  "characters" | "coins" | "skills" | "enemies" | "events" | "passives"
 >;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -71,6 +71,8 @@ const isRunPhase = (value: unknown): value is RunPhase =>
   value === "rewards" ||
   value === "shop" ||
   value === "event" ||
+  value === "rest" ||
+  value === "treasure" ||
   value === "victory" ||
   value === "defeat";
 
@@ -81,6 +83,8 @@ const isRunNodeKind = (
   value === "elite" ||
   value === "shop" ||
   value === "event" ||
+  value === "rest" ||
+  value === "treasure" ||
   value === "boss";
 
 const hasUniqueStrings = (values: readonly string[]): boolean =>
@@ -112,6 +116,20 @@ const migratedLegacySave = (
   value: Record<string, unknown>,
 ): Record<string, unknown> | null => {
   if (value.version === RUN_SAVE_VERSION) return value;
+  // v5 → v6 (P6 D1): 기존 그래프는 acts 부재 = 단일 레거시 막으로 해석되고,
+  // 신규 필드는 기본값. 진행 중 런은 기존 규칙(actOfLayer=0, 스케일 ×1)으로 완주한다.
+  if (value.version === 5)
+    return {
+      ...value,
+      version: RUN_SAVE_VERSION,
+      upgradedSlots: [false, false, false, false, false, false],
+      acquiredPassives: [],
+      shopPurchasedPassives: 0,
+      treasureOpened: 0,
+      restHeals: 0,
+      restUpgrades: 0,
+      pendingTreasure: undefined,
+    };
   if (value.version === 4)
     return {
       ...value,
@@ -121,6 +139,13 @@ const migratedLegacySave = (
       eventCombats: 0,
       eventCoinGains: 0,
       eventCoinLosses: 0,
+      upgradedSlots: [false, false, false, false, false, false],
+      acquiredPassives: [],
+      shopPurchasedPassives: 0,
+      treasureOpened: 0,
+      restHeals: 0,
+      restUpgrades: 0,
+      pendingTreasure: undefined,
     };
   if (value.version === 3)
     return {
@@ -134,6 +159,13 @@ const migratedLegacySave = (
       eventCombats: 0,
       eventCoinGains: 0,
       eventCoinLosses: 0,
+      upgradedSlots: [false, false, false, false, false, false],
+      acquiredPassives: [],
+      shopPurchasedPassives: 0,
+      treasureOpened: 0,
+      restHeals: 0,
+      restUpgrades: 0,
+      pendingTreasure: undefined,
     };
   if (value.version !== 1 && value.version !== 2) return null;
   const graph = legacyGraphForSave();
@@ -151,6 +183,13 @@ const migratedLegacySave = (
     eventCombats: 0,
     eventCoinGains: 0,
     eventCoinLosses: 0,
+    upgradedSlots: [false, false, false, false, false, false],
+    acquiredPassives: [],
+    shopPurchasedPassives: 0,
+    treasureOpened: 0,
+    restHeals: 0,
+    restUpgrades: 0,
+    pendingTreasure: undefined,
   };
 };
 
@@ -217,6 +256,7 @@ const parseRunGraph = (
       } else if (node.kind === "event") {
         if (node.eventId !== undefined || encounter !== undefined) return null;
       } else if (encounter !== undefined || node.eventId !== undefined) {
+        // shop/rest/treasure — 정적 payload 금지
         return null;
       }
       return { id: node.id, kind: node.kind, encounter };
@@ -225,6 +265,21 @@ const parseRunGraph = (
   });
   if (layers.length === 0 || layers.some((layer) => layer === null))
     return null;
+  // acts 메타 (P6 D1) — 부재 = 레거시 단일 막. 존재하면 오름차순·범위·0 시작 검증.
+  if (value.acts !== undefined) {
+    if (!Array.isArray(value.acts) || value.acts.length === 0) return null;
+    let previous = -1;
+    for (const act of value.acts) {
+      if (!isRecord(act) || !isNonNegativeSafeInteger(act.start)) return null;
+      if (act.start <= previous || act.start >= value.layers.length) return null;
+      previous = act.start;
+    }
+    if ((value.acts[0] as { start: number }).start !== 0) return null;
+    return {
+      layers: layers as RunSave["graph"]["layers"],
+      acts: value.acts.map((act) => ({ start: (act as { start: number }).start })),
+    };
+  }
   return { layers: layers as RunSave["graph"]["layers"] };
 };
 
@@ -246,11 +301,13 @@ const validCharacterContext = (
   );
 };
 
+// P6 D1 보상 신스펙 검증: 동전 3택 + (엘리트 1|이벤트 희귀 2) 스킬 + 보스 패시브 ≤3.
+// 레거시(acts 부재) v5 저장의 옛 흐름(3전투째 스킬 2택·제거 단계)도 구조 검증으로 수용 —
+// 코어의 v5 커맨드(resolveCoinRemoval 등)가 남아 있어 흐름이 완주 가능하다.
 const parsePendingRewards = (
   value: unknown,
-  combatIndex: number,
   equippedSkills: readonly string[],
-  character: string,
+  acquiredPassives: readonly string[],
   context: RunValidationContext,
 ): PendingRewards | null => {
   if (
@@ -276,53 +333,70 @@ const parsePendingRewards = (
   ) {
     return null;
   }
-
-  if (combatIndex === 1) {
-    if (skillOptions.length !== 0 || !value.skillChoiceResolved) return null;
-    if (value.coinRemovalResolved && !value.coinChoiceResolved) return null;
-  } else {
-    const equipped = new Set(equippedSkills);
-    // 코어 보상 생성과 같은 술어(rewardEligibleSkillIds)를 사용 — exclusiveTo를 무시하면
-    // 공용 풀 소진 저장에서 전용 스킬을 가용으로 오판해 정상 저장을 거부한다 (감시자 발견)
-    const unownedSkillCount = rewardEligibleSkillIds(
-      context.skills,
-      character as CharacterId,
-      equippedSkills.map((skill) => skill as SkillId),
-    ).length;
-    if (unownedSkillCount >= 2) {
-      if (
-        skillOptions.length !== 2 ||
-        !hasUniqueStrings(skillOptions) ||
-        !skillOptions.every(
-          (skill) => isKnownSkill(skill, context) && !equipped.has(skill),
-        ) ||
-        value.skillChoiceResolved ||
-        (value.coinRemovalResolved && !value.coinChoiceResolved)
-      ) {
-        return null;
-      }
-    } else {
-      // B2 exhausted-pool flow reuses the public PendingRewards shape. Before removal,
-      // the normal coin stage may be unresolved/resolved. After removal, core swaps in
-      // the fallback offer and resets only coinChoiceResolved for its select/skip step.
-      if (skillOptions.length !== 0 || !value.skillChoiceResolved) return null;
-      if (value.coinRemovalResolved && value.coinChoiceResolved) return null;
-    }
+  const equipped = new Set(equippedSkills);
+  if (
+    skillOptions.length > 2 ||
+    !hasUniqueStrings(skillOptions) ||
+    !skillOptions.every(
+      (skill) => isKnownSkill(skill, context) && !equipped.has(skill),
+    )
+  ) {
+    return null;
   }
+  if (skillOptions.length === 0 && !value.skillChoiceResolved) return null;
+
+  const passiveOptions =
+    value.passiveOptions === undefined
+      ? undefined
+      : isStringArray(value.passiveOptions)
+        ? value.passiveOptions
+        : null;
+  if (passiveOptions === null) return null;
+  const owned = new Set(acquiredPassives);
+  if (passiveOptions !== undefined) {
+    if (
+      passiveOptions.length > 3 ||
+      !hasUniqueStrings(passiveOptions) ||
+      !passiveOptions.every(
+        (passive) =>
+          (context.passives ?? {})[passive] !== undefined && !owned.has(passive),
+      )
+    )
+      return null;
+    if (
+      value.passiveChoiceResolved !== undefined &&
+      typeof value.passiveChoiceResolved !== "boolean"
+    )
+      return null;
+    if (passiveOptions.length === 0 && value.passiveChoiceResolved === false)
+      return null;
+  }
+  const passiveChoiceResolved =
+    passiveOptions === undefined
+      ? undefined
+      : typeof value.passiveChoiceResolved === "boolean"
+        ? value.passiveChoiceResolved
+        : true;
 
   if (
     value.coinChoiceResolved &&
     value.coinRemovalResolved &&
-    value.skillChoiceResolved
+    value.skillChoiceResolved &&
+    (passiveChoiceResolved ?? true)
   )
     return null;
-  return {
+  const parsed: PendingRewards = {
     coinOptions: coinOptions as CoinDefId[],
     coinChoiceResolved: value.coinChoiceResolved,
     coinRemovalResolved: value.coinRemovalResolved,
     skillOptions: skillOptions as SkillId[],
     skillChoiceResolved: value.skillChoiceResolved,
   };
+  if (passiveOptions !== undefined) {
+    parsed.passiveOptions = passiveOptions as PendingRewards["passiveOptions"];
+    parsed.passiveChoiceResolved = passiveChoiceResolved;
+  }
+  return parsed;
 };
 
 const parsePendingShop = (
@@ -367,12 +441,41 @@ const parsePendingShop = (
   ) {
     return null;
   }
-  return {
+  const passiveOptions =
+    value.passiveOptions === undefined
+      ? undefined
+      : isStringArray(value.passiveOptions)
+        ? value.passiveOptions
+        : null;
+  if (passiveOptions === null) return null;
+  let passivePrices: number[] | undefined;
+  if (passiveOptions !== undefined) {
+    if (
+      passiveOptions.length > 1 ||
+      !Array.isArray(value.passivePrices) ||
+      value.passivePrices.length !== passiveOptions.length ||
+      !value.passivePrices.every(isPositiveSafeInteger) ||
+      !passiveOptions.every(
+        (passive, index) =>
+          (context.passives ?? {})[passive] !== undefined &&
+          (value.passivePrices as number[])[index] ===
+            (context.passives ?? {})[passive]!.price,
+      )
+    )
+      return null;
+    passivePrices = value.passivePrices as number[];
+  }
+  const parsed: PendingShop = {
     coinOptions: coinOptions as CoinDefId[],
     coinPrices: coinPrices as number[],
     skillOptions: skillOptions as SkillId[],
     skillPrices: skillPrices as number[],
   };
+  if (passiveOptions !== undefined) {
+    parsed.passiveOptions = passiveOptions as PendingShop["passiveOptions"];
+    parsed.passivePrices = passivePrices;
+  }
+  return parsed;
 };
 
 const parsePendingEvent = (
@@ -449,24 +552,40 @@ const normalizeRunSave = (
     !isNonNegativeSafeInteger(value.eventCoinLosses)
   )
     return null;
+  if (
+    !isNonNegativeSafeInteger(value.shopPurchasedPassives) ||
+    !isNonNegativeSafeInteger(value.treasureOpened) ||
+    !isNonNegativeSafeInteger(value.restHeals) ||
+    !isNonNegativeSafeInteger(value.restUpgrades)
+  )
+    return null;
+  if (
+    !Array.isArray(value.upgradedSlots) ||
+    value.upgradedSlots.length !== 6 ||
+    !value.upgradedSlots.every((flag) => typeof flag === "boolean")
+  )
+    return null;
+  if (
+    !isStringArray(value.acquiredPassives) ||
+    !hasUniqueStrings(value.acquiredPassives) ||
+    !value.acquiredPassives.every((passive) => {
+      const def = (context.passives ?? {})[passive];
+      return (
+        def !== undefined &&
+        (def.exclusiveTo === undefined ||
+          String(def.exclusiveTo) === String(value.character))
+      );
+    })
+  )
+    return null;
   if (value.phase === "rewards" && value.combatIndex === 0) return null;
   if (value.phase === "victory" && value.combatIndex !== graph.layers.length - 1)
     return null;
   if (
     value.phase === "choose-node" &&
-    graph.layers[value.combatIndex]?.length !== 2
+    (graph.layers[value.combatIndex]?.length ?? 0) < 2
   )
     return null;
-  if (
-    value.phase !== "choose-node" &&
-    graph.layers[value.combatIndex]?.length === 2 &&
-    value.phase !== "defeat" &&
-    value.phase !== "victory"
-  ) {
-    const node = graph.layers[value.combatIndex]?.[nodeChoices[value.combatIndex]];
-    if (node?.kind !== "combat" && node?.kind !== "elite" && node?.kind !== "boss" && node?.kind !== "shop" && node?.kind !== "event")
-      return null;
-  }
   if (!isNonNegativeSafeInteger(value.attempt)) return null;
   if (value.phase === "rewards" && value.attempt !== 0) return null;
   if (!isNonNegativeSafeInteger(value.gold)) return null;
@@ -510,6 +629,17 @@ const normalizeRunSave = (
         grossGold += nodeGoldReward(node.kind);
       }
     }
+    {
+      let passedTreasures = 0;
+      let passedRests = 0;
+      for (let layer = 0; layer < upperLayer; layer += 1) {
+        const node = graph.layers[layer]?.[nodeChoices[layer] ?? 0];
+        if (node?.kind === "treasure") passedTreasures += 1;
+        if (node?.kind === "rest") passedRests += 1;
+      }
+      if (value.treasureOpened !== passedTreasures) return null;
+      if (value.restHeals + value.restUpgrades !== passedRests) return null;
+    }
     if (value.phase === "victory") {
       const node = graph.layers[value.combatIndex]?.[nodeChoices[value.combatIndex] ?? 0];
       if (node !== undefined && node.kind !== "shop" && node.kind !== "event")
@@ -525,8 +655,10 @@ const normalizeRunSave = (
     if (value.eventCoinLosses > completedEventTypes.gold + completedEventTypes.coin)
       return null;
     if (value.eventCombats > completedEventTypes.combat) return null;
-    // HP 보존: 회복이 없으므로 피의 제물 수락마다 5씩 잃었어야 한다
-    if (value.currentHp + 5 * bloodAccepts > value.maxHp) return null;
+    // HP 보존: 피의 제물 수락마다 5씩 잃었어야 한다 — 레거시(무회복) 그래프 한정.
+    // P6 그래프는 휴식 회복·막 보스 전체 회복이 있어 이 상한이 성립하지 않는다.
+    if (graph.acts === undefined && value.currentHp + 5 * bloodAccepts > value.maxHp)
+      return null;
     // 골드 보존: 최소 변환 제단 수락 수 = losses − 희생 가용 수, 각 100 지불
     const minTransmute = Math.max(
       0,
@@ -564,9 +696,22 @@ const normalizeRunSave = (
   const changedSlots = value.equippedSkills.filter(
     (skill, index) => skill !== startingSkills[index],
   ).length;
-  const completedSkillRewardCount =
-    Math.max(0, rewardBagCombats - (value.phase === "rewards" ? 2 : 1)) +
-    value.shopPurchasedSkills;
+  let completedSkillRewardCount: number;
+  if (graph.acts !== undefined) {
+    // P6 신스펙: 스킬 제안 원천 = 엘리트 정산 + 이벤트 전투(희귀 2택) + 상점 구매
+    let settledElites = 0;
+    const upper = Math.min(value.combatIndex, graph.layers.length);
+    for (let layer = 0; layer < upper; layer += 1) {
+      const node = graph.layers[layer]?.[nodeChoices[layer] ?? 0];
+      if (node?.kind === "elite") settledElites += 1;
+    }
+    completedSkillRewardCount =
+      settledElites + value.eventCombats + value.shopPurchasedSkills;
+  } else {
+    completedSkillRewardCount =
+      Math.max(0, rewardBagCombats - (value.phase === "rewards" ? 2 : 1)) +
+      value.shopPurchasedSkills;
+  }
   if (changedSlots > completedSkillRewardCount) return null;
 
   const pendingRewards =
@@ -574,9 +719,8 @@ const normalizeRunSave = (
       ? undefined
       : parsePendingRewards(
           value.pendingRewards,
-          completedCombats,
           value.equippedSkills,
-          value.character,
+          value.acquiredPassives,
           context,
         );
   if (value.phase === "rewards" && pendingRewards === undefined) return null;
@@ -591,6 +735,30 @@ const normalizeRunSave = (
   if (value.phase === "shop" && pendingShop === undefined) return null;
   if (value.phase !== "shop" && value.pendingShop !== undefined) return null;
   if (pendingShop === null) return null;
+
+  let pendingTreasure: RunSave["pendingTreasure"];
+  if (value.pendingTreasure !== undefined) {
+    if (!isRecord(value.pendingTreasure)) return null;
+    const option = value.pendingTreasure.passiveOption;
+    if (option !== null) {
+      if (
+        !isNonEmptyString(option) ||
+        (context.passives ?? {})[option] === undefined ||
+        value.acquiredPassives.includes(option)
+      )
+        return null;
+    }
+    pendingTreasure = {
+      passiveOption: option === null ? null : (option as PassiveId),
+    };
+  }
+  if (value.phase === "treasure" && pendingTreasure === undefined) return null;
+  if (value.phase !== "treasure" && value.pendingTreasure !== undefined)
+    return null;
+  if (value.phase === "rest" || value.phase === "treasure") {
+    const node = graph.layers[value.combatIndex]?.[nodeChoices[value.combatIndex]];
+    if (node?.kind !== value.phase) return null;
+  }
 
   const pendingEvent =
     value.pendingEvent === undefined
@@ -626,15 +794,21 @@ const normalizeRunSave = (
     maxHp: value.maxHp,
     bag: value.bag as CoinDefId[],
     equippedSkills: [...value.equippedSkills] as EquippedSkills,
+    upgradedSlots: [...value.upgradedSlots] as RunSave["upgradedSlots"],
+    acquiredPassives: value.acquiredPassives as RunSave["acquiredPassives"],
     gold: value.gold,
     graph,
     nodeChoices,
     shopRemovals: value.shopRemovals,
     shopPurchasedCoins: value.shopPurchasedCoins,
     shopPurchasedSkills: value.shopPurchasedSkills,
+    shopPurchasedPassives: value.shopPurchasedPassives,
     eventCombats: value.eventCombats,
     eventCoinGains: value.eventCoinGains,
     eventCoinLosses: value.eventCoinLosses,
+    treasureOpened: value.treasureOpened,
+    restHeals: value.restHeals,
+    restUpgrades: value.restUpgrades,
     combatIndex: value.combatIndex,
     attempt: value.attempt,
     phase: value.phase,
@@ -645,9 +819,13 @@ const normalizeRunSave = (
     pendingShop === undefined ? withRewards : { ...withRewards, pendingShop };
   const withEvent =
     pendingEvent === undefined ? withShop : { ...withShop, pendingEvent };
-  return pendingEventCombat === undefined
-    ? withEvent
-    : { ...withEvent, pendingEventCombat };
+  const withEventCombat =
+    pendingEventCombat === undefined
+      ? withEvent
+      : { ...withEvent, pendingEventCombat };
+  return pendingTreasure === undefined
+    ? withEventCombat
+    : { ...withEventCombat, pendingTreasure };
 };
 
 export const serializeRunSave = (

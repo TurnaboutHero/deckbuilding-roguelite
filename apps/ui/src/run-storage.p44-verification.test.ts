@@ -12,7 +12,7 @@ const WARRIOR_SKILLS = [
 
 const graph = () => generateRunGraph("P44-STORAGE", contentDb);
 
-// 그래프 v2에서 첫 이벤트 분기 레이어(2)와 그 이벤트 노드 인덱스를 찾는다
+// P6 3막 그래프에서 첫 이벤트 노드 — 이 시드는 레이어 1(event|rest) 인덱스 0
 const eventLayerInfo = () => {
   const layers = graph().layers;
   for (let layer = 0; layer < layers.length; layer += 1) {
@@ -35,7 +35,9 @@ const eventSave = (): RunSave => {
     maxHp: 70,
     bag: [...WARRIOR_BAG] as never,
     equippedSkills: [...WARRIOR_SKILLS] as never,
-    gold: 70, // 완료 레이어 0·1(전투 35+35) 총수입 이내 — 경제 보존 법칙 정합
+    // P6 재고정: 이 시드의 이벤트 레이어는 1 — 완료 레이어는 0(전투 35)뿐이므로
+    // 골드는 총수입 35 이내여야 경제 보존 법칙에 정합한다
+    gold: 35,
     graph: graph(),
     nodeChoices,
     shopRemovals: 0,
@@ -44,6 +46,12 @@ const eventSave = (): RunSave => {
     eventCombats: 0,
     eventCoinGains: 0,
     eventCoinLosses: 0,
+    upgradedSlots: [false, false, false, false, false, false] as never,
+    acquiredPassives: [] as never,
+    shopPurchasedPassives: 0,
+    treasureOpened: 0,
+    restHeals: 0,
+    restUpgrades: 0,
     combatIndex: layer,
     attempt: 0,
     phase: "event",
@@ -111,6 +119,12 @@ describe("P4.4 저장 v5 적대 검증", () => {
     // 저장은 losses 위조 없이는 거부되어야 한다.
     const shrunk = {
       ...save,
+      upgradedSlots: [false, false, false, false, false, false] as never,
+      acquiredPassives: [] as never,
+      shopPurchasedPassives: 0,
+      treasureOpened: 0,
+      restHeals: 0,
+      restUpgrades: 0,
       combatIndex: 1,
       phase: "ready",
       pendingEvent: undefined,
@@ -131,6 +145,12 @@ describe("P4.4 저장 v5 적대 검증", () => {
       phase: "ready",
       pendingEvent: undefined,
       pendingEventCombat: { eventId: "ambush-bounty" },
+      upgradedSlots: [false, false, false, false, false, false] as never,
+      acquiredPassives: [] as never,
+      shopPurchasedPassives: 0,
+      treasureOpened: 0,
+      restHeals: 0,
+      restUpgrades: 0,
       combatIndex: layer,
       nodeChoices,
     };
@@ -139,6 +159,12 @@ describe("P4.4 저장 v5 적대 검증", () => {
     expect(
       parse({
         ...withEventCombat,
+        upgradedSlots: [false, false, false, false, false, false] as never,
+        acquiredPassives: [] as never,
+        shopPurchasedPassives: 0,
+        treasureOpened: 0,
+        restHeals: 0,
+        restUpgrades: 0,
         combatIndex: 0,
         nodeChoices: graph().layers.map(() => 0),
       }),

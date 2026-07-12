@@ -1,8 +1,9 @@
 import type { ContentDb, FlipSkillDef } from '../content-types';
-import type { CharacterId, CoinDefId, CoinUid, EnemyDefId, SkillId, SlotId } from '../ids';
+import type { CharacterId, CoinDefId, CoinUid, EnemyDefId, PassiveId, SkillId, SlotId } from '../ids';
 import { derive, rngFrom, seedFromString } from '../rng';
 import type { Command } from './commands';
 import { initialIntent, runEnemyPhase } from './enemy';
+import { runSummonPhase } from './summons';
 import type { CombatEvent } from './events';
 import { resolveConsume } from './resolve/consume';
 import { applyDamage, applyEffectAtom, checkCombatEnd, resolveFlip } from './resolve/flip';
@@ -20,6 +21,9 @@ export interface CreateCombatConfig {
   maxHp?: number;
   combatIndex?: number;
   attempt?: number;
+  // P6 D2 — 획득 패시브(combatStart/turnStart 훅), D1 — 막별 적 스케일
+  passives?: readonly PassiveId[];
+  enemyScale?: number;
 }
 
 const slot = (value: number): SlotId => value as SlotId;
@@ -62,22 +66,39 @@ const drawCards = (input: CombatState, count: number): { state: CombatState; eve
   return { state, events };
 };
 
-const runCombatStartTrait = (input: CombatState, db: ContentDb, characterId: CharacterId): { state: CombatState; events: CombatEvent[] } => {
-  const character = db.characters[String(characterId)];
-  if (character?.trait.hook !== 'combatStart') return { state: input, events: [] };
-
-  const events: CombatEvent[] = [{ type: 'traitTriggered', trait: character.trait.id }];
+// P6 D2 — 시작 고유 특성(trait)과 획득 패시브를 같은 훅 실행기로 처리한다.
+// 순서 결정론: trait 먼저, 이후 획득 순서(acquiredPassives 배열 순서) 그대로.
+const runHook = (
+  input: CombatState,
+  db: ContentDb,
+  hook: 'combatStart' | 'turnStart'
+): { state: CombatState; events: CombatEvent[] } => {
+  const events: CombatEvent[] = [];
   let state = input;
-  for (const atom of character.trait.effects) {
-    state = applyEffectAtom(state, atom, { type: 'player' }, db, events);
+  const apply = (effects: readonly Parameters<typeof applyEffectAtom>[1][]): void => {
+    for (const atom of effects) {
+      state = applyEffectAtom(state, atom, { type: 'player' }, db, events);
+      if (state.phase === 'victory' || state.phase === 'defeat') return;
+    }
+  };
+  const character = db.characters[String(state.characterId)];
+  if (character !== undefined && character.trait.hook === hook && character.trait.effects.length > 0) {
+    events.push({ type: 'traitTriggered', trait: character.trait.id });
+    apply(character.trait.effects);
+  }
+  for (const passiveId of state.passives) {
     if (state.phase === 'victory' || state.phase === 'defeat') break;
+    const passive = (db.passives ?? {})[String(passiveId)];
+    if (passive === undefined || passive.hook !== hook) continue;
+    events.push({ type: 'passiveTriggered', passive: String(passiveId) });
+    apply(passive.effects);
   }
   return { state, events };
 };
 
-const startPlayerTurn = (input: CombatState): { state: CombatState; events: CombatEvent[] } => {
+const startPlayerTurn = (input: CombatState, db: ContentDb): { state: CombatState; events: CombatEvent[] } => {
   const events: CombatEvent[] = [];
-  let state = {
+  let state: CombatState = {
     ...input,
     phase: 'player' as const,
     slots: input.slots.map((candidate) => ({ ...candidate, usedThisTurn: false })),
@@ -88,6 +109,10 @@ const startPlayerTurn = (input: CombatState): { state: CombatState; events: Comb
   }
   const drawCount = Math.max(0, 5 - state.player.nextDrawPenalty);
   state = { ...state, player: { ...state.player, block: 0, nextDrawPenalty: 0 } };
+  // turnStart 훅(trait·획득 패시브) — 드로우 전에 발동해 생성 코인이 이번 드로우에 섞인다
+  const hooked = runHook(state, db, 'turnStart');
+  state = hooked.state;
+  events.push(...hooked.events);
   const drawn = drawCards(state, drawCount);
   events.push(...drawn.events, { type: 'turnStarted', turn: state.turn });
   return { state: drawn.state, events };
@@ -135,14 +160,22 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
     ])
   );
 
+  const enemyScale = cfg.enemyScale ?? 1;
+  if (!Number.isFinite(enemyScale) || enemyScale < 1) throw new Error('enemyScale must be >= 1');
+  for (const passiveId of cfg.passives ?? []) {
+    if ((db.passives ?? {})[String(passiveId)] === undefined)
+      throw new Error(`unknown passive: ${String(passiveId)}`);
+  }
   const enemies = cfg.enemies.map((enemyId) => {
     const def = db.enemies[String(enemyId)];
     if (def === undefined) throw new Error('unknown enemy');
     const intent = initialIntent(String(enemyId), db);
+    // P6 D1 — 막별 스케일: HP만 여기서, 공격 피해는 적 페이즈에서 동일 배율 (블록/회복 원수치)
+    const scaledMaxHp = Math.round(def.maxHp * enemyScale);
     return {
       defId: enemyId,
-      hp: def.maxHp,
-      maxHp: def.maxHp,
+      hp: scaledMaxHp,
+      maxHp: scaledMaxHp,
       block: 0,
       statuses: {},
       intent: intent.intent,
@@ -168,11 +201,16 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
     rng: { flip: derive(combat, 'flip'), shuffle: shuffleRng.snapshot(), ai: derive(combat, 'ai') },
     nextUid: bag.length + 1,
     nextTurnTriggerUid: 1,
+    characterId: cfg.character,
+    passives: [...(cfg.passives ?? [])],
+    enemyScale,
+    summons: [],
+    nextSummonUid: 1,
     events: []
   };
 
-  const trait = runCombatStartTrait(base, db, cfg.character);
-  const started = startPlayerTurn(trait.state);
+  const trait = runHook(base, db, 'combatStart');
+  const started = startPlayerTurn(trait.state, db);
   return { ...started.state, events: [...trait.events, ...started.events] };
 };
 
@@ -310,13 +348,21 @@ const endTurn = (input: CombatState, db: ContentDb): StepResult => {
   };
   if (discarded.length > 0) events.push({ type: 'coinsDiscarded', coins: discarded, reason: 'turnEnd' });
 
+  // P6 D6 — 소환 장비 자동 행동 (플레이어 턴 종료, 적 페이즈 전)
+  if (state.summons.length > 0) {
+    const summonPhase = runSummonPhase(state, db);
+    state = summonPhase.state;
+    events.push(...summonPhase.events);
+    if (state.phase === 'victory') return { ok: true, state, events };
+  }
+
   const enemy = runEnemyPhase(state, db);
   state = enemy.state;
   events.push(...enemy.events);
   if (state.phase === 'victory' || state.phase === 'defeat') return { ok: true, state, events };
 
   state = { ...state, turn: state.turn + 1 };
-  const next = startPlayerTurn(state);
+  const next = startPlayerTurn(state, db);
   events.push(...next.events);
   return { ok: true, state: next.state, events };
 };
@@ -339,7 +385,13 @@ export const step = (state: CombatState, cmd: Command, db: ContentDb): StepResul
       }
       const chosenError = validateChosenBasicInHand(input, skill, cmd.chosen, db);
       if (chosenError !== undefined) return chosenError;
-      return { ok: true, ...resolveFlip(input, cmd.slot, skill, cmd.target, db, cmd.chosen) };
+      return {
+        ok: true,
+        ...resolveFlip(input, cmd.slot, skill, cmd.target, db, cmd.chosen, {
+          chosenEquipment: cmd.chosenEquipment,
+          chosenSummon: cmd.chosenSummon
+        })
+      };
     }
     if (cmd.type === 'useConsumeSkill') {
       const slotState = input.slots[Number(cmd.slot)];

@@ -10,8 +10,7 @@ export const SIM_CHARACTER_IDS = [
   "warrior",
   "guardian",
   "sorcerer",
-  "frost-knight",
-] as const;
+  "frost-knight", "arcanist"] as const;
 export type SimCharacterId = (typeof SIM_CHARACTER_IDS)[number];
 
 export const M6_VARIANT_IDS = ["baseline", "basic-first"] as const;

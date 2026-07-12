@@ -92,7 +92,8 @@ describe("human telemetry capture", () => {
     const trace = terminalTrace();
     const initial = bootCombat();
     expect(trace).toMatchObject({
-      schemaVersion: 2,
+      // P6: UI 텔레메트리 스키마 v3 (rest/treasure/passive-reward 경로 사실 가산)
+      schemaVersion: 3,
       source: "human",
       runSeed: "telemetry-seed",
       contentVersion: "test-content",
@@ -161,7 +162,8 @@ describe("human telemetry capture", () => {
     expect(fact?.commands).toEqual([
       { type: "useFlipSkill", slot: 0, target: 0 },
     ]);
-    expect(fact?.skills).toEqual([{ slot: 0, skill: "slash", kind: "flip" }]);
+    // P6 D5: 화염 격투가 시작 슬롯 0은 slash → jab (정권)
+    expect(fact?.skills).toEqual([{ slot: 0, skill: "jab", kind: "flip" }]);
     expect(fact?.flips).toEqual(
       result.events
         .filter((event) => event.type === "coinFlipped")

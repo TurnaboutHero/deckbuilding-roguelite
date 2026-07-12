@@ -18,6 +18,13 @@ import {
   declineEvent,
   chooseCoinReward,
   chooseRunNode,
+  choosePassiveReward,
+  deriveUpgradedSkill,
+  claimTreasure,
+  restHeal,
+  restUpgrade,
+  buyShopPassive,
+  actOfLayer,
   chooseSkillReward,
   completedCombatCount,
   createCombat,
@@ -162,6 +169,9 @@ import {
   recordHumanDecision,
   recordHumanEventAction,
   recordHumanNodeChoice,
+  recordHumanPassiveReward,
+  recordHumanRestChoice,
+  recordHumanTreasure,
   recordHumanReward,
   recordHumanShopAction,
 } from "./telemetry";
@@ -820,6 +830,8 @@ const NODE_KIND_KO: Record<string, string> = {
   shop: "상점",
   event: "이벤트",
   boss: "보스",
+  rest: "휴식",
+  treasure: "보물",
 };
 
 const enemyNameFor = (run: RunState): string => {
@@ -832,12 +844,20 @@ const enemyNameFor = (run: RunState): string => {
 
 const RunMeta = ({ run }: { run: RunState }) => {
   const layerCount = run.graph.layers.length;
+  const acts = run.graph.acts;
+  // P6 D1 — 3막 그래프면 "N막 방문 M/10", 레거시면 기존 노드 표기
+  const act = actOfLayer(run.graph, run.combatIndex);
+  const actStart = acts?.[act]?.start ?? 0;
+  const visitLabel =
+    acts !== undefined
+      ? `${act + 1}막 ${run.combatIndex - actStart + 1}/${(acts[act + 1]?.start ?? layerCount) - actStart}`
+      : `노드 ${run.combatIndex + 1}/${layerCount}`;
   const progress =
     run.phase === "rewards"
       ? `전투 ${completedCombatCount(run)} 완료`
       : run.phase === "victory" || run.phase === "defeat"
         ? "런 결과"
-        : `노드 ${run.combatIndex + 1}/${layerCount}`;
+        : visitLabel;
   const context =
     run.phase === "rewards"
       ? "보상 선택"
@@ -849,9 +869,16 @@ const RunMeta = ({ run }: { run: RunState }) => {
             ? "상점"
             : run.phase === "event"
               ? "이벤트"
-              : run.phase === "choose-node"
-                ? "갈림길"
-                : enemyNameFor(run);
+              : run.phase === "rest"
+                ? "휴식"
+                : run.phase === "treasure"
+                  ? "보물"
+                  : run.phase === "choose-node"
+                    ? "갈림길"
+                    : enemyNameFor(run);
+  const passiveNames = run.acquiredPassives
+    .map((id) => (contentDb.passives ?? {})[String(id)]?.name ?? String(id))
+    .join(" · ");
   return (
     <header
       aria-label="런 진행 정보"
@@ -873,6 +900,15 @@ const RunMeta = ({ run }: { run: RunState }) => {
         골드 {run.gold}
       </span>
       <span>시도 {run.attempt + 1}</span>
+      {run.acquiredPassives.length > 0 ? (
+        <span
+          className="passive-count"
+          data-testid="run-passives"
+          title={passiveNames}
+        >
+          ★ 패시브 {run.acquiredPassives.length}
+        </span>
+      ) : null}
       <SaveWarningBadge />
       <MuteToggle />
       <small>SEED {run.runSeed}</small>
@@ -1142,12 +1178,14 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                 data-testid="reward-stage"
               >
                 {rewardStage === "coin"
-                  ? "1/3 · 코인 추가"
+                  ? "코인 추가"
                   : rewardStage === "removal"
-                    ? "2/3 · 코인 제거"
+                    ? "코인 제거"
                     : rewardStage === "fallback-coin"
                       ? "대체 보상 · 추가 코인"
-                      : "3/3 · 스킬 선택"}
+                      : rewardStage === "passive"
+                        ? "보스 전리품 · 패시브 선택"
+                        : "스킬 선택"}
               </p>
 
               {isCoinStage ? (
@@ -1417,13 +1455,69 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                   )}
                 </div>
               ) : null}
+
+              {rewardStage === "passive" ? (
+                <div className="reward-body">
+                  <p>보스의 전리품 — 획득할 패시브를 하나 고릅니다.</p>
+                  <div className="reward-grid passive-rewards">
+                    {(pending.passiveOptions ?? []).map((passiveId, index) => {
+                      const def = (contentDb.passives ?? {})[String(passiveId)];
+                      return (
+                        <button
+                          className="reward-choice passive-choice"
+                          data-testid={`passive-reward-${String(passiveId)}`}
+                          key={String(passiveId)}
+                          ref={index === 0 ? primaryRef : undefined}
+                          type="button"
+                          onClick={() => {
+                            telemetryRef.current = recordHumanPassiveReward(
+                              currentTelemetry(),
+                              {
+                                layer: run.combatIndex,
+                                passiveId: String(passiveId),
+                              },
+                            );
+                            commitRun(
+                              choosePassiveReward(run, passiveId, contentDb),
+                            );
+                          }}
+                        >
+                          <span aria-hidden="true" className="passive-mark">★</span>
+                          <strong>{def?.name ?? String(passiveId)}</strong>
+                          <small>{def?.description ?? ""}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    className="secondary-action"
+                    data-testid="passive-reward-skip"
+                    type="button"
+                    onClick={() => {
+                      telemetryRef.current = recordHumanPassiveReward(
+                        currentTelemetry(),
+                        { layer: run.combatIndex, passiveId: null },
+                      );
+                      commitRun(choosePassiveReward(run, null, contentDb));
+                    }}
+                  >
+                    패시브 보상 건너뛰기
+                  </button>
+                </div>
+              ) : null}
             </>
           ) : run.phase === "ready" ? (
             <>
               <p className="run-kicker">
                 {NODE_KIND_KO[currentNodeFor(run)?.kind ?? "combat"]} 노드
               </p>
-              <h1>다음 전투</h1>
+              <h1>
+                {currentNodeFor(run)?.kind === "boss"
+                  ? "보스전"
+                  : currentNodeFor(run)?.kind === "elite"
+                    ? "엘리트 전투"
+                    : "다음 전투"}
+              </h1>
               <p>
                 {enemyNameFor(run)} · HP {run.currentHp}/{run.maxHp}
               </p>
@@ -1524,6 +1618,10 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                   <EmberIcon scale={2.4} />
                 ) : kind === "elite" || kind === "boss" ? (
                   <SkullIcon scale={2.4} />
+                ) : kind === "rest" ? (
+                  <HeartIcon scale={2.4} />
+                ) : kind === "treasure" ? (
+                  <EmberIcon scale={2.4} />
                 ) : kind === "event" ? (
                   <HeartIcon scale={2.4} />
                 ) : (
@@ -1538,10 +1636,14 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                   title: NODE_KIND_KO[node.kind] ?? node.kind,
                   detail:
                     node.kind === "shop"
-                      ? "골드로 동전·스킬 구매, 동전 제거"
+                      ? "골드로 동전·스킬·패시브 구매, 동전 제거"
                       : node.kind === "event"
                         ? "위험과 보상 — 무엇이 기다리는지 모른다"
-                        : (node.encounter ?? [])
+                        : node.kind === "rest"
+                          ? "최대 체력 30% 회복 또는 스킬 강화"
+                          : node.kind === "treasure"
+                            ? "금화 100과 패시브가 잠들어 있다"
+                            : (node.encounter ?? [])
                           .map(
                             (enemy) =>
                               contentDb.enemies[String(enemy)]?.name ?? "적",
@@ -1557,6 +1659,111 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                 commitRun(chooseRunNode(run, index, contentDb));
               }}
             />
+          ) : run.phase === "rest" ? (
+            <section aria-label="휴식" className="rest-screen" data-testid="rest-screen">
+              <p className="run-kicker">휴식 노드</p>
+              <h1>모닥불</h1>
+              <p>
+                회복하거나, 장착 스킬 하나를 강화합니다. HP {run.currentHp}/
+                {run.maxHp}
+              </p>
+              <button
+                data-testid="rest-heal"
+                ref={primaryRef}
+                type="button"
+                onClick={() => {
+                  telemetryRef.current = recordHumanRestChoice(
+                    currentTelemetry(),
+                    { layer: run.combatIndex, choice: "heal" },
+                  );
+                  commitRun(restHeal(run, contentDb));
+                }}
+              >
+                최대 체력 30% 회복 (+{Math.floor(run.maxHp * 0.3)})
+              </button>
+              <div aria-label="강화할 스킬 선택" className="rest-upgrade-list">
+                {run.equippedSkills.map((skill, index) => {
+                  const def = contentDb.skills[String(skill)];
+                  const upgradable =
+                    def?.upgrade !== undefined && !run.upgradedSlots[index];
+                  const reason =
+                    def?.upgrade === undefined
+                      ? "강화가 정의되지 않은 스킬"
+                      : run.upgradedSlots[index]
+                        ? "이미 강화됨"
+                        : (def.upgrade.description ?? "");
+                  return (
+                    <button
+                      className={`rest-upgrade ${upgradable ? "" : "locked"}`}
+                      data-testid={`rest-upgrade-${index}`}
+                      disabled={!upgradable}
+                      key={`${String(skill)}-${index}`}
+                      title={reason}
+                      type="button"
+                      onClick={() => {
+                        telemetryRef.current = recordHumanRestChoice(
+                          currentTelemetry(),
+                          { layer: run.combatIndex, choice: "upgrade", slot: index },
+                        );
+                        commitRun(restUpgrade(run, index, contentDb));
+                      }}
+                    >
+                      <strong>
+                        {def?.name ?? String(skill)}
+                        {run.upgradedSlots[index] ? " ＋" : ""}
+                      </strong>
+                      <small>
+                        {def?.upgrade !== undefined
+                          ? `강화: ${def.upgrade.name} — ${def.upgrade.description}`
+                          : "강화 불가"}
+                      </small>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ) : run.phase === "treasure" && run.pendingTreasure !== undefined ? (
+            <section
+              aria-label="보물"
+              className="treasure-screen"
+              data-testid="treasure-screen"
+            >
+              <p className="run-kicker">보물 노드</p>
+              <h1>봉인된 상자</h1>
+              <p>금화 100이 들어 있습니다.</p>
+              {run.pendingTreasure.passiveOption !== null ? (
+                <p className="treasure-passive">
+                  ★{" "}
+                  {(contentDb.passives ?? {})[
+                    String(run.pendingTreasure.passiveOption)
+                  ]?.name ?? String(run.pendingTreasure.passiveOption)}
+                  {" — "}
+                  {(contentDb.passives ?? {})[
+                    String(run.pendingTreasure.passiveOption)
+                  ]?.description ?? ""}
+                </p>
+              ) : (
+                <p className="treasure-passive">패시브 풀이 비어 금화만 남았습니다.</p>
+              )}
+              <button
+                data-testid="treasure-claim"
+                ref={primaryRef}
+                type="button"
+                onClick={() => {
+                  telemetryRef.current = recordHumanTreasure(currentTelemetry(), {
+                    layer: run.combatIndex,
+                    passiveId:
+                      run.pendingTreasure?.passiveOption === null ||
+                      run.pendingTreasure === undefined
+                        ? null
+                        : String(run.pendingTreasure.passiveOption),
+                  });
+                  commitRun(claimTreasure(run, contentDb));
+                }}
+              >
+                상자를 연다
+              </button>
+            </section>
           ) : run.phase === "shop" && run.pendingShop !== undefined ? (
             <ShopScreen
               gold={run.gold}
@@ -1576,6 +1783,18 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                 rarityName: skillRarityName(skill),
                 card: <SkillRewardMark scale={2.6} skill={skill} />,
               }))}
+              passiveOffers={(run.pendingShop.passiveOptions ?? []).map(
+                (passiveId, index) => ({
+                  id: String(passiveId),
+                  name:
+                    (contentDb.passives ?? {})[String(passiveId)]?.name ??
+                    String(passiveId),
+                  description:
+                    (contentDb.passives ?? {})[String(passiveId)]
+                      ?.description ?? "",
+                  price: run.pendingShop?.passivePrices?.[index] ?? 0,
+                }),
+              )}
               bagCoins={run.bag.map((coin, bagIndex) => ({
                 bagIndex,
                 name: coinName(coin),
@@ -1592,6 +1811,12 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
                 runShopAction(
                   () => buyShopCoin(run, index, contentDb),
                   { kind: "buy-coin", option: index },
+                )
+              }
+              onBuyPassive={(index) =>
+                runShopAction(
+                  () => buyShopPassive(run, index, contentDb),
+                  { kind: "buy-passive", option: index },
                 )
               }
               onPickSkill={(index) => {
@@ -2646,6 +2871,54 @@ const CombatBoard = ({
           playKey={playerMotion === "idle" ? 0 : spritePlayKey}
           vfx={vfx}
         />
+        {state.summons.length > 0 ||
+        (contentDb.characters[String(run.character)]?.trait.effects ?? []).some(
+          (effect) => effect.kind === "summonEquipment",
+        ) ? (
+          <div
+            aria-label="소환 장비 슬롯"
+            className="summon-rail"
+            data-testid="summon-rail"
+          >
+            {Array.from({ length: 3 }, (_, slotIndex) => {
+              const summon = state.summons[slotIndex];
+              if (summon === undefined) {
+                return (
+                  <span
+                    aria-hidden="true"
+                    className="summon-slot empty"
+                    key={`empty-${slotIndex}`}
+                  />
+                );
+              }
+              const def = (contentDb.equipment ?? {})[String(summon.defId)];
+              const isWard = def?.action.kind === "ward";
+              return (
+                <Keyword
+                  className="summon-slot-host"
+                  entry={{
+                    label: def?.name ?? String(summon.defId),
+                    description: `${def?.description ?? ""} · 남은 지속 ${summon.duration}${summon.enhance > 0 ? ` · 강화 +${summon.enhance}` : ""}`,
+                  }}
+                  key={summon.uid}
+                  term="passive"
+                >
+                  <span
+                    aria-label={`${def?.name ?? "장비"} 지속 ${summon.duration}${summon.enhance > 0 ? ` 강화 +${summon.enhance}` : ""}`}
+                    className={`summon-slot ${isWard ? "ward" : "strike"}`}
+                    data-testid={`summon-slot-${slotIndex}`}
+                  >
+                    {isWard ? <ShieldIcon scale={1.6} /> : <SwordIcon scale={1.6} />}
+                    <em className="summon-duration">{summon.duration}</em>
+                    {summon.enhance > 0 ? (
+                      <em className="summon-enhance">+{summon.enhance}</em>
+                    ) : null}
+                  </span>
+                </Keyword>
+              );
+            })}
+          </div>
+        ) : null}
         <div className="enemy-line" aria-label="적 목록">
           {state.enemies.map((enemy, index) => {
             const targetLegal = targeting?.legalTargets.includes(index) === true;
@@ -2695,7 +2968,13 @@ const CombatBoard = ({
           ) : null}
         </div>
         {state.slots.slice(0, 6).map((slotState, index) => {
-          const skill = contentDb.skills[String(slotState.skillId)];
+          const baseSkill = contentDb.skills[String(slotState.skillId)];
+          // P6 D3 — 강화 슬롯은 코어와 같은 파생 정본으로 표시 (수치 이중 표기 방지)
+          const upgraded = run.upgradedSlots[index] === true;
+          const skill =
+            baseSkill !== undefined && upgraded
+              ? deriveUpgradedSkill(baseSkill)
+              : baseSkill;
           const placed = state.zones.placed[slot(index)] ?? [];
           const consumeUse = legal.find(
             (
@@ -2840,6 +3119,11 @@ const CombatBoard = ({
                 }}
               >
                 {skill?.name ?? "빈 슬롯"}
+                {upgraded ? (
+                  <em aria-label="강화됨" className="upgrade-badge">
+                    ＋
+                  </em>
+                ) : null}
               </button>
               {skill?.oncePerCombat === true ? (
                 <span className="once-badge">전투당 1회</span>

@@ -160,15 +160,19 @@ await combatPage.close();
 const shopPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 await shopPage.addInitScript(([k, v]) => window.localStorage.setItem(k, v), [
   "deckbuilding-roguelite.run-save",
+  // P6 v6 저장 (필수 필드: upgradedSlots/acquiredPassives/신규 카운터 — 경제 보존:
+  // 골드 135 ≤ 엘리트 2승 140, rest/treasure 레이어 없음 = 카운터 0)
   JSON.stringify({
-    version: 5,
-    contentVersion: "1.0.0-rc.1",
+    version: 6,
+    contentVersion: "1.1.0-p6",
     runSeed: "A11Y-SHOP",
     character: "warrior",
     currentHp: 63,
     maxHp: 70,
     bag: [...Array.from({ length: 8 }, () => "basic"), "fire", "fire"],
-    equippedSkills: ["slash", "guard", "burning-strike", "ignite", "ignite-sword", "flame-rampage"],
+    equippedSkills: ["jab", "fist-guard", "burning-fist", "ignite", "ignite-sword", "flame-rampage"],
+    upgradedSlots: [false, false, false, false, false, false],
+    acquiredPassives: [],
     gold: 135,
     graph: {
       layers: [
@@ -182,9 +186,13 @@ await shopPage.addInitScript(([k, v]) => window.localStorage.setItem(k, v), [
     shopRemovals: 0,
     shopPurchasedCoins: 0,
     shopPurchasedSkills: 0,
+    shopPurchasedPassives: 0,
     eventCombats: 0,
     eventCoinGains: 0,
     eventCoinLosses: 0,
+    treasureOpened: 0,
+    restHeals: 0,
+    restUpgrades: 0,
     combatIndex: 2,
     attempt: 0,
     phase: "shop",

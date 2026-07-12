@@ -109,10 +109,11 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
           };
         }
         for (let hit = 0; hit < hits; hit += 1) {
+          // P6 D1 — 막별 스케일은 공격 피해에만 적용(버프 보너스는 원수치 가산)
           state = applyDamage(
             state,
             { type: 'player' },
-            action.damage + (hit === 0 ? bonus : 0),
+            Math.round(action.damage * (state.enemyScale ?? 1)) + (hit === 0 ? bonus : 0),
             'enemy',
             events,
             { type: 'enemy', index: enemyIndex }

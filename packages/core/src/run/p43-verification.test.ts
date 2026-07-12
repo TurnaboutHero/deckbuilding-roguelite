@@ -13,7 +13,6 @@ import {
   completedCombatCount,
   createRun,
   leaveShop,
-  resolveCoinRemoval,
   rewardEligibleSkillIds,
   settleRunCombat,
   signatureElement,
@@ -128,6 +127,32 @@ const newRun = (db: ContentDb, seed = "P43-VERIFY"): RunState =>
     db,
   );
 
+const combatNode = (nodeId: string, enemy: string) => ({
+  id: nodeId,
+  kind: "combat" as const,
+  encounter: [id<EnemyDefId>(enemy)],
+});
+
+// P6 3막 그래프는 시드에 따라 상점 위치가 흔들린다 — 상점/분기 검증은 레이어 2에
+// [상점|이벤트] 분기를 고정한 수제 그래프로 결정론을 유지한다 (상점 스트림은 여전히
+// 레이어 인덱스 기반 `shop-2`라 코어 경로 그대로 검증된다).
+const shopGraphRun = (db: ContentDb, seed = "P43-VERIFY"): RunState => ({
+  ...newRun(db, seed),
+  graph: {
+    layers: [
+      [combatNode("c0", "raider")],
+      [combatNode("c1", "shaman")],
+      [
+        { id: "shop-2", kind: "shop" as const },
+        { id: "event-2", kind: "event" as const },
+      ],
+      [combatNode("c3", "gatekeeper")],
+    ],
+    acts: [{ start: 0 }],
+  },
+  nodeChoices: [0, 0, 0, 0],
+});
+
 const winCurrentCombat = (run: RunState, db: ContentDb): RunState => {
   const started = startRunCombat(run, db);
   return settleRunCombat(
@@ -141,21 +166,23 @@ const winCurrentCombat = (run: RunState, db: ContentDb): RunState => {
   );
 };
 
+// P6 신스펙: 일반 전투 보상은 동전 3중1택뿐 — 제거·스킬 단계 없음
 const resolveRewards = (run: RunState, db: ContentDb): RunState => {
-  let next = chooseCoinReward(run, null, db);
-  next = resolveCoinRemoval(next, null, db);
-  if (next.phase === "rewards") {
+  let next = run;
+  while (next.phase === "rewards") {
     if (next.pendingRewards?.coinChoiceResolved === false) {
       next = chooseCoinReward(next, null, db);
     } else if (next.pendingRewards?.skillChoiceResolved === false) {
       next = skipSkillReward(next, db);
+    } else {
+      throw new Error("unexpected pending reward stage");
     }
   }
   return next;
 };
 
 const reachLayerThreeChoice = (db: ContentDb): RunState => {
-  let run = resolveRewards(winCurrentCombat(newRun(db), db), db);
+  let run = resolveRewards(winCurrentCombat(shopGraphRun(db), db), db);
   run = resolveRewards(winCurrentCombat(run, db), db);
   expect(run.phase).toBe("choose-node");
   expect(run.combatIndex).toBe(2);

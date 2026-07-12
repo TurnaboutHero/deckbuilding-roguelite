@@ -20,6 +20,11 @@ export type CombatEvent =
   | { type: 'statusTicked'; target: TargetRef; status: StatusId; amount: number; remaining: number; turns?: number }
   | { type: 'coinCreated'; coin: CoinUid; defId: string; zone: 'draw' | 'discard' | 'hand' }
   | { type: 'traitTriggered'; trait: string }
+  | { type: 'passiveTriggered'; passive: string }
+  | { type: 'summonAdded'; uid: number; equipment: string; duration: number }
+  | { type: 'summonReplaced'; uid: number; equipment: string }
+  | { type: 'summonActed'; uid: number; equipment: string; bonus: number }
+  | { type: 'summonExpired'; uid: number; equipment: string }
   | { type: 'turnTriggerAdded'; trigger: string }
   | { type: 'turnTriggerFired'; trigger: string; hook: string }
   | { type: 'turnTriggersExpired'; count: number }

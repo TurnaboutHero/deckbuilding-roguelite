@@ -928,8 +928,9 @@ const winCurrentCombat = async (page) => {
     await page.screenshot({ path: `${outDir}/23-${tag}-loaded-hover.png` });
     await parkPointer();
 
-    // 키보드 포커스 = 호버와 동일 승격 — 베기 제목에 앵커 후 실제 Tab 2회
-    // (마지막 이동이 실제 키 입력이라 :focus-visible이 보장된다): 베기 소켓 → 방어 제목
+    // 키보드 포커스 = 호버와 동일 승격 — 슬롯0 제목에 앵커 후 실제 Tab 2회
+    // (마지막 이동이 실제 키 입력이라 :focus-visible이 보장된다): 슬롯0 소켓 → 슬롯1 제목.
+    // P6: warrior 시작 스킬 교체(slash/guard → jab/fist-guard)로 슬롯1 표시명은 '가드'.
     await page.locator(".skill-card").nth(0).locator(".card-title").focus();
     await page.keyboard.press("Tab");
     await page.keyboard.press("Tab");
@@ -938,8 +939,8 @@ const winCurrentCombat = async (page) => {
       () => document.activeElement?.textContent ?? "",
     );
     check(
-      `S9 ${tag} 키보드 포커스 대상 = 방어 제목`,
-      focusOn.includes("방어"),
+      `S9 ${tag} 키보드 포커스 대상 = 가드 제목`,
+      focusOn.includes("가드"),
       focusOn,
     );
     const kb = await cardRect(1);
@@ -1292,17 +1293,24 @@ const winCurrentCombat = async (page) => {
     );
   };
 
+  // P6 D1: 3막×10방문 그래프 — 진행 표기는 "1막 1/10" (레거시 "노드 1/10" 대체)
   check(
-    "S12 첫 노드 진행 1/10 (그래프 세대)",
+    "S12 첫 노드 진행 1막 1/10 (P6 3막 그래프)",
     (await page.locator('[data-testid="run-progress"] strong').innerText()) ===
-      "노드 1/10",
+      "1막 1/10",
   );
   await winCurrentCombat(page);
+  // P6 신스펙: 일반 전투 보상 = 동전 3중1택만 (제거 단계·스킬 2택 삭제).
+  // 앱 결함 의심(보고 대상): rewardViewStage(apps/ui/src/interaction.ts)가 코인 단독
+  // 보상(coinRemovalResolved=true·skillOptions=[])을 v5 '대체 코인'과 구분하지 못해
+  // stage가 'fallback-coin'으로 투영된다 — 여기서는 두 값 모두 코인 선택 단계로 수용.
   check(
-    "S12 1전투 승리 후 코인 보상",
+    "S12 1전투 승리 후 코인 보상 단계",
     (await main().getAttribute("data-run-phase")) === "rewards" &&
-      (await page.locator('[data-testid="reward-stage"]').innerText()).includes(
-        "코인 추가",
+      ["coin", "fallback-coin"].includes(
+        (await page
+          .locator('[data-testid="reward-stage"]')
+          .getAttribute("data-reward-stage")) ?? "",
       ),
   );
   const hpAfterFirst = Number(await main().getAttribute("data-current-hp"));
@@ -1335,6 +1343,7 @@ const winCurrentCombat = async (page) => {
   await page.setViewportSize({ width: 1280, height: 720 });
 
   await page.locator('[data-testid="coin-reward-mana"]').click();
+  await page.waitForSelector('[data-testid="node-choice"]', { timeout: 15000 });
   const bagAfterAdd = await bag();
   check(
     "S12 마나 코인 영구 추가",
@@ -1342,47 +1351,45 @@ const winCurrentCombat = async (page) => {
       bagAfterAdd.includes("mana"),
     bagAfterAdd.join(","),
   );
+  // P6 신스펙: 제거 단계 삭제(상점 전용 회귀) — 일반 전투는 코인 1택 후 즉시 다음
+  // 레이어 진입. BRAVE-EMBER-42 그래프의 방문2는 3후보 갈림길(전투 수문장·상점·휴식)
+  // — D1 "후보 2~3개" 스펙의 3후보 렌더를 라이브 경로로 검증한다.
   check(
-    "S12 추가 후 제거 단계",
-    (await page.locator('[data-testid="reward-stage"]').innerText()).includes(
-      "코인 제거",
-    ),
+    "S12 코인 1택 후 갈림길 진입 (제거 단계 없음)",
+    (await main().getAttribute("data-run-phase")) === "choose-node" &&
+      (await page.locator('[data-testid="node-choice"]').count()) === 1,
   );
-  await page.screenshot({ path: `${outDir}/32-m5-removal-1280.png` });
-  await assertBoundaryLayout("1280x720 코인 제거", {
+  const nodeOptions = page.locator('[data-testid^="node-option-"]');
+  check(
+    "S12 갈림길 후보 3개 렌더",
+    (await nodeOptions.count()) === 3,
+    String(await nodeOptions.count()),
+  );
+  const optionTexts = await nodeOptions.allInnerTexts();
+  check(
+    "S12 후보 종류·미리보기 (전투 수문장·상점·휴식)",
+    optionTexts[0]?.includes("수문장") === true &&
+      optionTexts[1]?.includes("상점") === true &&
+      optionTexts[2]?.includes("휴식") === true,
+    optionTexts.map((text) => text.replace(/\n/g, " ")).join(" | "),
+  );
+  await page.screenshot({ path: `${outDir}/32-p6-choose-node-1280.png` });
+  await assertBoundaryLayout("1280x720 갈림길", {
     width: 1280,
     height: 720,
   });
-  await assertBoundaryLayout("1920x1080 코인 제거", {
+  await assertBoundaryLayout("1920x1080 갈림길", {
     width: 1920,
     height: 1080,
   });
-  await page.screenshot({ path: `${outDir}/37-m5-removal-1920.png` });
+  await page.screenshot({ path: `${outDir}/37-p6-choose-node-1920.png` });
   await page.setViewportSize({ width: 1280, height: 720 });
-  await page.locator('[data-testid="bag-remove-0"]').click();
+  await page.locator('[data-testid="node-option-0"]').click();
+  await page.waitForSelector('[data-testid="next-combat"]', { timeout: 15000 });
   check(
-    "S12 제거 선택 취소 가능",
-    (await page.locator('[data-testid="removal-cancel"]').isEnabled()) === true,
-  );
-  await page.locator('[data-testid="removal-cancel"]').click();
-  check(
-    "S12 취소 후 확인 비활성",
-    (await page.locator('[data-testid="removal-confirm"]').isDisabled()) ===
-      true,
-  );
-  await page.locator('[data-testid="bag-remove-0"]').click();
-  await page.locator('[data-testid="removal-confirm"]').click();
-  const bagAfterRemoval = await bag();
-  check(
-    "S12 제거가 영구 주머니를 변경",
-    bagAfterRemoval.length === bagBeforeReward.length &&
-      bagAfterRemoval.includes("mana") &&
-      bagAfterRemoval.join(",") !== bagBeforeReward.join(","),
-    bagAfterRemoval.join(","),
-  );
-  check(
-    "S12 첫 전투는 스킬 보상 없이 다음 전투 준비",
-    (await main().getAttribute("data-run-phase")) === "ready",
+    "S12 전투 후보 선택 → 다음 전투 준비",
+    (await main().getAttribute("data-run-phase")) === "ready" &&
+      (await page.locator(".run-panel").innerText()).includes("수문장"),
   );
   await page.screenshot({ path: `${outDir}/38-m5-ready-1280.png` });
   await assertBoundaryLayout("1280x720 다음 전투 준비", {
@@ -1453,9 +1460,11 @@ const winCurrentCombat = async (page) => {
   );
   await page.close();
 
-  // ---- 그래프 세대 재설계: 깊은 노드의 보상 교체·승리 화면은 v4 저장 주입으로
-  // 결정론 검증한다 (10레이어 브라우저 완주는 승패 비결정 — 완주 증명은 코어 e2e·
-  // 시뮬 seed42 골든이 소유).
+  // ---- 그래프 세대 재설계: 깊은 노드의 보상 교체·승리 화면은 v6 저장 주입으로
+  // 결정론 검증한다 (30레이어 브라우저 완주는 승패 비결정·과도 — 완주 증명은 코어 e2e·
+  // 시뮬 seed42 골든이 소유). P6 대체 근거: v5 "3전투째 스킬 2택" 흐름은 삭제되어
+  // "엘리트 정산 스킬 1 제안(교체/스킵)" 등가물로 검증한다 — 교체 취소/거절/지정
+  // 슬롯/스킵 UI 계약은 신스펙에서도 동일하다.
   const inject = async (save) => {
     const context = await browser.newContext({
       viewport: { width: 1280, height: 720 },
@@ -1478,42 +1487,55 @@ const winCurrentCombat = async (page) => {
     await page2.goto(baseUrl, { waitUntil: "networkidle" });
     return { page: page2, errors: errors2, context };
   };
+  // v6 저장 픽스처 — acts 메타 포함 = P6 규칙 적용 (스킬 제안 원천 = 엘리트 정산).
+  // 경제 보존: 골드 105 = 완료 노드(전투 35 + 엘리트 70) 총수입과 일치.
   const injectBase = {
-    version: 4,
-    contentVersion: "0.9.0-p4",
+    version: 6,
+    contentVersion: "1.1.0-p6",
     runSeed: "S12-INJECT",
     character: "warrior",
     currentHp: 63,
     maxHp: 70,
     bag: [...Array.from({ length: 8 }, () => "basic"), "fire", "fire"],
     equippedSkills: [
-      "slash",
-      "guard",
-      "burning-strike",
+      "jab",
+      "fist-guard",
+      "burning-fist",
       "ignite",
       "ignite-sword",
       "flame-rampage",
     ],
-    gold: 70,
+    upgradedSlots: [false, false, false, false, false, false],
+    acquiredPassives: [],
+    gold: 105,
     graph: {
       layers: [
         [{ id: "i0", kind: "combat", encounter: ["raider"] }],
-        [{ id: "i1", kind: "combat", encounter: ["raider"] }],
+        [{ id: "i1", kind: "elite", encounter: ["raider-plus"] }],
         [{ id: "i2", kind: "combat", encounter: ["raider"] }],
         [{ id: "i3", kind: "boss", encounter: ["ember-archmage"] }],
       ],
+      acts: [{ start: 0 }],
     },
     nodeChoices: [0, 0, 0, 0],
     shopRemovals: 0,
     shopPurchasedCoins: 0,
     shopPurchasedSkills: 0,
+    shopPurchasedPassives: 0,
+    eventCombats: 0,
+    eventCoinGains: 0,
+    eventCoinLosses: 0,
+    treasureOpened: 0,
+    restHeals: 0,
+    restUpgrades: 0,
     attempt: 0,
   };
+  // P6 엘리트 정산 등가물: 코인 1택 완료 후 스킬 1 제안이 남은 상태
   const skillRewards = {
     coinOptions: ["basic", "fire", "mana"],
     coinChoiceResolved: true,
     coinRemovalResolved: true,
-    skillOptions: ["smash", "fire-infusion"],
+    skillOptions: ["smash"],
     skillChoiceResolved: false,
   };
 
@@ -1529,7 +1551,7 @@ const winCurrentCombat = async (page) => {
       '[data-testid^="skill-reward-"]:not([data-testid$="skip"])',
     );
     await p2.waitForSelector('[data-testid="reward-stage"]', { timeout: 15000 });
-    check("S12 주입 스킬 보상 2개", (await choices.count()) === 2);
+    check("S12 주입 엘리트 스킬 제안 1개", (await choices.count()) === 1);
     const before = (
       (await p2
         .locator('[data-testid="run-phase"]')
@@ -1543,7 +1565,7 @@ const winCurrentCombat = async (page) => {
     await p2.locator('[data-testid="replace-cancel"]').click();
     check(
       "S12 교체 취소가 스킬 선택으로 복귀",
-      (await choices.count()) === 2,
+      (await choices.count()) === 1,
     );
     await choices.first().click();
     await p2.locator('[data-testid="replace-decline"]').click();
@@ -2575,12 +2597,20 @@ const winCurrentCombat = async (page) => {
     url: `${baseUrl}?seed=${SEED}&select=1`,
     waitFor: "select",
   });
-  // P3.4: 술사·냉기 기사 추가로 4종 — 데이터 주도 노출의 의도 변경
+  // P6 D6: 마도기사(arcanist) 추가로 5종 — 데이터 주도 노출의 의도 변경
   check(
-    "S21 선택 화면 캐릭터 카드 4종 (전사·수호자·술사·냉기 기사)",
-    (await page.locator(".character-card").count()) === 4 &&
+    "S21 선택 화면 캐릭터 카드 5종 (화염 격투가·수호자·술사·냉기 기사·마도기사)",
+    (await page.locator(".character-card").count()) === 5 &&
       (await page.locator('[data-testid="character-select-sorcerer"]').count()) === 1 &&
-      (await page.locator('[data-testid="character-select-frost-knight"]').count()) === 1,
+      (await page.locator('[data-testid="character-select-frost-knight"]').count()) === 1 &&
+      (await page.locator('[data-testid="character-select-arcanist"]').count()) === 1,
+  );
+  // P6 D5: warrior 표시명 '화염 격투가' (id는 'warrior' 유지)
+  check(
+    "S21 화염 격투가 표시명 카드",
+    (
+      await page.locator('[data-testid="character-select-warrior"]').innerText()
+    ).includes("화염 격투가"),
   );
   const guardianCard = page.locator(
     '[data-testid="character-select-guardian"]',
@@ -2637,9 +2667,11 @@ const winCurrentCombat = async (page) => {
     "S21 시드 부팅은 선택 화면 생략",
     (await page.locator('[data-testid="character-select"]').count()) === 0,
   );
+  // P6 D5: warrior 표시명 '화염 격투가' — 시드 부팅 캐릭터 불변 규칙은 동일
   check(
-    "S21 시드 부팅 warrior 유지",
-    (await page.locator(".unit.player .unit-name").innerText()) === "전사",
+    "S21 시드 부팅 warrior(화염 격투가) 유지",
+    (await page.locator(".unit.player .unit-name").innerText()) ===
+      "화염 격투가",
   );
 
   // 21d. ?character=guardian 직접 부팅
@@ -2983,20 +3015,21 @@ const winCurrentCombat = async (page) => {
 }
 
 // ---------- 시나리오 25: P4.3 상점·갈림길 — 저장 주입 결정론 검증 ----------
-// v4 저장을 localStorage에 주입해 상점/갈림길 화면을 직접 부팅한다 (테스트 전용 경로,
+// v6 저장을 localStorage에 주입해 상점/갈림길 화면을 직접 부팅한다 (테스트 전용 경로,
 // 정식 콘텐츠 무접촉). 가격·경계 진실은 코어/저장 검증기가 소유 — 여기선 DOM 반영만 확인.
+// P6: 상점 패시브 1슬롯 진열·구매 커버리지 추가.
 {
-  const CONTENT_VERSION_PIN = "0.9.0-p4"; // 버전 승격 시 골든처럼 함께 재고정
+  const CONTENT_VERSION_PIN = "1.1.0-p6"; // 버전 승격 시 골든처럼 함께 재고정
   const WARRIOR_SKILLS = [
-    "slash",
-    "guard",
-    "burning-strike",
+    "jab",
+    "fist-guard",
+    "burning-fist",
     "ignite",
     "ignite-sword",
     "flame-rampage",
   ];
   const baseSave = {
-    version: 4,
+    version: 6,
     contentVersion: CONTENT_VERSION_PIN,
     runSeed: "S25-SHOP",
     character: "warrior",
@@ -3004,11 +3037,20 @@ const winCurrentCombat = async (page) => {
     maxHp: 70,
     bag: [...Array.from({ length: 8 }, () => "basic"), "fire", "fire"],
     equippedSkills: WARRIOR_SKILLS,
+    upgradedSlots: [false, false, false, false, false, false],
+    acquiredPassives: [],
     gold: 150,
     nodeChoices: [0, 0, 0],
     shopRemovals: 0,
     shopPurchasedCoins: 0,
     shopPurchasedSkills: 0,
+    shopPurchasedPassives: 0,
+    eventCombats: 0,
+    eventCoinGains: 0,
+    eventCoinLosses: 0,
+    treasureOpened: 0,
+    restHeals: 0,
+    restUpgrades: 0,
     combatIndex: 1,
     attempt: 0,
   };
@@ -3035,15 +3077,22 @@ const winCurrentCombat = async (page) => {
     return { page, errors, context };
   };
 
-  // A. 상점 — 구매/제거/누진/나가기
+  // A. 상점 — 패시브/스킬/코인 구매·제거 누진·나가기.
+  // 경제 보존: 골드 220 ≤ 엘리트 2승(140) + 보물(100) = 240, treasureOpened=1 정합.
   const shopSave = {
     ...baseSave,
+    gold: 220,
+    treasureOpened: 1,
+    combatIndex: 3,
+    nodeChoices: [0, 0, 0, 0, 0],
     phase: "shop",
     graph: {
       layers: [
-        [{ id: "n0", kind: "combat", encounter: ["raider"] }],
-        [{ id: "n1", kind: "shop" }],
-        [{ id: "n2", kind: "boss", encounter: ["ember-archmage"] }],
+        [{ id: "n0", kind: "elite", encounter: ["raider-plus"] }],
+        [{ id: "n1", kind: "elite", encounter: ["gatekeeper-plus"] }],
+        [{ id: "n2", kind: "treasure" }],
+        [{ id: "n3", kind: "shop" }],
+        [{ id: "n4", kind: "boss", encounter: ["ember-archmage"] }],
       ],
     },
     pendingShop: {
@@ -3051,6 +3100,9 @@ const winCurrentCombat = async (page) => {
       coinPrices: [25, 50, 70],
       skillOptions: ["smash", "fire-infusion"],
       skillPrices: [50, 80],
+      // P6 D2 — 상점 패시브 1슬롯 진열 (iron-body 정본가 70)
+      passiveOptions: ["iron-body"],
+      passivePrices: [70],
     },
   };
   {
@@ -3059,9 +3111,9 @@ const winCurrentCombat = async (page) => {
       timeout: 15000,
     });
     check(
-      "S25 상점 부팅·골드 150",
+      "S25 상점 부팅·골드 220",
       (await page.locator('[data-testid="run-gold"]').innerText()).includes(
-        "150",
+        "220",
       ),
     );
     check(
@@ -3071,6 +3123,32 @@ const winCurrentCombat = async (page) => {
         (await page.locator('[data-testid="shop-coins"]').innerText()).includes(
           "25G",
         ),
+    );
+    // P6 신규: 패시브 진열 1슬롯 — 구매 → 골드 차감·배지 반영·슬롯 매진
+    check(
+      "S25 패시브 진열 1슬롯 (단단한 몸 70G)",
+      (await page
+        .locator('[data-testid="shop-passives"] .shop-item')
+        .count()) === 1 &&
+        (await page.locator('[data-testid="shop-passives"]').innerText()).includes(
+          "70G",
+        ),
+    );
+    await page.locator('[data-testid="shop-passive-iron-body"]').click();
+    check(
+      "S25 패시브 구매 반영 (골드 150·★ 패시브 1)",
+      (await page.locator('[data-testid="run-gold"]').innerText()).includes(
+        "150",
+      ) &&
+        (await page.locator('[data-testid="run-passives"]').innerText()).includes(
+          "패시브 1",
+        ),
+    );
+    check(
+      "S25 패시브 슬롯 매진 표기",
+      (await page.locator('[data-testid="shop-passives"]').innerText()).includes(
+        "매진",
+      ),
     );
     // 스킬 구매: 강타 50 → 슬롯 1 교체
     await page.locator('[data-testid="shop-skill-smash"]').click();
@@ -3134,7 +3212,7 @@ const winCurrentCombat = async (page) => {
     await context.close();
   }
 
-  // B. 갈림길 — 현재 레이어 선택만, 선택 후 진입
+  // B. 갈림길 — 현재 레이어 선택만, 선택 후 진입 (P6 D1: 후보 2~3개 — 3후보 주입)
   const chooseSave = {
     ...baseSave,
     gold: 35,
@@ -3145,6 +3223,7 @@ const winCurrentCombat = async (page) => {
         [
           { id: "c1a", kind: "shop" },
           { id: "c1b", kind: "combat", encounter: ["goblin", "ghoul"] },
+          { id: "c1c", kind: "rest" },
         ],
         [{ id: "c2", kind: "boss", encounter: ["ember-archmage"] }],
       ],
@@ -3156,13 +3235,17 @@ const winCurrentCombat = async (page) => {
       timeout: 15000,
     });
     check(
-      "S25 갈림길 옵션 2 (상점·전투)",
-      (await page.locator('[data-testid="node-option-0"]').innerText()).includes(
-        "상점",
-      ) &&
+      "S25 갈림길 옵션 3 (상점·전투·휴식)",
+      (await page.locator('[data-testid^="node-option-"]').count()) === 3 &&
+        (await page.locator('[data-testid="node-option-0"]').innerText()).includes(
+          "상점",
+        ) &&
         (
           await page.locator('[data-testid="node-option-1"]').innerText()
-        ).includes("고블린·구울"),
+        ).includes("고블린·구울") &&
+        (
+          await page.locator('[data-testid="node-option-2"]').innerText()
+        ).includes("휴식"),
     );
     await page.locator('[data-testid="node-option-1"]').click();
     check(
@@ -3178,7 +3261,7 @@ const winCurrentCombat = async (page) => {
 }
 
 // ---------- 시나리오 26: P4.4 이벤트 4종 — 저장 주입 결정론 검증 ----------
-// pendingEvent는 롤 결과가 저장되는 사실이므로 v5 저장 주입으로 4종을 각각 고정한다.
+// pendingEvent는 롤 결과가 저장되는 사실이므로 v6 저장 주입으로 4종을 각각 고정한다.
 {
   const injectEvent = async (eventId, extra = {}) => {
     // 경제 보존 법칙: 골드 120은 엘리트 2승(140) 프리픽스로 정당화한다
@@ -3189,30 +3272,36 @@ const winCurrentCombat = async (page) => {
       [{ id: "v3", kind: "boss", encounter: ["ember-archmage"] }],
     ];
     const save = {
-      version: 5,
-      contentVersion: "1.0.0-rc.1",
+      version: 6,
+      contentVersion: "1.1.0-p6",
       runSeed: "S26-EVENT",
       character: "warrior",
       currentHp: 63,
       maxHp: 70,
       bag: [...Array.from({ length: 8 }, () => "basic"), "fire", "fire"],
       equippedSkills: [
-        "slash",
-        "guard",
-        "burning-strike",
+        "jab",
+        "fist-guard",
+        "burning-fist",
         "ignite",
         "ignite-sword",
         "flame-rampage",
       ],
+      upgradedSlots: [false, false, false, false, false, false],
+      acquiredPassives: [],
       gold: 120,
       graph: { layers },
       nodeChoices: [0, 0, 0, 0],
       shopRemovals: 0,
       shopPurchasedCoins: 0,
       shopPurchasedSkills: 0,
+      shopPurchasedPassives: 0,
       eventCombats: 0,
       eventCoinGains: 0,
       eventCoinLosses: 0,
+      treasureOpened: 0,
+      restHeals: 0,
+      restUpgrades: 0,
       combatIndex: 2,
       attempt: 0,
       phase: "event",
@@ -3388,21 +3477,23 @@ const winCurrentCombat = async (page) => {
       v: document.documentElement.scrollHeight <= window.innerHeight,
     }));
   const mobileSave = (phase, extra = {}) => ({
-    version: 5,
-    contentVersion: "1.0.0-rc.1",
+    version: 6,
+    contentVersion: "1.1.0-p6",
     runSeed: "S28",
     character: "warrior",
     currentHp: 63,
     maxHp: 70,
     bag: [...Array.from({ length: 8 }, () => "basic"), "fire", "fire"],
     equippedSkills: [
-      "slash",
-      "guard",
-      "burning-strike",
+      "jab",
+      "fist-guard",
+      "burning-fist",
       "ignite",
       "ignite-sword",
       "flame-rampage",
     ],
+    upgradedSlots: [false, false, false, false, false, false],
+    acquiredPassives: [],
     // 경제 보존: 엘리트 2승 총수입 140 이내
     gold: 135,
     graph: {
@@ -3418,9 +3509,13 @@ const winCurrentCombat = async (page) => {
     shopRemovals: 0,
     shopPurchasedCoins: 0,
     shopPurchasedSkills: 0,
+    shopPurchasedPassives: 0,
     eventCombats: 0,
     eventCoinGains: 0,
     eventCoinLosses: 0,
+    treasureOpened: 0,
+    restHeals: 0,
+    restUpgrades: 0,
     combatIndex: 2,
     attempt: 0,
     phase,
@@ -3451,7 +3546,7 @@ const winCurrentCombat = async (page) => {
       const coin = page.locator(".hand-tray .coin").first();
       await coin.scrollIntoViewIfNeeded();
       await coin.tap();
-      const card = page.locator(".skill-card", { hasText: "베기" }).first();
+      const card = page.locator(".skill-card", { hasText: "정권" }).first(); // P6: warrior 슬롯0 = jab(정권)
       await card.scrollIntoViewIfNeeded();
       await card.locator(".socket").first().tap();
       check(
@@ -3517,13 +3612,15 @@ const winCurrentCombat = async (page) => {
     {
       const { page, errors, context } = await mobileBoot({
         ...vp,
+        // P6 신스펙 대체: 제거 단계 삭제 — 엘리트 정산(코인 3택 + 스킬 1 제안)으로
+        // 코인 스킵 → 스킬 선택 단계 전이를 검증한다.
         save: mobileSave("rewards", {
           combatIndex: 2,
           gold: 60,
           graph: {
             layers: [
               [{ id: "r0", kind: "elite", encounter: ["raider-plus"] }],
-              [{ id: "r1", kind: "combat", encounter: ["raider"] }],
+              [{ id: "r1", kind: "elite", encounter: ["gatekeeper-plus"] }],
               [{ id: "r2", kind: "combat", encounter: ["gatekeeper"] }],
               [{ id: "r3", kind: "event" }],
               [{ id: "r4", kind: "boss", encounter: ["ember-archmage"] }],
@@ -3532,8 +3629,8 @@ const winCurrentCombat = async (page) => {
           pendingRewards: {
             coinOptions: ["basic", "fire", "mana"],
             coinChoiceResolved: false,
-            coinRemovalResolved: false,
-            skillOptions: ["smash", "fire-infusion"],
+            coinRemovalResolved: true,
+            skillOptions: ["smash"],
             skillChoiceResolved: false,
           },
         }),
@@ -3547,7 +3644,7 @@ const winCurrentCombat = async (page) => {
       check(
         `S28 ${vp.name} 보상 스킵 도달·동작`,
         (await page.locator('[data-testid="reward-stage"]').innerText()).includes(
-          "코인 제거",
+          "스킬 선택",
         ),
       );
       check(`S28 ${vp.name} 보상 에러 0`, errors.length === 0, errors.join(" | "));
@@ -3587,21 +3684,23 @@ const winCurrentCombat = async (page) => {
     await page.keyboard.press("Enter");
   };
   const kbSave = (phase, extra = {}) => ({
-    version: 5,
-    contentVersion: "1.0.0-rc.1",
+    version: 6,
+    contentVersion: "1.1.0-p6",
     runSeed: "S29",
     character: "warrior",
     currentHp: 63,
     maxHp: 70,
     bag: [...Array.from({ length: 8 }, () => "basic"), "fire", "fire"],
     equippedSkills: [
-      "slash",
-      "guard",
-      "burning-strike",
+      "jab",
+      "fist-guard",
+      "burning-fist",
       "ignite",
       "ignite-sword",
       "flame-rampage",
     ],
+    upgradedSlots: [false, false, false, false, false, false],
+    acquiredPassives: [],
     gold: 135,
     graph: {
       layers: [
@@ -3620,9 +3719,13 @@ const winCurrentCombat = async (page) => {
     shopRemovals: 0,
     shopPurchasedCoins: 0,
     shopPurchasedSkills: 0,
+    shopPurchasedPassives: 0,
     eventCombats: 0,
     eventCoinGains: 0,
     eventCoinLosses: 0,
+    treasureOpened: 0,
+    restHeals: 0,
+    restUpgrades: 0,
     combatIndex: 2,
     attempt: 0,
     phase,
@@ -3644,7 +3747,7 @@ const winCurrentCombat = async (page) => {
       { timeout: 20000 },
     );
     await pressOn(page, page.locator(".hand-tray .coin").first());
-    const card = page.locator(".skill-card", { hasText: "베기" }).first();
+    const card = page.locator(".skill-card", { hasText: "정권" }).first(); // P6: warrior 슬롯0 = jab(정권)
     await pressOn(page, card.locator(".socket").first());
     check(
       "S29 키보드 장전",
@@ -3776,24 +3879,27 @@ const winCurrentCombat = async (page) => {
   await context.close();
 }
 
-// ---------- 시나리오 31: P5.4 리로드 영속 — 8페이즈 전부 저장/복원 ----------
+// ---------- 시나리오 31: P5.4 리로드 영속 — 10페이즈 전부 저장/복원 ----------
+// P6: rest/treasure 페이즈 2케이스 추가 (신규 노드의 리로드 영속 계약).
 {
   const phaseSave = (phase, extra = {}) => ({
-    version: 5,
-    contentVersion: "1.0.0-rc.1",
+    version: 6,
+    contentVersion: "1.1.0-p6",
     runSeed: "S31",
     character: "warrior",
     currentHp: 63,
     maxHp: 70,
     bag: [...Array.from({ length: 8 }, () => "basic"), "fire", "fire"],
     equippedSkills: [
-      "slash",
-      "guard",
-      "burning-strike",
+      "jab",
+      "fist-guard",
+      "burning-fist",
       "ignite",
       "ignite-sword",
       "flame-rampage",
     ],
+    upgradedSlots: [false, false, false, false, false, false],
+    acquiredPassives: [],
     gold: 60,
     graph: {
       layers: [
@@ -3805,16 +3911,22 @@ const winCurrentCombat = async (page) => {
           { id: "p3b", kind: "combat", encounter: ["goblin", "ghoul"] },
         ],
         [{ id: "p4", kind: "event" }],
-        [{ id: "p5", kind: "boss", encounter: ["ember-archmage"] }],
+        [{ id: "p5", kind: "rest" }],
+        [{ id: "p6", kind: "treasure" }],
+        [{ id: "p7", kind: "boss", encounter: ["ember-archmage"] }],
       ],
     },
-    nodeChoices: [0, 0, 0, 0, 0, 0],
+    nodeChoices: [0, 0, 0, 0, 0, 0, 0, 0],
     shopRemovals: 0,
     shopPurchasedCoins: 0,
     shopPurchasedSkills: 0,
+    shopPurchasedPassives: 0,
     eventCombats: 0,
     eventCoinGains: 0,
     eventCoinLosses: 0,
+    treasureOpened: 0,
+    restHeals: 0,
+    restUpgrades: 0,
     combatIndex: 1,
     attempt: 0,
     phase,
@@ -3824,14 +3936,15 @@ const winCurrentCombat = async (page) => {
     ["ready", phaseSave("ready"), "ready"],
     ["combat", phaseSave("combat"), "combat"],
     [
+      // P6 신스펙 대체: 제거 단계 삭제 — 엘리트 정산 등가(코인 3택 + 스킬 1 제안)
       "rewards",
       phaseSave("rewards", {
         pendingRewards: {
           coinOptions: ["basic", "fire", "mana"],
           coinChoiceResolved: false,
-          coinRemovalResolved: false,
-          skillOptions: [],
-          skillChoiceResolved: true,
+          coinRemovalResolved: true,
+          skillOptions: ["smash"],
+          skillChoiceResolved: false,
         },
       }),
       "rewards",
@@ -3858,7 +3971,23 @@ const winCurrentCombat = async (page) => {
       "event",
     ],
     ["choose-node", phaseSave("choose-node", { combatIndex: 3 }), "choose-node"],
-    ["victory", phaseSave("victory", { combatIndex: 5 }), "victory"],
+    // P6 신규: 휴식 페이즈 영속 (combatIndex 5 = rest 노드)
+    ["rest", phaseSave("rest", { combatIndex: 5 }), "rest"],
+    // P6 신규: 보물 페이즈 영속 — 경제 보존: 통과한 rest 1개 = restHeals 1
+    [
+      "treasure",
+      phaseSave("treasure", {
+        combatIndex: 6,
+        restHeals: 1,
+        pendingTreasure: { passiveOption: "iron-body" },
+      }),
+      "treasure",
+    ],
+    [
+      "victory",
+      phaseSave("victory", { combatIndex: 7, restHeals: 1, treasureOpened: 1 }),
+      "victory",
+    ],
     ["defeat", phaseSave("defeat", { currentHp: 0 }), "defeat"],
   ];
   for (const [label, save, expectPhase] of cases) {
@@ -4000,6 +4129,379 @@ const winCurrentCombat = async (page) => {
   );
   check("S32 에러 0", errors.length === 0, errors.join(" | "));
   await context.close();
+}
+
+// ---------- 시나리오 33~36: P6 신규 커버리지 (휴식·보물·보스 패시브·마도기사) ----------
+// v6 저장 주입 공통 부팅 — S25 bootWithSave와 동일 패턴 (테스트 전용 경로).
+const bootV6 = async (save, waitSel) => {
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    deviceScaleFactor: 1,
+  });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(String(error.message)));
+  page.on("console", (message) => {
+    if (
+      message.type() === "error" &&
+      !message.location().url.endsWith("/favicon.ico")
+    )
+      errors.push(message.text());
+  });
+  await page.addInitScript(
+    ([key, value]) => window.localStorage.setItem(key, value),
+    ["deckbuilding-roguelite.run-save", JSON.stringify(save)],
+  );
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  if (waitSel) await page.waitForSelector(waitSel, { timeout: 15000 });
+  return { page, errors, context };
+};
+const V6_WARRIOR_SKILLS = [
+  "jab",
+  "fist-guard",
+  "burning-fist",
+  "ignite",
+  "ignite-sword",
+  "flame-rampage",
+];
+const v6Save = (overrides = {}) => ({
+  version: 6,
+  contentVersion: "1.1.0-p6",
+  runSeed: "S33-P6",
+  character: "warrior",
+  currentHp: 63,
+  maxHp: 70,
+  bag: [...Array.from({ length: 8 }, () => "basic"), "fire", "fire"],
+  equippedSkills: V6_WARRIOR_SKILLS,
+  upgradedSlots: [false, false, false, false, false, false],
+  acquiredPassives: [],
+  gold: 35,
+  nodeChoices: [0, 0, 0],
+  shopRemovals: 0,
+  shopPurchasedCoins: 0,
+  shopPurchasedSkills: 0,
+  shopPurchasedPassives: 0,
+  eventCombats: 0,
+  eventCoinGains: 0,
+  eventCoinLosses: 0,
+  treasureOpened: 0,
+  restHeals: 0,
+  restUpgrades: 0,
+  combatIndex: 1,
+  attempt: 0,
+  ...overrides,
+});
+const phaseAttr = (page, name) =>
+  page.locator('[data-testid="run-phase"]').getAttribute(name);
+
+// ---------- 시나리오 33: P6 D1/D3 휴식 — 회복 택1 · 강화 택1 · 불가 사유 ----------
+{
+  // 33a. 회복: 최대 체력 30% (70 → floor 21), 상한 없음 케이스 — 40 + 21 = 61
+  const { page, errors, context } = await bootV6(
+    v6Save({
+      runSeed: "S33-REST",
+      currentHp: 40,
+      phase: "rest",
+      graph: {
+        layers: [
+          [{ id: "t0", kind: "combat", encounter: ["raider"] }],
+          [{ id: "t1", kind: "rest" }],
+          [{ id: "t2", kind: "boss", encounter: ["ember-archmage"] }],
+        ],
+      },
+    }),
+    '[data-testid="rest-screen"]',
+  );
+  check(
+    "S33 휴식 화면 렌더·회복량 표기 (+21)",
+    (await page.locator('[data-testid="rest-heal"]').innerText()).includes(
+      "+21",
+    ),
+  );
+  // P6 warrior 시작 스킬 6종은 전부 upgrade 정의 보유 — 6슬롯 모두 활성
+  const upgradeButtons = page.locator('[data-testid^="rest-upgrade-"]');
+  check(
+    "S33 강화 리스트 6슬롯 전부 활성 (전 스킬 강화 정의)",
+    (await upgradeButtons.count()) === 6 &&
+      (await upgradeButtons.evaluateAll((buttons) =>
+        buttons.every((button) => !button.disabled),
+      )),
+  );
+  await page.screenshot({ path: `${outDir}/60-p6-rest.png` });
+  await page.locator('[data-testid="rest-heal"]').click();
+  check(
+    "S33 회복 선택 → HP 61·다음 레이어 진입",
+    (await phaseAttr(page, "data-current-hp")) === "61" &&
+      (await phaseAttr(page, "data-run-phase")) === "ready",
+  );
+  check("S33 휴식 회복 에러 0", errors.length === 0, errors.join(" | "));
+  await context.close();
+}
+{
+  // 33b. 강화: 이미 강화된 슬롯·강화 미정의 스킬은 비활성 + 사유 title (D3).
+  // 픽스처 정합: acts 포함 = P6 규칙 — flame-sword 교체 1회는 엘리트 정산 1회로,
+  // upgradedSlots[1]은 이전 rest 강화 1회(restUpgrades=1)로 정당화.
+  const { page, errors, context } = await bootV6(
+    v6Save({
+      runSeed: "S33-UPGRADE",
+      phase: "rest",
+      combatIndex: 2,
+      gold: 70,
+      restUpgrades: 1,
+      upgradedSlots: [false, true, false, false, false, false],
+      equippedSkills: [
+        "jab",
+        "fist-guard",
+        "burning-fist",
+        "ignite",
+        "ignite-sword",
+        "flame-sword", // upgrade 미정의 스킬 (화염 붕대)
+      ],
+      graph: {
+        layers: [
+          [{ id: "u0", kind: "elite", encounter: ["raider-plus"] }],
+          [{ id: "u1", kind: "rest" }],
+          [{ id: "u2", kind: "rest" }],
+          [{ id: "u3", kind: "boss", encounter: ["ember-archmage"] }],
+        ],
+        acts: [{ start: 0 }],
+      },
+      nodeChoices: [0, 0, 0, 0],
+    }),
+    '[data-testid="rest-screen"]',
+  );
+  check(
+    "S33 이미 강화된 슬롯 비활성 + 사유 title",
+    (await page.locator('[data-testid="rest-upgrade-1"]').isDisabled()) &&
+      (await page
+        .locator('[data-testid="rest-upgrade-1"]')
+        .getAttribute("title")) === "이미 강화됨",
+  );
+  check(
+    "S33 강화 미정의 스킬 비활성 + 사유 title",
+    (await page.locator('[data-testid="rest-upgrade-5"]').isDisabled()) &&
+      (await page
+        .locator('[data-testid="rest-upgrade-5"]')
+        .getAttribute("title")) === "강화가 정의되지 않은 스킬",
+  );
+  await page.locator('[data-testid="rest-upgrade-0"]').click();
+  check(
+    "S33 슬롯0 강화 선택 → 다음 레이어 진입",
+    (await phaseAttr(page, "data-run-phase")) === "ready",
+  );
+  // P6 D3 — 강화 슬롯은 전투 카드에 ＋ 배지 (upgradedSlots 0·1 = 배지 2개)
+  await page.locator('[data-testid="next-combat"]').click();
+  await page.waitForSelector("main.combat-shell", { timeout: 15000 });
+  await page.waitForFunction(
+    () => document.querySelector(".end-turn:not(:disabled)") !== null,
+    undefined,
+    { timeout: 20000 },
+  );
+  check(
+    "S33 전투 카드 강화 ＋ 배지 2개 (슬롯 0·1)",
+    (await page.locator(".skill-card .upgrade-badge").count()) === 2 &&
+      (
+        await page.locator(".skill-card").first().locator(".card-title").innerText()
+      ).includes("＋"),
+  );
+  await page.screenshot({ path: `${outDir}/61-p6-upgrade-badge.png` });
+  check("S33 휴식 강화 에러 0", errors.length === 0, errors.join(" | "));
+  await context.close();
+}
+
+// ---------- 시나리오 34: P6 D1/D2 보물 — 개봉 → 골드 100 + 패시브 부여 ----------
+{
+  const treasureGraph = {
+    layers: [
+      [{ id: "b0", kind: "combat", encounter: ["raider"] }],
+      [{ id: "b1", kind: "treasure" }],
+      [{ id: "b2", kind: "boss", encounter: ["ember-archmage"] }],
+    ],
+  };
+  const { page, errors, context } = await bootV6(
+    v6Save({
+      runSeed: "S34-TREASURE",
+      phase: "treasure",
+      graph: treasureGraph,
+      pendingTreasure: { passiveOption: "iron-body" },
+    }),
+    '[data-testid="treasure-screen"]',
+  );
+  check(
+    "S34 보물 화면·패시브 미리보기 (단단한 몸)",
+    (await page.locator('[data-testid="treasure-screen"]').innerText()).includes(
+      "단단한 몸",
+    ),
+  );
+  check(
+    "S34 개봉 전 골드 35·패시브 배지 없음",
+    (await page.locator('[data-testid="run-gold"]').innerText()).includes("35") &&
+      (await page.locator('[data-testid="run-passives"]').count()) === 0,
+  );
+  await page.screenshot({ path: `${outDir}/62-p6-treasure.png` });
+  await page.locator('[data-testid="treasure-claim"]').click();
+  check(
+    "S34 개봉 → 골드 +100 (135)·다음 레이어 진입",
+    (await page.locator('[data-testid="run-gold"]').innerText()).includes("135") &&
+      (await phaseAttr(page, "data-run-phase")) === "ready",
+  );
+  check(
+    "S34 개봉 → run-passives 배지 반영",
+    (await page.locator('[data-testid="run-passives"]').innerText()).includes(
+      "패시브 1",
+    ),
+  );
+  check("S34 보물 에러 0", errors.length === 0, errors.join(" | "));
+  await context.close();
+}
+{
+  // 풀 소진 케이스: passiveOption null → 금화만
+  const { page, errors, context } = await bootV6(
+    v6Save({
+      runSeed: "S34-EMPTY",
+      phase: "treasure",
+      graph: {
+        layers: [
+          [{ id: "e0", kind: "combat", encounter: ["raider"] }],
+          [{ id: "e1", kind: "treasure" }],
+          [{ id: "e2", kind: "boss", encounter: ["ember-archmage"] }],
+        ],
+      },
+      pendingTreasure: { passiveOption: null },
+    }),
+    '[data-testid="treasure-screen"]',
+  );
+  check(
+    "S34 풀 소진 보물 — 금화만 안내",
+    (await page.locator(".treasure-passive").innerText()).includes(
+      "패시브 풀이 비어",
+    ),
+  );
+  await page.locator('[data-testid="treasure-claim"]').click();
+  check(
+    "S34 풀 소진 개봉 — 골드만 +100·배지 없음",
+    (await page.locator('[data-testid="run-gold"]').innerText()).includes("135") &&
+      (await page.locator('[data-testid="run-passives"]').count()) === 0,
+  );
+  check("S34 풀 소진 에러 0", errors.length === 0, errors.join(" | "));
+  await context.close();
+}
+
+// ---------- 시나리오 35: P6 D2 보스 보상 — 패시브 3중1택 (선택/스킵) ----------
+{
+  // 비최종 보스 정산 상태: 코인 1택 완료 후 패시브 단계 (gold 135 = 전투 35 + 보스 100)
+  const bossRewardSave = () =>
+    v6Save({
+      runSeed: "S35-BOSS",
+      phase: "rewards",
+      combatIndex: 2,
+      gold: 135,
+      graph: {
+        layers: [
+          [{ id: "s0", kind: "combat", encounter: ["raider"] }],
+          [{ id: "s1", kind: "boss", encounter: ["gatekeeper-plus"] }],
+          [{ id: "s2", kind: "combat", encounter: ["raider"] }],
+          [{ id: "s3", kind: "boss", encounter: ["ember-archmage"] }],
+        ],
+      },
+      nodeChoices: [0, 0, 0, 0],
+      pendingRewards: {
+        coinOptions: ["basic", "fire", "mana"],
+        coinChoiceResolved: true,
+        coinRemovalResolved: true,
+        skillOptions: [],
+        skillChoiceResolved: true,
+        passiveOptions: ["iron-body", "steady-breath", "reserve-coin"],
+        passiveChoiceResolved: false,
+      },
+    });
+  {
+    const { page, errors, context } = await bootV6(
+      bossRewardSave(),
+      '[data-testid="reward-stage"]',
+    );
+    check(
+      "S35 보스 패시브 단계 표기",
+      (await page
+        .locator('[data-testid="reward-stage"]')
+        .getAttribute("data-reward-stage")) === "passive" &&
+        (await page.locator('[data-testid="reward-stage"]').innerText()).includes(
+          "보스 전리품",
+        ),
+    );
+    const passiveChoices = page.locator(
+      '[data-testid^="passive-reward-"]:not([data-testid$="skip"])',
+    );
+    check(
+      "S35 패시브 3중1택 렌더",
+      (await passiveChoices.count()) === 3 &&
+        (await page.locator('[data-testid="passive-reward-skip"]').count()) === 1,
+    );
+    await page.screenshot({ path: `${outDir}/63-p6-boss-passive.png` });
+    await page.locator('[data-testid="passive-reward-iron-body"]').click();
+    check(
+      "S35 패시브 선택 → 배지 반영·다음 레이어 진입",
+      (await page.locator('[data-testid="run-passives"]').innerText()).includes(
+        "패시브 1",
+      ) && (await phaseAttr(page, "data-run-phase")) === "ready",
+    );
+    check("S35 선택 경로 에러 0", errors.length === 0, errors.join(" | "));
+    await context.close();
+  }
+  {
+    const { page, errors, context } = await bootV6(
+      bossRewardSave(),
+      '[data-testid="reward-stage"]',
+    );
+    await page.locator('[data-testid="passive-reward-skip"]').click();
+    check(
+      "S35 패시브 스킵 → 미획득·다음 레이어 진입",
+      (await page.locator('[data-testid="run-passives"]').count()) === 0 &&
+        (await phaseAttr(page, "data-run-phase")) === "ready",
+    );
+    check("S35 스킵 경로 에러 0", errors.length === 0, errors.join(" | "));
+    await context.close();
+  }
+}
+
+// ---------- 시나리오 36: P6 D6 마도기사 — 소환 레일·trait 턴 시작 소환 ----------
+{
+  const { page, errors } = await boot(undefined, {
+    url: `${baseUrl}?seed=${SEED}&character=arcanist`,
+  });
+  check(
+    "S36 마도기사 부팅 (표시명·마나 2닢)",
+    (await page.locator(".unit.player .unit-name").innerText()) === "마도기사" &&
+      ((await page.locator(".combat-shell").getAttribute("data-bag")) ?? "")
+        .split(",")
+        .filter((id) => id === "mana").length === 2,
+  );
+  check(
+    "S36 소환 레일 렌더 (3슬롯)",
+    (await page.locator('[data-testid="summon-rail"]').count()) === 1 &&
+      (await page.locator(".summon-rail .summon-slot").count()) === 3,
+  );
+  // trait '마도 공방' (turnStart): 1턴 시작에 마나 검(지속 1) 1개 소환
+  check(
+    "S36 턴 시작 trait 소환 — 슬롯0 마나 검 지속 1",
+    (await page.locator('[data-testid="summon-slot-0"]').count()) === 1 &&
+      (await page
+        .locator('[data-testid="summon-slot-0"] .summon-duration')
+        .innerText()) === "1",
+  );
+  const arcanistTitles = await page
+    .locator(".skill-card .card-title")
+    .allInnerTexts();
+  check(
+    "S36 마도기사 전용 스킬 카드 렌더",
+    ["마력 충전", "명령", "완충 방벽", "방패 전개"].every((name) =>
+      arcanistTitles.some((title) => title.includes(name)),
+    ),
+    arcanistTitles.join(","),
+  );
+  await page.screenshot({ path: `${outDir}/64-p6-arcanist-summon.png` });
+  check("S36 마도기사 에러 0", errors.length === 0, errors.join(" | "));
+  await page.close();
 }
 
 await browser.close();

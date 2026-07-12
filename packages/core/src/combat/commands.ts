@@ -1,12 +1,12 @@
 import type { ContentDb, FlipSkillDef } from '../content-types';
 import { effectiveElements } from '../content-types';
-import type { CoinUid, SlotId } from '../ids';
+import type { CoinUid, EquipmentDefId, SlotId } from '../ids';
 import type { CombatState } from './state';
 
 export type Command =
   | { type: 'placeCoin'; coin: CoinUid; slot: SlotId }
   | { type: 'unplaceCoin'; coin: CoinUid }
-  | { type: 'useFlipSkill'; slot: SlotId; target?: number; chosen?: CoinUid[] }
+  | { type: 'useFlipSkill'; slot: SlotId; target?: number; chosen?: CoinUid[]; chosenEquipment?: EquipmentDefId; chosenSummon?: number }
   | { type: 'useConsumeSkill'; slot: SlotId; coins: CoinUid[]; target?: number }
   | { type: 'endTurn' };
 
@@ -21,6 +21,17 @@ const isBasicCoinInHand = (state: CombatState, db: ContentDb, coin: CoinUid): bo
   const def = instance === undefined ? undefined : db.coins[String(instance.defId)];
   return instance !== undefined && def?.element === null && instance.grants.length === 0;
 };
+
+// P6 D6 — 소환 선택 스킬 술어 (UI/심이 선택 필요 여부를 중복 구현하지 않도록 공개)
+export const skillRequiresEquipmentChoice = (skill: FlipSkillDef): boolean =>
+  [...skill.base, ...(skill.heads?.effects ?? []), ...(skill.tails?.effects ?? [])].some(
+    (effect) => effect.kind === 'summonEquipment' && effect.equipment === 'chosen'
+  );
+
+export const skillCommandsSummon = (skill: FlipSkillDef): boolean =>
+  [...skill.base, ...(skill.heads?.effects ?? []), ...(skill.tails?.effects ?? [])].some(
+    (effect) => effect.kind === 'commandChosenSummon'
+  );
 
 const hasChooseBasicInHand = (skill: FlipSkillDef): boolean =>
   [...skill.base, ...(skill.heads?.effects ?? []), ...(skill.tails?.effects ?? [])].some(
@@ -51,9 +62,19 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
 
     if (skill.type === 'flip') {
       if ((state.zones.placed[slot]?.length ?? 0) === skill.cost) {
+        // P6 D6 — 명령 스킬은 소환이 있어야 합법 (없으면 낭비 사용 제안 안 함)
+        if (skillCommandsSummon(skill) && state.summons.length === 0) continue;
         const chosen = hasChooseBasicInHand(skill) ? suggestedChosen(state, db) : undefined;
+        const chosenEquipment = skillRequiresEquipmentChoice(skill)
+          ? (Object.keys(db.equipment ?? {}).sort()[0] as EquipmentDefId | undefined)
+          : undefined;
+        const chosenSummon = skillCommandsSummon(skill) ? state.summons[0]?.uid : undefined;
         for (const target of targetsForSkill(state, skill.targetType)) {
-          commands.push(chosen === undefined ? { type: 'useFlipSkill', slot, target } : { type: 'useFlipSkill', slot, target, chosen });
+          const command: Command = { type: 'useFlipSkill', slot, target };
+          if (chosen !== undefined) command.chosen = chosen;
+          if (chosenEquipment !== undefined) command.chosenEquipment = chosenEquipment;
+          if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
+          commands.push(command);
         }
       }
       if ((state.zones.placed[slot]?.length ?? 0) < skill.cost) {

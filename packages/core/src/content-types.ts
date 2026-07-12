@@ -1,6 +1,8 @@
 import type {
   CharacterId,
   CoinDefId,
+  PassiveId,
+  EquipmentDefId,
   CoinUid,
   Element,
   EventDefId,
@@ -27,6 +29,34 @@ export interface CoinInstance {
   grants: Element[];
 }
 
+// P6 D3 — 스킬 강화: 스킬당 정의 1종, 런당 1회 (휴식 노드에서 적용).
+// patch는 선언적 — deriveUpgradedSkill이 순수 적용. 요구 5종 그대로.
+export type SkillUpgradePatch =
+  | { kind: 'baseAmount'; index: number; delta: number }
+  | { kind: 'addFaceEffect'; face: 'heads' | 'tails'; effect: EffectAtom }
+  | { kind: 'addCoinOnUse'; coin: CoinDefId; zone: 'draw' | 'discard' | 'hand'; count: number }
+  | { kind: 'costDelta'; delta: number }
+  | { kind: 'removeOncePerCombat' };
+
+export interface SkillUpgradeDef {
+  name: string;
+  description: string;
+  patch: SkillUpgradePatch;
+}
+
+// P6 D2 — 획득 패시브 (시작 고유 특성 trait와 데이터·표시 모두 구분).
+// 중복 획득 불가, 출처: 보물(부여)/보스(3중1택)/상점(구매).
+export interface PassiveDef {
+  id: PassiveId;
+  name: string;
+  description: string;
+  exclusiveTo?: CharacterId;
+  element: Element | null;
+  hook: 'combatStart' | 'turnStart';
+  effects: EffectAtom[];
+  price: number;
+}
+
 export interface SkillDefBase {
   id: SkillId;
   name: string;
@@ -34,6 +64,7 @@ export interface SkillDefBase {
   tags: readonly ('attack' | 'defense' | 'utility' | 'ultimate')[];
   targetType: 'single-enemy' | 'all-enemies' | 'self' | 'none';
   oncePerCombat?: boolean;
+  upgrade?: SkillUpgradeDef;
   // 캐릭터 전용 스킬 — 공용 보상 풀에서 제외되고 해당 캐릭터 런에서만 노출된다.
   // 숨김 프로퍼티 같은 암묵 경계 대신 명시적 데이터로 풀 경계를 표현한다 (P3.2 결정).
   exclusiveTo?: CharacterId;
@@ -68,7 +99,28 @@ export type EffectAtom =
   | { kind: 'applyStatus'; status: StatusId; stacks: number; to: 'target' | 'self' }
   | { kind: 'addCoin'; coin: CoinDefId; zone: 'draw' | 'discard' | 'hand'; count: number }
   | { kind: 'grantElement'; element: Element; scope: 'allBasicInHand' | 'chooseBasicInHand' }
-  | { kind: 'addTurnTrigger'; trigger: TurnTriggerDef };
+  | { kind: 'addTurnTrigger'; trigger: TurnTriggerDef }
+  // P6 D5 — 화상 수치 참조 폭발 (스택 비소비, 격투가 화상 빌드 마무리)
+  | { kind: 'damagePerTargetBurn'; amountPerStack: number }
+  // P6 D5 — 과열: 손의 화염 코인 수 참조 (지속 상태 없는 직관 계산식)
+  | { kind: 'damagePerFireInHand'; amountPerCoin: number }
+  // P6 D6 — 마력 갑주: 현재 방어 참조 피해 (방어 비소모)
+  | { kind: 'damagePerBlock'; amountPerBlock: number }
+  // P6 D6 — 소환: equipment 'chosen'은 커맨드의 chosenEquipment(기본: 정렬 첫 장비)
+  | { kind: 'summonEquipment'; equipment: EquipmentDefId | 'chosen'; duration: number; durationPerTails?: number }
+  // P6 D6 — 명령: 선택 소환 즉시 행동(+뒷면당 효과 보너스), 지속 -1
+  | { kind: 'commandChosenSummon'; bonusPerTails: number }
+  // P6 D6 — 마나 병기: 아군 소환 전체 강화 (이번 전투 지속)
+  | { kind: 'empowerSummons'; amount: number };
+
+// P6 D6 — 소환 장비: 플레이어 턴 종료 시 자동 행동, 지속 1 감소, 0이면 소멸.
+// 적 공격 대상에서 제외된다 (유닛이 아니라 슬롯 위젯).
+export interface EquipmentDef {
+  id: EquipmentDefId;
+  name: string;
+  description: string;
+  action: { kind: 'strike'; damage: number } | { kind: 'ward'; block: number };
+}
 
 export interface CharacterDef {
   id: CharacterId;
@@ -159,6 +211,8 @@ export interface ContentDb {
   enemies: Record<string, EnemyDef>;
   characters: Record<string, CharacterDef>;
   events?: Record<string, EventDef>;
+  passives?: Record<string, PassiveDef>;
+  equipment?: Record<string, EquipmentDef>;
   validate: () => string[];
 }
 
@@ -312,6 +366,77 @@ const validateEnemyPassives = (enemies: Record<string, EnemyDef>): string[] => {
   return errors;
 };
 
+// P6 D2 — 획득 패시브 검증: 플레이어 훅에서 안전한 원자만 (applyStatus/damage류는
+// runHook의 player 타깃 문맥에서 자기 오염이 되므로 콘텐츠 단계에서 차단).
+const PASSIVE_SAFE_ATOMS = new Set(['block', 'addCoin', 'addTurnTrigger', 'empowerSummons', 'summonEquipment', 'grantElement']);
+
+const validatePassives = (passives: Record<string, PassiveDef> | undefined): string[] => {
+  const errors: string[] = [];
+  for (const passive of Object.values(passives ?? {})) {
+    const owner = `passive ${String(passive.id)}`;
+    if (passive.description.length === 0) errors.push(`${owner}: description is required`);
+    if (!Number.isInteger(passive.price) || passive.price <= 0)
+      errors.push(`${owner}: price must be a positive integer`);
+    if (passive.effects.length === 0) errors.push(`${owner}: must declare at least one effect`);
+    for (const atom of passive.effects) {
+      if (!PASSIVE_SAFE_ATOMS.has(atom.kind))
+        errors.push(`${owner}: atom ${atom.kind} is not allowed in a passive`);
+      if (atom.kind === 'summonEquipment' && atom.equipment === 'chosen')
+        errors.push(`${owner}: passive summon must name a concrete equipment`);
+    }
+    validateTriggerAtoms(passive.effects, owner, false, errors);
+  }
+  return errors;
+};
+
+const validateEquipment = (equipment: Record<string, EquipmentDef> | undefined): string[] => {
+  const errors: string[] = [];
+  for (const def of Object.values(equipment ?? {})) {
+    const owner = `equipment ${String(def.id)}`;
+    const amount = def.action.kind === 'strike' ? def.action.damage : def.action.block;
+    if (!Number.isInteger(amount) || amount <= 0)
+      errors.push(`${owner}: action amount must be a positive integer`);
+  }
+  return errors;
+};
+
+// P6 D3 — 강화 patch 정합: baseAmount는 amount 보유 원자만, addFaceEffect는 flip만,
+// costDelta는 비용 규칙 유지, removeOncePerCombat는 oncePerCombat 스킬만.
+const validateSkillUpgrades = (skills: readonly SkillDef[]): string[] => {
+  const errors: string[] = [];
+  for (const skill of skills) {
+    const upgrade = skill.upgrade;
+    if (upgrade === undefined) continue;
+    const owner = `skill ${String(skill.id)} upgrade`;
+    const patch = upgrade.patch;
+    if (patch.kind === 'baseAmount') {
+      const atoms = skill.type === 'flip' ? skill.base : skill.effects;
+      const atom = atoms[patch.index];
+      if (atom === undefined || !('amount' in atom))
+        errors.push(`${owner}: baseAmount index ${patch.index} has no amount`);
+      if (!Number.isInteger(patch.delta) || patch.delta === 0)
+        errors.push(`${owner}: baseAmount delta must be a nonzero integer`);
+    } else if (patch.kind === 'addFaceEffect') {
+      if (skill.type !== 'flip') errors.push(`${owner}: addFaceEffect requires a flip skill`);
+    } else if (patch.kind === 'costDelta') {
+      if (skill.type === 'flip') {
+        const cost = skill.cost + patch.delta;
+        if (cost < 1 || cost > 5) errors.push(`${owner}: costDelta leaves cost out of range`);
+      } else {
+        const count = skill.consume.count + patch.delta;
+        if (count < 1 || count > 3) errors.push(`${owner}: costDelta leaves consume count out of range`);
+      }
+    } else if (patch.kind === 'removeOncePerCombat') {
+      if (skill.oncePerCombat !== true)
+        errors.push(`${owner}: removeOncePerCombat requires a oncePerCombat skill`);
+    } else if (patch.kind === 'addCoinOnUse') {
+      if (!Number.isInteger(patch.count) || patch.count <= 0)
+        errors.push(`${owner}: addCoinOnUse count must be a positive integer`);
+    }
+  }
+  return errors;
+};
+
 export const validateContentDb = (db: Omit<ContentDb, 'validate'>): string[] => [
   ...duplicateIds(Object.values(db.coins), 'coin'),
   ...duplicateIds(Object.values(db.skills), 'skill'),
@@ -322,7 +447,10 @@ export const validateContentDb = (db: Omit<ContentDb, 'validate'>): string[] => 
   ...validateTurnTriggers(db),
   ...validateAttackTargets(Object.values(db.skills)),
   ...validateEvents(Object.values(db.events ?? {}), db.enemies),
-  ...validateEnemyPassives(db.enemies)
+  ...validateEnemyPassives(db.enemies),
+  ...validatePassives(db.passives),
+  ...validateEquipment(db.equipment),
+  ...validateSkillUpgrades(Object.values(db.skills))
 ];
 
 export const effectiveElements = (coin: CoinInstance, db: ContentDb): Element[] => {

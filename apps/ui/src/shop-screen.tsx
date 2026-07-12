@@ -17,6 +17,13 @@ export interface ShopSkillOffer {
   card: ReactNode;
 }
 
+export interface ShopPassiveOffer {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+}
+
 export interface ShopBagCoin {
   bagIndex: number;
   name: string;
@@ -28,12 +35,14 @@ interface ShopScreenProps {
   removalPrice: number;
   coinOffers: ShopCoinOffer[];
   skillOffers: ShopSkillOffer[];
+  passiveOffers: ShopPassiveOffer[];
   bagCoins: ShopBagCoin[];
   rejection: string | null;
   /** 구매 확정 대기 중인 스킬 옵션 인덱스 — 교체 슬롯 선택 단계 (6슬롯 고정 규칙) */
   skillPick: number | null;
   slotLabels: string[];
   onBuyCoin: (index: number) => void;
+  onBuyPassive: (index: number) => void;
   onPickSkill: (index: number) => void;
   onConfirmSkill: (slot: number) => void;
   onCancelSkill: () => void;
@@ -46,11 +55,13 @@ export const ShopScreen = ({
   removalPrice,
   coinOffers,
   skillOffers,
+  passiveOffers,
   bagCoins,
   rejection,
   skillPick,
   slotLabels,
   onBuyCoin,
+  onBuyPassive,
   onPickSkill,
   onConfirmSkill,
   onCancelSkill,
@@ -88,6 +99,29 @@ export const ShopScreen = ({
           </li>
         ))}
         {coinOffers.length === 0 ? <li className="shop-empty">매진</li> : null}
+      </ul>
+    </div>
+    <div className="shop-section" data-testid="shop-passives">
+      <h3>패시브 구매</h3>
+      <ul>
+        {passiveOffers.map((offer, index) => (
+          <li key={`${offer.id}-${index}`}>
+            <button
+              className="shop-item shop-passive"
+              data-testid={`shop-passive-${offer.id}`}
+              disabled={gold < offer.price}
+              onClick={() => onBuyPassive(index)}
+              type="button"
+            >
+              <span aria-hidden="true" className="passive-mark">★</span>
+              <span className="shop-item-name">
+                {offer.name} <small>{offer.description}</small>
+              </span>
+              <strong className="shop-price">{offer.price}G</strong>
+            </button>
+          </li>
+        ))}
+        {passiveOffers.length === 0 ? <li className="shop-empty">매진</li> : null}
       </ul>
     </div>
     <div className="shop-section" data-testid="shop-skills">

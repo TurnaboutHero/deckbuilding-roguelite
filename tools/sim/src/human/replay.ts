@@ -2,15 +2,20 @@ import { CONTENT_VERSION, contentDb } from "@game/content";
 import {
   acceptEvent,
   buyShopCoin,
+  buyShopPassive,
   buyShopRemoval,
   buyShopSkill,
   chooseCoinReward,
+  choosePassiveReward,
   chooseRunNode,
   chooseSkillReward,
+  claimTreasure,
   createRun,
   declineEvent,
   leaveShop,
   resolveCoinRemoval,
+  restHeal,
+  restUpgrade,
   settleRunCombat,
   skipSkillReward,
   startRunCombat,
@@ -22,6 +27,7 @@ import type {
   Command,
   CombatEvent,
   CombatState,
+  PassiveId,
   RunState,
   SkillId,
   SlotId,
@@ -242,6 +248,7 @@ const resolveReward = (
       input,
       reward.choice as SkillId,
       reward.replacedSlot,
+      contentDb,
     );
   } catch (error) {
     mismatches.push(`${path} resolution failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -308,13 +315,27 @@ export function replayHumanRun(trace: HumanRunTraceLike): {
 
   // P4.3: 비전투 노드(갈림길·상점)는 기록된 path 사실로만 통과한다 — 사실이 없거나
   // 코어가 거부하면 mismatch (리플레이가 임의 정책으로 경로를 지어내지 않는다).
+  // P6 v3: rest/treasure 노드와 보상 패시브 단계도 같은 원칙으로 path 사실만 소비한다.
   let pathCursor = 0;
+  // 보상 패시브 단계(보스 정산)만 미해결로 남은 rewards 페이즈인가
+  const pendingPassiveStage = (state: RunState): boolean =>
+    state.phase === "rewards" &&
+    state.pendingRewards !== undefined &&
+    state.pendingRewards.coinChoiceResolved &&
+    state.pendingRewards.coinRemovalResolved &&
+    state.pendingRewards.skillChoiceResolved &&
+    state.pendingRewards.passiveChoiceResolved === false;
   const traversePath = (current: RunState): RunState => {
     let next = current;
     let guard = 0;
     while (
-      (next.phase === "choose-node" || next.phase === "shop" || next.phase === "event") &&
-      guard < 128
+      (next.phase === "choose-node" ||
+        next.phase === "shop" ||
+        next.phase === "event" ||
+        next.phase === "rest" ||
+        next.phase === "treasure" ||
+        pendingPassiveStage(next)) &&
+      guard < 256
     ) {
       guard += 1;
       const layer = next.combatIndex;
@@ -348,6 +369,8 @@ export function replayHumanRun(trace: HumanRunTraceLike): {
               next = buyShopSkill(next, action.option, contentDb, action.slot);
             else if (action.kind === "remove-coin")
               next = buyShopRemoval(next, action.bagIndex, contentDb);
+            else if (action.kind === "buy-passive")
+              next = buyShopPassive(next, action.option, contentDb);
             else {
               next = leaveShop(next, contentDb);
               left = true;
@@ -358,7 +381,7 @@ export function replayHumanRun(trace: HumanRunTraceLike): {
             mismatches.push(`shop fact for layer ${layer} never leaves`);
             return next;
           }
-        } else {
+        } else if (next.phase === "event") {
           if (fact.type !== "event") {
             mismatches.push(`path fact for layer ${layer} is not event`);
             return next;
@@ -367,6 +390,48 @@ export function replayHumanRun(trace: HumanRunTraceLike): {
             fact.action === "accept"
               ? acceptEvent(next, contentDb, fact.choice)
               : declineEvent(next, contentDb);
+        } else if (next.phase === "rest") {
+          // P6 D1 — 휴식: 회복 또는 슬롯 강화, 기록된 선택만 재생 (발명된 정책 금지)
+          if (fact.type !== "rest") {
+            mismatches.push(`path fact for layer ${layer} is not rest`);
+            return next;
+          }
+          if (fact.choice === "heal") {
+            next = restHeal(next, contentDb);
+          } else {
+            if (fact.slot === undefined) {
+              mismatches.push(`rest fact for layer ${layer} upgrades without a slot`);
+              return next;
+            }
+            next = restUpgrade(next, fact.slot, contentDb);
+          }
+        } else if (next.phase === "treasure") {
+          // P6 D1 — 보물: 결정론 롤과 기록된 passiveId가 일치해야 한다
+          if (fact.type !== "treasure") {
+            mismatches.push(`path fact for layer ${layer} is not treasure`);
+            return next;
+          }
+          const rolled = next.pendingTreasure?.passiveOption ?? null;
+          const before = mismatches.length;
+          pushMismatch(
+            mismatches,
+            `treasure ${layer}.passiveId`,
+            fact.passiveId,
+            rolled === null ? null : String(rolled),
+          );
+          if (mismatches.length > before) return next;
+          next = claimTreasure(next, contentDb);
+        } else {
+          // P6 D2 — 보스 보상 패시브 3중1택 (null = 스킵)
+          if (fact.type !== "passive-reward") {
+            mismatches.push(`path fact for layer ${layer} is not passive-reward`);
+            return next;
+          }
+          next = choosePassiveReward(
+            next,
+            fact.passiveId === null ? null : (fact.passiveId as PassiveId),
+            contentDb,
+          );
         }
       } catch (error) {
         mismatches.push(

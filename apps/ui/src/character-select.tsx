@@ -41,14 +41,29 @@ const describeEffect = (effect: EffectAtom, db: ContentDb): string => {
     return `${target}에게 ${effect.status} ${effect.stacks}`;
   }
   if (effect.kind === "addTurnTrigger") return "턴 트리거 추가";
-  return `기본 코인을 ${elementKo(effect.element)} 코인으로 취급`;
+  if (effect.kind === "grantElement")
+    return `기본 코인을 ${elementKo(effect.element)} 코인으로 취급`;
+  // P6 — 소환/참조 원자 (마도기사 등)
+  if (effect.kind === "summonEquipment") {
+    const name =
+      effect.equipment === "chosen"
+        ? "선택 장비"
+        : (db.equipment ?? {})[String(effect.equipment)]?.name ?? "장비";
+    return `${name} 소환 (지속 ${effect.duration})`;
+  }
+  if (effect.kind === "empowerSummons") return `소환 장비 강화 +${effect.amount}`;
+  if (effect.kind === "commandChosenSummon") return "소환 장비에 즉시 행동 명령";
+  if (effect.kind === "damagePerTargetBurn") return `화상 1당 피해 ${effect.amountPerStack}`;
+  if (effect.kind === "damagePerFireInHand") return `손의 화염 코인 1개당 피해 ${effect.amountPerCoin}`;
+  if (effect.kind === "damagePerBlock") return `현재 방어 1당 피해 ${effect.amountPerBlock}`;
+  return "효과";
 };
 
 export const characterTraitDescription = (
   character: CharacterDef,
   db: ContentDb,
 ): string => {
-  const timing = character.trait.hook === "combatStart" ? "전투 시작 시 " : "";
+  const timing = character.trait.hook === "combatStart" ? "전투 시작 시 " : "매 턴 시작 시 ";
   return character.trait.effects.length === 0
     ? "효과 없음"
     : timing +

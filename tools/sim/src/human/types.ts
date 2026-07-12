@@ -58,19 +58,32 @@ export interface HumanRewardFact {
   replacedSlot?: number;
 }
 
+// P6 스키마 v3 (가산): v2 필수 사실 불변 + rest/treasure/passive-reward 경로 사실과
+// buy-passive 상점 행동을 추가. v1 거부 유지. v2 로그는 rest/treasure가 없는 레거시
+// 그래프에서만 재생 가능하므로 그대로 수용한다 (새 그래프에서는 사실 부재 = mismatch).
+export const HUMAN_RUN_SCHEMA_VERSION = 3 as const;
+export type HumanRunSchemaVersion = 2 | typeof HUMAN_RUN_SCHEMA_VERSION;
+
 export type HumanShopActionFact =
   | { kind: "buy-coin"; option: number }
   | { kind: "buy-skill"; option: number; slot: number }
   | { kind: "remove-coin"; bagIndex: number }
+  // v3: 상점 패시브 구매 (P6 D2)
+  | { kind: "buy-passive"; option: number }
   | { kind: "leave" };
 
 export type HumanPathFact =
   | { layer: number; type: "choose-node"; choice: number }
   | { layer: number; type: "shop"; actions: HumanShopActionFact[] }
-  | { layer: number; type: "event"; action: "accept" | "decline"; choice?: number };
+  | { layer: number; type: "event"; action: "accept" | "decline"; choice?: number }
+  // v3 가산 사실 (P6 D1/D2) — layer는 사실 기록 시점의 run.combatIndex:
+  // rest/treasure는 해당 노드 레이어, passive-reward는 보상 정산 후 진입할 다음 레이어.
+  | { layer: number; type: "rest"; choice: "heal" | "upgrade"; slot?: number }
+  | { layer: number; type: "treasure"; passiveId: string | null }
+  | { layer: number; type: "passive-reward"; passiveId: string | null };
 
 export interface HumanRunTraceLike {
-  schemaVersion: 2;
+  schemaVersion: HumanRunSchemaVersion;
   source: "human";
   runSeed: string;
   contentVersion: string;

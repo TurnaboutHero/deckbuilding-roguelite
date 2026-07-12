@@ -16,7 +16,7 @@ import { legalCommands, step } from "@game/core";
 // "아직 안 굴린 동전"이므로 반드시 지운다. 이 리듀서가 그 수명주기의 단일 창구다.
 export type CoinFaces = Record<number, Face>;
 
-export type RewardViewStage = "coin" | "removal" | "skill" | "fallback-coin";
+export type RewardViewStage = "coin" | "removal" | "skill" | "fallback-coin" | "passive";
 
 // 보상 순서 자체는 코어가 PendingRewards 플래그로 결정한다. UI는 그 상태를
 // 어느 패널로 보여줄지만 투영하며, 보상 적용이나 완료 판정은 코어 API에 맡긴다.
@@ -24,7 +24,11 @@ export const rewardViewStage = (run: RunState): RewardViewStage | null => {
   const pending = run.phase === "rewards" ? run.pendingRewards : undefined;
   if (pending === undefined) return null;
   if (!pending.coinChoiceResolved) {
-    return pending.coinRemovalResolved &&
+    // v5 소진 풀 '대체 코인'은 레거시(acts 부재) 그래프에서만 존재한다 — P6 일반
+    // 보상(코인 단독, removal 상시 true)이 같은 플래그 형상이라 그래프로 구분
+    // (하네스 감사 결함: 오분류 시 대체 보상 오문구 노출).
+    return run.graph.acts === undefined &&
+      pending.coinRemovalResolved &&
       pending.skillChoiceResolved &&
       pending.skillOptions.length === 0
       ? "fallback-coin"
@@ -32,6 +36,8 @@ export const rewardViewStage = (run: RunState): RewardViewStage | null => {
   }
   if (!pending.coinRemovalResolved) return "removal";
   if (!pending.skillChoiceResolved) return "skill";
+  // P6 — 보스 보상 패시브 3중1택
+  if (pending.passiveChoiceResolved === false) return "passive";
   return null;
 };
 

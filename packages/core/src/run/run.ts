@@ -1,17 +1,19 @@
-import type { ContentDb, EventDef } from "../content-types";
-import type { CharacterId, CoinDefId, Element, EventDefId, SkillId } from "../ids";
+import type { ContentDb, EventDef, SkillDef } from "../content-types";
+import type { CharacterId, CoinDefId, Element, EventDefId, PassiveId, SkillId } from "../ids";
 import { derive, rngFrom, seedFromString } from "../rng";
 import type { Rng } from "../rng";
 import { createCombat } from "../combat/reducer";
 import type { CombatState } from "../combat/state";
-import { generateRunGraph, nodeGoldReward } from "./graph";
+import { actOfLayer, enemyScaleForAct, generateRunGraph, nodeGoldReward } from "./graph";
 import { RUN_SAVE_VERSION } from "./types";
 import type {
   CreateRunConfig,
   EquippedSkills,
   PendingRewards,
   PendingShop,
+  PendingTreasure,
   RunState,
+  UpgradedSlots,
 } from "./types";
 
 const rewardCoin = (value: string): CoinDefId => value as CoinDefId;
@@ -163,6 +165,18 @@ const assertRunGraphInvariants = (run: RunState): void => {
     throw new Error("event coin gains must be a non-negative integer");
   if (!Number.isInteger(run.eventCoinLosses) || run.eventCoinLosses < 0)
     throw new Error("event coin losses must be a non-negative integer");
+  if (!Number.isInteger(run.shopPurchasedPassives) || run.shopPurchasedPassives < 0)
+    throw new Error("shop purchased passives must be a non-negative integer");
+  if (!Number.isInteger(run.treasureOpened) || run.treasureOpened < 0)
+    throw new Error("treasure opened must be a non-negative integer");
+  if (!Number.isInteger(run.restHeals) || run.restHeals < 0)
+    throw new Error("rest heals must be a non-negative integer");
+  if (!Number.isInteger(run.restUpgrades) || run.restUpgrades < 0)
+    throw new Error("rest upgrades must be a non-negative integer");
+  if (run.upgradedSlots.length !== run.equippedSkills.length)
+    throw new Error("upgraded slots must cover every skill slot");
+  if (new Set(run.acquiredPassives.map(String)).size !== run.acquiredPassives.length)
+    throw new Error("acquired passives must be unique");
   if (run.phase === "shop" && run.pendingShop === undefined)
     throw new Error("shop phase requires pending shop");
   if (run.phase !== "shop" && run.pendingShop !== undefined)
@@ -171,6 +185,10 @@ const assertRunGraphInvariants = (run: RunState): void => {
     throw new Error("event phase requires pending event");
   if (run.phase !== "event" && run.pendingEvent !== undefined)
     throw new Error("pending event is only valid in event phase");
+  if (run.phase === "treasure" && run.pendingTreasure === undefined)
+    throw new Error("treasure phase requires pending treasure");
+  if (run.phase !== "treasure" && run.pendingTreasure !== undefined)
+    throw new Error("pending treasure is only valid in treasure phase");
   const node = run.graph.layers[run.combatIndex]?.[run.nodeChoices[run.combatIndex] ?? 0];
   if (
     run.pendingEventCombat !== undefined &&
@@ -237,6 +255,83 @@ const requireCoinRemovalResolved = (pending: PendingRewards): void => {
 
 const isCombatNodeKind = (kind: ReturnType<typeof currentRunNode>["kind"]): boolean =>
   kind === "combat" || kind === "elite" || kind === "boss";
+
+// ── P6 D2 — 획득 패시브 풀 술어 (스킬 보상과 동형: 전용 경계+미보유+결정론 정렬) ──
+export const eligiblePassiveIds = (
+  passives: ContentDb["passives"],
+  character: CharacterId,
+  acquired: readonly PassiveId[],
+): PassiveId[] => {
+  const owned = new Set(acquired.map(String));
+  return Object.values(passives ?? {})
+    .filter(
+      (passive) =>
+        passive.exclusiveTo === undefined ||
+        String(passive.exclusiveTo) === String(character),
+    )
+    .map((passive) => passive.id)
+    .filter((passive) => !owned.has(String(passive)))
+    .sort((left, right) => String(left).localeCompare(String(right)));
+};
+
+// 보물/보스 패시브 롤 — passive-<layer> 신규 스트림 (결정론, 완료 상태 재구성 가능)
+const rolledPassivesFor = (
+  run: RunState,
+  layerIndex: number,
+  count: number,
+  db: ContentDb,
+): PassiveId[] => {
+  const rng = rngFrom(derive(seedFromString(run.runSeed), `passive-${layerIndex}`));
+  return rng
+    .shuffle(eligiblePassiveIds(db.passives, run.character, run.acquiredPassives))
+    .slice(0, count);
+};
+
+// ── P6 D3 — 스킬 강화 순수 적용 ──
+export const deriveUpgradedSkill = (def: SkillDef): SkillDef => {
+  const upgrade = def.upgrade;
+  if (upgrade === undefined) return def;
+  const patch = upgrade.patch;
+  if (patch.kind === "removeOncePerCombat") return { ...def, oncePerCombat: undefined };
+  if (patch.kind === "costDelta") {
+    if (def.type === "flip") return { ...def, cost: def.cost + patch.delta };
+    return { ...def, consume: { ...def.consume, count: def.consume.count + patch.delta } };
+  }
+  if (patch.kind === "addCoinOnUse") {
+    const atom = { kind: "addCoin" as const, coin: patch.coin, zone: patch.zone, count: patch.count };
+    if (def.type === "flip") return { ...def, base: [...def.base, atom] };
+    return { ...def, effects: [...def.effects, atom] };
+  }
+  if (patch.kind === "addFaceEffect") {
+    if (def.type !== "flip") throw new Error(`upgrade addFaceEffect requires a flip skill: ${String(def.id)}`);
+    const face = def[patch.face];
+    return {
+      ...def,
+      [patch.face]: face === undefined
+        ? { mode: "any" as const, effects: [patch.effect] }
+        : { ...face, effects: [...face.effects, patch.effect] },
+    };
+  }
+  // baseAmount — 지정 인덱스 원자의 수치 가산 (콘텐츠 검증이 인덱스/원자 종류를 보증)
+  const atoms = def.type === "flip" ? [...def.base] : [...def.effects];
+  const atom = atoms[patch.index];
+  if (atom === undefined || !("amount" in atom))
+    throw new Error(`upgrade baseAmount target is invalid: ${String(def.id)}`);
+  atoms[patch.index] = { ...atom, amount: atom.amount + patch.delta } as typeof atom;
+  return def.type === "flip" ? { ...def, base: atoms } : { ...def, effects: atoms };
+};
+
+// 강화 오버레이 db — 강화된 슬롯의 스킬만 같은 ID로 파생 def 치환 (전투/리플레이 무변경)
+export const upgradedContentDb = (run: RunState, db: ContentDb): ContentDb => {
+  if (!run.upgradedSlots.some(Boolean)) return db;
+  const skills = { ...db.skills };
+  run.equippedSkills.forEach((skillId, slotIndex) => {
+    if (!run.upgradedSlots[slotIndex]) return;
+    const def = db.skills[String(skillId)];
+    if (def !== undefined) skills[String(skillId)] = deriveUpgradedSkill(def);
+  });
+  return { ...db, skills };
+};
 
 const signatureCoin = (db: ContentDb, character: CharacterId): CoinDefId => {
   const signature = signatureElement(db, character);
@@ -312,6 +407,9 @@ const pendingShopFor = (
     .shuffle(eligible.filter((skill) => !fixedSet.has(String(skill))))
     .slice(0, 1);
   const skillOptions = [...fixedSkills, ...randomSkill];
+  const passiveOptions = rng
+    .shuffle(eligiblePassiveIds(db.passives, run.character, run.acquiredPassives))
+    .slice(0, 1);
   return {
     coinOptions,
     coinPrices: coinOptions.map((coin) =>
@@ -319,6 +417,10 @@ const pendingShopFor = (
     ),
     skillOptions,
     skillPrices: skillOptions.map((skill) => skillShopPrice(db, skill)),
+    passiveOptions,
+    passivePrices: passiveOptions.map(
+      (passive) => (db.passives ?? {})[String(passive)]!.price,
+    ),
   };
 };
 
@@ -357,8 +459,8 @@ const enterCurrentLayer = (run: RunState, db?: ContentDb): RunState => {
   assertRunGraphInvariants(run);
   const layer = run.graph.layers[run.combatIndex];
   if (layer === undefined) throw new Error("combat index is out of range");
-  if (layer.length === 2 && run.phase !== "choose-node") {
-    return { ...run, phase: "choose-node", pendingRewards: undefined, pendingShop: undefined, pendingEvent: undefined, pendingEventCombat: undefined };
+  if (layer.length >= 2 && run.phase !== "choose-node") {
+    return { ...run, phase: "choose-node", pendingRewards: undefined, pendingShop: undefined, pendingEvent: undefined, pendingEventCombat: undefined, pendingTreasure: undefined };
   }
   const node = currentRunNode(run);
   if (isCombatNodeKind(node.kind)) {
@@ -388,7 +490,18 @@ const enterCurrentLayer = (run: RunState, db?: ContentDb): RunState => {
       pendingShop: undefined,
       pendingEvent: pendingEventFor(run, run.combatIndex, db),
       pendingEventCombat: undefined,
+      pendingTreasure: undefined,
     };
+  }
+  if (node.kind === "rest") {
+    return { ...run, phase: "rest", pendingRewards: undefined, pendingShop: undefined, pendingEvent: undefined, pendingEventCombat: undefined, pendingTreasure: undefined };
+  }
+  if (node.kind === "treasure") {
+    if (db === undefined)
+      throw new Error("content db is required to enter a treasure node");
+    const rolled = rolledPassivesFor(run, run.combatIndex, 1, db);
+    const pendingTreasure: PendingTreasure = { passiveOption: rolled[0] ?? null };
+    return { ...run, phase: "treasure", pendingRewards: undefined, pendingShop: undefined, pendingEvent: undefined, pendingEventCombat: undefined, pendingTreasure };
   }
   throw new Error("unknown run node kind");
 };
@@ -401,7 +514,8 @@ const finishRewardsIfComplete = (
   if (
     pendingRewards.coinChoiceResolved &&
     pendingRewards.coinRemovalResolved &&
-    pendingRewards.skillChoiceResolved
+    pendingRewards.skillChoiceResolved &&
+    (pendingRewards.passiveChoiceResolved ?? true)
   ) {
     // db 유무와 무관하게 레이어 진입 규칙은 동일하다 — db는 상점 진입에서만 필수.
     return enterCurrentLayer({ ...run, pendingRewards: undefined }, db);
@@ -428,10 +542,14 @@ export const rewardEligibleSkillIds = (
     .sort((left, right) => String(left).localeCompare(String(right)));
 };
 
+// P6 D1 보상 신스펙: 일반=동전 3중1택 / 엘리트=+스킬 1 제안 / 보스(비최종)=+패시브 3중1택.
+// 제거 단계는 상점 전용으로 회귀 — coinRemovalResolved는 저장 호환용으로 true 고정.
 const pendingRewardsFor = (
   run: RunState,
   completedCombatIndex: number,
   db: ContentDb,
+  nodeKind: "combat" | "elite" | "boss",
+  settledLayerIndex: number,
 ): PendingRewards => {
   for (const coin of REWARD_COIN_IDS) {
     if (db.coins[String(coin)] === undefined)
@@ -447,21 +565,23 @@ const pendingRewardsFor = (
     coinPoolSize <= 3
       ? rewardRng.shuffle(REWARD_COIN_IDS)
       : weightedCoinOptions(db, run.character, run.bag, rewardRng);
-  const unowned = rewardEligibleSkillIds(
-    db.skills,
-    run.character,
-    run.equippedSkills,
-  );
-  const offeredSkills =
-    completedCombatIndex >= 2 ? rewardRng.shuffle(unowned).slice(0, 2) : [];
-  const skillOptions = offeredSkills.length === 2 ? offeredSkills : [];
+  const skillOptions =
+    nodeKind === "elite"
+      ? rewardRng
+          .shuffle(rewardEligibleSkillIds(db.skills, run.character, run.equippedSkills))
+          .slice(0, 1)
+      : [];
+  const passiveOptions =
+    nodeKind === "boss" ? rolledPassivesFor(run, settledLayerIndex, 3, db) : [];
 
   return {
     coinOptions,
     coinChoiceResolved: false,
-    coinRemovalResolved: false,
+    coinRemovalResolved: true,
     skillOptions,
-    skillChoiceResolved: completedCombatIndex < 2 || skillOptions.length === 0,
+    skillChoiceResolved: skillOptions.length === 0,
+    passiveOptions,
+    passiveChoiceResolved: passiveOptions.length === 0,
   };
 };
 
@@ -490,15 +610,21 @@ export const createRun = (config: CreateRunConfig, db: ContentDb): RunState => {
     maxHp: character.maxHp,
     bag: [...character.startingBag],
     equippedSkills: equippedSkills(character.startingSkills),
+    upgradedSlots: [false, false, false, false, false, false] as UpgradedSlots,
+    acquiredPassives: [],
     gold: 0,
     graph,
     nodeChoices: Array.from({ length: graph.layers.length }, () => 0),
     shopRemovals: 0,
     shopPurchasedCoins: 0,
     shopPurchasedSkills: 0,
+    shopPurchasedPassives: 0,
     eventCombats: 0,
     eventCoinGains: 0,
     eventCoinLosses: 0,
+    treasureOpened: 0,
+    restHeals: 0,
+    restUpgrades: 0,
     combatIndex: 0,
     attempt: 0,
     phase: "ready",
@@ -555,8 +681,10 @@ export const startRunCombat = (
       maxHp: run.maxHp,
       combatIndex: run.combatIndex,
       attempt: run.attempt,
+      passives: run.acquiredPassives,
+      enemyScale: enemyScaleForAct(actOfLayer(run.graph, run.combatIndex)),
     },
-    db,
+    upgradedContentDb(run, db),
     run.runSeed,
   );
   return {
@@ -604,9 +732,13 @@ export const settleRunCombat = (
     };
   }
 
+  // P6 D1 보충 — 막 보스 클리어 시 전체 회복: 30방문 런의 누적 소모 산술이
+  // 회복 예산(휴식 30%×3)을 결정론적으로 초과해(스모크 0/500, 사람도 불가) 막당
+  // HP 예산을 P4 검증 대역(70+휴식)으로 회귀시키는 최소 구조 결정. balance-provisional.
+  const actHealedHp = node.kind === "boss" ? run.maxHp : currentHp;
   const nextRun = {
     ...run,
-    currentHp,
+    currentHp: actHealedHp,
     gold,
     eventCombats,
     combatIndex: run.combatIndex + 1,
@@ -617,6 +749,8 @@ export const settleRunCombat = (
     nextRun,
     completedCombatCount(nextRun),
     db,
+    node.kind === "event" ? "combat" : (node.kind as "combat" | "elite" | "boss"),
+    run.combatIndex,
   );
   const rareSkillOptions =
     combatEvent !== undefined
@@ -643,6 +777,7 @@ export const settleRunCombat = (
             skillChoiceResolved: rareSkillOptions.length !== combatEvent!.rareSkillOptions,
           },
     pendingShop: undefined,
+    pendingTreasure: undefined,
   };
 };
 
@@ -853,7 +988,7 @@ export const chooseRunNode = (
   if (run.phase !== "choose-node") throw new Error("run is not choosing a node");
   assertRunGraphInvariants(run);
   const layer = run.graph.layers[run.combatIndex];
-  if (layer === undefined || layer.length !== 2) {
+  if (layer === undefined || layer.length < 2) {
     throw new Error("current layer is not a branch");
   }
   if (!Number.isInteger(choice) || choice < 0 || choice >= layer.length) {
@@ -862,6 +997,145 @@ export const chooseRunNode = (
   const nodeChoices = [...run.nodeChoices];
   nodeChoices[run.combatIndex] = choice;
   return enterCurrentLayer({ ...run, nodeChoices }, db);
+};
+
+const advanceToNextLayer = (run: RunState, db: ContentDb): RunState => {
+  if (run.combatIndex >= run.graph.layers.length - 1)
+    throw new Error("cannot advance past the final layer");
+  return enterCurrentLayer(
+    {
+      ...run,
+      combatIndex: run.combatIndex + 1,
+      attempt: 0,
+      phase: "ready",
+      pendingRewards: undefined,
+      pendingShop: undefined,
+      pendingEvent: undefined,
+      pendingTreasure: undefined,
+    },
+    db,
+  );
+};
+
+const requireRestNode = (run: RunState): void => {
+  if (run.phase !== "rest") throw new Error("run is not resting");
+  assertRunGraphInvariants(run);
+  if (currentRunNode(run).kind !== "rest")
+    throw new Error("current node is not a rest node");
+};
+
+// P6 D1 — 휴식: 최대 체력 30% 회복(내림, 상한 maxHp) 또는 스킬 강화 택1
+export const restHeal = (run: RunState, db: ContentDb): RunState => {
+  requireRestNode(run);
+  const healed = Math.min(
+    run.maxHp,
+    run.currentHp + Math.floor(run.maxHp * 0.3),
+  );
+  return advanceToNextLayer(
+    { ...run, currentHp: healed, restHeals: run.restHeals + 1 },
+    db,
+  );
+};
+
+export const restUpgrade = (
+  run: RunState,
+  slotIndex: number,
+  db: ContentDb,
+): RunState => {
+  requireRestNode(run);
+  if (
+    !Number.isInteger(slotIndex) ||
+    slotIndex < 0 ||
+    slotIndex >= run.equippedSkills.length
+  ) {
+    throw new Error("upgrade slot is out of range");
+  }
+  if (run.upgradedSlots[slotIndex]) throw new Error("slot is already upgraded");
+  const def = db.skills[String(run.equippedSkills[slotIndex])];
+  if (def === undefined) throw new Error("unknown equipped skill");
+  if (def.upgrade === undefined) throw new Error("skill has no upgrade");
+  const upgradedSlots = [...run.upgradedSlots] as UpgradedSlots;
+  upgradedSlots[slotIndex] = true;
+  return advanceToNextLayer(
+    { ...run, upgradedSlots, restUpgrades: run.restUpgrades + 1 },
+    db,
+  );
+};
+
+// P6 D1 — 보물: 금화 100 + 패시브 1 부여 (풀 소진 시 금화만)
+export const claimTreasure = (run: RunState, db: ContentDb): RunState => {
+  if (run.phase !== "treasure" || run.pendingTreasure === undefined)
+    throw new Error("run is not opening a treasure");
+  assertRunGraphInvariants(run);
+  const node = currentRunNode(run);
+  if (node.kind !== "treasure") throw new Error("current node is not a treasure node");
+  const passive = run.pendingTreasure.passiveOption;
+  if (passive !== null && (db.passives ?? {})[String(passive)] === undefined)
+    throw new Error("treasure passive is unknown");
+  return advanceToNextLayer(
+    {
+      ...run,
+      gold: run.gold + nodeGoldReward("treasure"),
+      acquiredPassives:
+        passive === null ? run.acquiredPassives : [...run.acquiredPassives, passive],
+      treasureOpened: run.treasureOpened + 1,
+      pendingTreasure: undefined,
+    },
+    db,
+  );
+};
+
+// P6 D2 — 보스 보상 패시브 3중1택 (null = 스킵)
+export const choosePassiveReward = (
+  run: RunState,
+  passive: PassiveId | null,
+  db?: ContentDb,
+): RunState => {
+  const pending = requirePendingRewards(run);
+  requireCoinChoiceResolved(pending);
+  if (pending.passiveChoiceResolved ?? true)
+    throw new Error("passive reward is already resolved");
+  if (passive !== null && !(pending.passiveOptions ?? []).includes(passive))
+    throw new Error("passive is not an offered reward");
+  const acquiredPassives =
+    passive === null ? run.acquiredPassives : [...run.acquiredPassives, passive];
+  return finishRewardsIfComplete(
+    { ...run, acquiredPassives },
+    { ...pending, passiveChoiceResolved: true },
+    db,
+  );
+};
+
+// P6 D2 — 상점 패시브 구매
+export const buyShopPassive = (
+  run: RunState,
+  optionIndex: number,
+  db: ContentDb,
+): RunState => {
+  const pending = requirePendingShop(run);
+  assertRunGraphInvariants(run);
+  const options = pending.passiveOptions ?? [];
+  const prices = pending.passivePrices ?? [];
+  if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= options.length)
+    throw new Error("shop passive option is out of range");
+  const passive = options[optionIndex]!;
+  const def = (db.passives ?? {})[String(passive)];
+  if (def === undefined) throw new Error("unknown shop passive");
+  if (prices[optionIndex] !== def.price) throw new Error("shop passive price is invalid");
+  if (run.gold < def.price) throw new Error("not enough gold");
+  if (run.acquiredPassives.map(String).includes(String(passive)))
+    throw new Error("passive is already acquired");
+  return {
+    ...run,
+    gold: run.gold - def.price,
+    acquiredPassives: [...run.acquiredPassives, passive],
+    shopPurchasedPassives: run.shopPurchasedPassives + 1,
+    pendingShop: {
+      ...pending,
+      passiveOptions: options.filter((_, index) => index !== optionIndex),
+      passivePrices: prices.filter((_, index) => index !== optionIndex),
+    },
+  };
 };
 
 export const buyShopCoin = (

@@ -6,8 +6,12 @@ import {
   buyShopRemoval,
   buyShopSkill,
   chooseCoinReward,
+  choosePassiveReward,
   chooseSkillReward,
   chooseRunNode,
+  claimTreasure,
+  restHeal,
+  restUpgrade,
   createRun,
   declineEvent,
   leaveShop,
@@ -56,6 +60,19 @@ const character = (value: string): CharacterId => value as CharacterId;
 // 봇은 셋업을 먼저 발동해 이후 공격으로 트리거 가치를 실현한다 (P3.3 의도 문서화).
 // 셋업은 usedThisTurn/소비 코인으로 자연 한정되어 무진행 루프를 만들지 않는다 — 가드가 이를 보증.
 const ATTACK_SKILL_PRIORITY = [
+  // P6 — 화염 격투가/마도기사 스킬 (봇이 신규 시작 셋을 모르면 warrior/arcanist
+  // 밸런스 심이 무의미해진다 — P6 정합, 정책 확장이지 수치 변경 아님)
+  "burnout-blow",
+  "overheat-vent",
+  "burning-fist",
+  "fire-flurry",
+  "overheat-strike",
+  "flame-hook",
+  "jab",
+  "aegis-pulse",
+  "mirror-plate",
+  "bulwark-charge",
+  "arcane-command",
   "overload",
   "winters-grasp",
   "aegis-surge",
@@ -81,6 +98,9 @@ const ATTACK_SKILL_PRIORITY = [
   "furnace",
 ];
 const REWARD_SKILL_PRIORITY = [
+  "burnout-blow",
+  "fire-flurry",
+  "overheat-strike",
   "smash",
   "fire-infusion",
   "furnace",
@@ -482,13 +502,21 @@ const resolveRewardsDetailed = (
   const coinOptions = (input.pendingRewards?.coinOptions ?? []).map(String);
   const selectedCoin = preferredCoinReward(input, buildPolicy);
   let run = chooseCoinReward(input, selectedCoin, contentDb);
-  const removableBasic = run.bag.findIndex(
-    (coin) => String(coin) === "basic",
-  );
-  const removedBagIndex = removableBasic >= 0 ? removableBasic : null;
-  const removedCoin =
-    removedBagIndex === null ? null : String(run.bag[removedBagIndex]);
-  run = resolveCoinRemoval(run, removedBagIndex, contentDb);
+  // P6 신스펙: 제거 단계는 레거시(v5 흐름) 보상에만 존재 — 페이즈/미해결 가드
+  let removedBagIndex: number | null = null;
+  let removedCoin: string | null = null;
+  if (
+    run.phase === "rewards" &&
+    run.pendingRewards?.coinRemovalResolved === false
+  ) {
+    const removableBasic = run.bag.findIndex(
+      (coin) => String(coin) === "basic",
+    );
+    removedBagIndex = removableBasic >= 0 ? removableBasic : null;
+    removedCoin =
+      removedBagIndex === null ? null : String(run.bag[removedBagIndex]);
+    run = resolveCoinRemoval(run, removedBagIndex, contentDb);
+  }
 
   let fallbackCoinOptions: string[] = [];
   let selectedFallbackCoin: CoinDefId | null = null;
@@ -522,6 +550,15 @@ const resolveRewardsDetailed = (
     }
   }
 
+  // P6 보스 보상 패시브 — 심 정책: 첫 제안 선택(결정론). balance-provisional.
+  if (
+    run.phase === "rewards" &&
+    run.pendingRewards?.passiveChoiceResolved === false
+  ) {
+    const offered = run.pendingRewards.passiveOptions ?? [];
+    run = choosePassiveReward(run, offered[0] ?? null, contentDb);
+  }
+
   return {
     run,
     trace: {
@@ -551,6 +588,7 @@ export const resolveBuildPolicy = (
 ): M6BuildPolicyConfig => {
   if (buildPolicyId !== undefined) return M6_BUILD_POLICIES[buildPolicyId];
   if (characterId === "guardian") return M6_BUILD_POLICIES["mana-build"];
+  if (characterId === "arcanist") return M6_BUILD_POLICIES["mana-build"];
   if (characterId === "sorcerer") return M6_BUILD_POLICIES["lightning-build"];
   if (characterId === "frost-knight") return M6_BUILD_POLICIES["frost-build"];
   const variant = M6_VARIANTS[variantId];
@@ -594,6 +632,18 @@ const chooseNode = (
           ? combatIndex
           : 0;
   return chooseRunNode(run, choice, contentDb);
+};
+
+const resolveRest = (run: RunState): RunState => {
+  if (run.currentHp < run.maxHp * 0.6) return restHeal(run, contentDb);
+  const upgradable = run.equippedSkills.findIndex(
+    (skill, index) =>
+      !run.upgradedSlots[index] &&
+      contentDb.skills[String(skill)]?.upgrade !== undefined,
+  );
+  return upgradable >= 0
+    ? restUpgrade(run, upgradable, contentDb)
+    : restHeal(run, contentDb);
 };
 
 const firstBasicCoinIndex = (run: RunState): number =>
@@ -731,6 +781,16 @@ export const simulateRun = (
       run = resolveEvent(run, nodePolicyId);
       continue;
     }
+    // P6 D1 — 심 휴식 정책 (결정론): HP 60% 미만이면 회복, 아니면 첫 강화 가능
+    // 슬롯 강화, 강화 소진 시 회복. 봇이 강화를 안 쓰면 밸런스 측정이 오염된다.
+    if (run.phase === "rest") {
+      run = resolveRest(run);
+      continue;
+    }
+    if (run.phase === "treasure") {
+      run = claimTreasure(run, contentDb);
+      continue;
+    }
     if (run.phase !== "ready")
       throw new Error(`unexpected run phase before combat: ${run.phase}`);
     const startingBag = run.bag.map(String);
@@ -839,6 +899,14 @@ export const simulatePolicyRun = (
       }
       if (run.phase === "event") {
         run = resolveEvent(run, nodePolicyId);
+        continue;
+      }
+      if (run.phase === "rest") {
+        run = resolveRest(run);
+        continue;
+      }
+      if (run.phase === "treasure") {
+        run = claimTreasure(run, contentDb);
         continue;
       }
       if (run.phase !== "ready") {

@@ -9,6 +9,8 @@ export type EventDefId = Brand<string, 'EventDefId'>;
 export type SlotId = Brand<number, 'SlotId'>;
 export type CharacterId = Brand<string, 'CharacterId'>;
 export type EnemyDefId = Brand<string, 'EnemyDefId'>;
+export type PassiveId = Brand<string, 'PassiveId'>;
+export type EquipmentDefId = Brand<string, 'EquipmentDefId'>;
 
 export type Face = 'heads' | 'tails';
 export type Element = 'fire' | 'mana' | 'frost' | 'lightning' | 'blood';

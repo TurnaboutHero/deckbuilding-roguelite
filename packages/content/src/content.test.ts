@@ -15,7 +15,7 @@ import type {
 import { createCombat, rewardEligibleSkillIds, statusStacks, statusTurns, step, validateContentDb } from '@game/core';
 import { describe, expect, it } from 'vitest';
 
-import { characters, coins, CONTENT_VERSION, LEGACY_CONTENT_VERSIONS, contentDb, enemies, events, skills } from './index';
+import { characters, coins, CONTENT_VERSION, LEGACY_CONTENT_VERSIONS, contentDb, enemies, equipment, events, passives, skills } from './index';
 
 const skillId = (value: string) => value as SkillId;
 const coinId = (value: string) => value as CoinDefId;
@@ -310,8 +310,9 @@ describe('P3.3 heart-of-flame interaction regressions', () => {
 
 describe('P3.4 shipped content goldens', () => {
   it('ships the p4 version with legacy allowlist', () => {
-    // P4.2 선행: 몬스터 6종 가산 출하에 결속된 버전 승격 (감사 정책 — 콘텐츠 변경 없는 버전 유지 금지)
-    expect(CONTENT_VERSION).toBe('1.0.0-rc.1');
+    // P6: 3막 런 구조·패시브·강화·신규 캐릭터 출하에 결속된 버전 승격, 직전 rc.1은 레거시로
+    expect(CONTENT_VERSION).toBe('1.1.0-p6');
+    expect(LEGACY_CONTENT_VERSIONS).toContain('1.0.0-rc.1');
     expect(LEGACY_CONTENT_VERSIONS).toContain('0.9.0-p4');
     expect(LEGACY_CONTENT_VERSIONS).toContain('0.8.0-p3.4');
     expect(LEGACY_CONTENT_VERSIONS).toContain('0.7.0-p3.3');
@@ -366,8 +367,8 @@ describe('P3.4 shipped content goldens', () => {
 describe('P4.2 provisional enemy content goldens', () => {
   // D2 조우 대역 산술: goblin+ghoul=70(2마리 65~85), thief+goblin=58(감전 압박 예외),
   // ghoul+goblin+slime=86(3마리 75~95). 수치 전부 balance-provisional.
-  it('pins the six enemy definitions at 1.0.0-rc.1 — 0.10.0-p4.4 대비 구울 패시브(썩은 육체)가 유일한 변경', () => {
-    expect(CONTENT_VERSION).toBe('1.0.0-rc.1');
+  it('pins the six enemy definitions — P6(1.1.0-p6)에서도 적 6종 정의는 불변이어야 한다', () => {
+    expect(CONTENT_VERSION).toBe('1.1.0-p6');
     expect(enemies.goblin).toEqual({
       id: 'goblin',
       name: '고블린',
@@ -607,7 +608,7 @@ describe('P3.4 hostile coin proc rerouting regressions', () => {
 
 describe('M5 shipped content', () => {
   it('ships the M5 version, mana coin, skills, and fixed enemy definitions', () => {
-    expect(CONTENT_VERSION).toBe('1.0.0-rc.1');
+    expect(CONTENT_VERSION).toBe('1.1.0-p6');
     expect(coins.mana).toEqual({
       id: coinId('mana'),
       element: 'mana',
@@ -661,7 +662,8 @@ describe('M5 shipped content', () => {
       tails: { mode: 'any', effects: [{ kind: 'block', amount: 4 }] }
     });
     expect(skills['flame-sword']).toMatchObject({
-      name: '화염검',
+      // P6 D5: 표시명만 격투 문구로 전환 (화염검 → 화염 붕대, ID·수치 불변)
+      name: '화염 붕대',
       type: 'consume',
       rarity: 'advanced',
       tags: ['utility'],
@@ -977,5 +979,66 @@ describe('M5 shipped content', () => {
       expect(result.state.zones.discard).toContain(created.coin);
       expect(result.state.coins[Number(created.coin)]?.permanent).toBe(false);
     }
+  });
+});
+
+describe('P6 shipped content goldens (1.1.0-p6)', () => {
+  it('renames warrior to 화염 격투가 with the new fist starting kit (id 불변)', () => {
+    // D5: id 'warrior' 유지 + 표시명 전환, 시작 기본기 3종은 신규 격투 전용 ID
+    const warrior = characters.warrior;
+    expect(String(warrior.id)).toBe('warrior');
+    expect(warrior.name).toBe('화염 격투가');
+    expect(warrior.startingSkills.map(String)).toEqual([
+      'jab', 'fist-guard', 'burning-fist', 'ignite', 'ignite-sword', 'flame-rampage'
+    ]);
+    // 기존 검술 기본기는 공용 defs로 존치 (타 캐릭터 시작 셋·구 세이브 참조 유효)
+    for (const legacy of ['slash', 'guard', 'burning-strike']) {
+      expect(contentDb.skills[legacy]).toBeDefined();
+      expect(contentDb.skills[legacy]?.exclusiveTo).toBeUndefined();
+    }
+    for (const fist of ['jab', 'fist-guard', 'burning-fist']) {
+      expect(String(contentDb.skills[fist]?.exclusiveTo)).toBe('warrior');
+    }
+  });
+
+  it('ships the arcanist as a separate character with the turn-start summon trait', () => {
+    // D6: guardian 무변경 원칙 — 마도기사는 별도 신규 캐릭터
+    const arcanist = characters.arcanist;
+    expect(String(arcanist.id)).toBe('arcanist');
+    expect(arcanist.name).toBe('마도기사');
+    expect(arcanist.maxHp).toBe(65);
+    expect(arcanist.trait.hook).toBe('turnStart');
+    expect(arcanist.startingSkills.map(String)).toEqual([
+      'slash', 'guard', 'arcane-charge', 'arcane-command', 'aegis-pulse', 'shield-summon'
+    ]);
+    expect(characters.guardian.name).toBe('수호자');
+  });
+
+  it('ships the acquired-passive pool with one-line descriptions, prices, and character boundaries', () => {
+    // D2: 획득 패시브는 innate trait과 구분되는 별도 사전 — 전부 exclusiveTo 경계 안
+    expect(Object.keys(passives).sort()).toEqual([
+      'armor-memory', 'drill-discipline', 'ember-stock', 'flame-opening',
+      'iron-body', 'kindling-rhythm', 'mana-reserve', 'opening-stance',
+      'overcharge-core', 'reserve-coin', 'steady-breath', 'thick-hide'
+    ]);
+    for (const passive of Object.values(passives)) {
+      expect(passive.description.length).toBeGreaterThan(0);
+      expect(passive.price).toBeGreaterThan(0);
+      expect(['combatStart', 'turnStart']).toContain(passive.hook);
+      expect(['warrior', 'arcanist']).toContain(String(passive.exclusiveTo));
+    }
+  });
+
+  it('ships the two summon equipment definitions (D6)', () => {
+    expect(Object.keys(equipment).sort()).toEqual(['mana-shield', 'mana-sword']);
+    expect(equipment['mana-sword']).toMatchObject({
+      name: '마나 검',
+      action: { kind: 'strike', damage: 3 }
+    });
+    expect(equipment['mana-shield']).toMatchObject({
+      name: '마나 방패',
+      action: { kind: 'ward', block: 2 }
+    });
+    expect(contentDb.validate()).toEqual([]);
   });
 });

@@ -2761,3 +2761,134 @@ button:focus-visible {
   color: #ffb3b3;
   font-size: 10px;
 }
+
+/* ── P6 — 3막 런 UI (휴식/보물/패시브/강화/소환 슬롯) ─────────────────── */
+.passive-count {
+  color: #d9ccf5;
+  border: 1px solid #7b6aa8;
+  background: #2d2440;
+  border-radius: 8px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+.rest-screen,
+.treasure-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+  text-align: center;
+}
+
+.rest-upgrade-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.rest-upgrade {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #241f33;
+  border: 1px solid #4a4364;
+  color: #efe9dc;
+}
+
+.rest-upgrade small {
+  color: #b9b0cf;
+}
+
+.rest-upgrade.locked {
+  opacity: 0.55;
+}
+
+.treasure-passive {
+  color: #d9ccf5;
+  border: 1px dashed #7b6aa8;
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.passive-rewards .passive-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.passive-mark {
+  color: #d9ccf5;
+  font-style: normal;
+}
+
+.shop-item.shop-passive .passive-mark {
+  font-size: 16px;
+}
+
+/* 소환 장비 3슬롯 — 플레이어 옆 세로 레일 (전장 가림 없음) */
+.summon-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: center;
+  min-width: 34px;
+}
+
+.summon-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border-radius: 8px;
+  background: #1d2740;
+  border: 1px solid #45619c;
+  color: #cfe0ff;
+  font-size: 11px;
+}
+
+.summon-slot.empty {
+  min-height: 20px;
+  border-style: dashed;
+  opacity: 0.35;
+}
+
+.summon-slot .summon-duration {
+  font-style: normal;
+  font-weight: 700;
+}
+
+.summon-slot .summon-enhance {
+  font-style: normal;
+  color: #ffd9a8;
+}
+
+.upgrade-badge {
+  font-style: normal;
+  color: #ffd9a8;
+  margin-left: 3px;
+}
+
+@media (max-width: 700px) {
+  .summon-rail {
+    flex-direction: row;
+    min-width: 0;
+  }
+  .rest-upgrade-list {
+    max-height: 34vh;
+  }
+}
+
+@media (forced-colors: active) {
+  .summon-slot,
+  .rest-upgrade,
+  .treasure-passive,
+  .passive-count {
+    border: 1px solid ButtonText;
+  }
+}

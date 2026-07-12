@@ -7,9 +7,11 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "apps/ui/dist");
+// P6: 3막 런·패시브·강화·소환 시스템 추가로 JS 예산 320→400KiB 상향 (게임 시스템
+// 2종 규모 증가분 — 사용자 체감 계약인 총량 2.6MiB·LCP·CLS 게이트는 불변, 결정 로그 D8).
 const BUDGETS = {
   total: 2726297, // 2.6 MiB
-  js: 327680, // 320 KiB
+  js: 409600, // 400 KiB
   css: 71680, // 70 KiB
   maxFile: 716800, // 700 KiB
 };

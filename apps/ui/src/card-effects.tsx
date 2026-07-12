@@ -65,6 +65,30 @@ const atomSegment = (atom: EffectAtom): { text: string; term?: KeywordTerm } => 
   if (atom.kind === "grantElement") {
     return { text: `기본 코인 ${elementKo(atom.element)} 취급` };
   }
+  // P6 — 참조/소환 원자
+  if (atom.kind === "damagePerTargetBurn") {
+    return { text: `화상 1당 피해 ${atom.amountPerStack}`, term: "burn" };
+  }
+  if (atom.kind === "damagePerFireInHand") {
+    return { text: `손의 화염 코인 1개당 피해 ${atom.amountPerCoin}` };
+  }
+  if (atom.kind === "damagePerBlock") {
+    return { text: `현재 방어 1당 피해 ${atom.amountPerBlock}`, term: "block" };
+  }
+  if (atom.kind === "summonEquipment") {
+    return {
+      text:
+        atom.equipment === "chosen"
+          ? `선택 장비 소환 (지속 ${atom.duration})`
+          : `장비 소환 (지속 ${atom.duration})`,
+    };
+  }
+  if (atom.kind === "commandChosenSummon") {
+    return { text: "소환 장비 즉시 행동 (지속 -1)" };
+  }
+  if (atom.kind === "empowerSummons") {
+    return { text: `소환 장비 강화 +${atom.amount}` };
+  }
   return { text: "특수" };
 };
 
@@ -88,6 +112,7 @@ const bonusSegment = (
     return { text: `감전 +${atom.stacks}`, term: "shock" };
   }
   if (atom.kind === "selfDamage") return { text: `자신 피해 +${atom.amount}` };
+  if (atom.kind === "empowerSummons") return { text: `강화 +${atom.amount}` };
   return atomSegment(atom);
 };
 

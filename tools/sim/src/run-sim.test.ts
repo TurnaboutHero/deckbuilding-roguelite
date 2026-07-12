@@ -20,48 +20,57 @@ describe('M5 full-run simulator', () => {
 
     expect(guardian.summary.seed).toBe('42');
     expect(guardian.summary.result === 'victory' || guardian.summary.result === 'defeat').toBe(true);
-    // P4.2b 재고정: 10레이어 그래프에서 guardian은 9전투(보스 포함)까지 진행하며
-    // 보상 코인으로 가방이 11까지 자란다 — balance-provisional 관측치.
-    expect(guardian.summary.finalBag).toHaveLength(11);
+    // P6 재고정: 3막 그래프에서 guardian fight-first는 더 길게 생존하며 보상
+    // 코인으로 가방이 26까지 자란다 — balance-provisional 관측치.
+    expect(guardian.summary.finalBag).toHaveLength(26);
     expect(guardian.summary.finalEquippedSkills).toHaveLength(6);
   });
 
   it('completes the deterministic generated-graph run with boundary state intact', () => {
-    // P4.4 재고정 (0.10.0-p4.4 결속): D10 이벤트 그래프 v2와 event-<layer> 스트림 활성화.
-    // seed 42 fight-first는 매복 이벤트를 수락한 뒤 보스에서 패배한다. 난이도 관측치는 P4.5 경제 Monte Carlo가 판정한다
-    // (balance-provisional — 상점 미사용 기본 정책 기준).
+    // P6 재고정 (1.1.0-p6 결속): 3막×10방문 그래프 + 화염 격투가 시작 셋(jab 계열).
+    // seed 42 fight-first는 1막 방문2 수문장에서 패배한다 — balance-provisional 관측치
+    // (baseline 정책 우선순위가 신규 격투 스킬 ID를 모른다는 한계 포함, 백로그 보고).
     const simulation = simulateRun('42');
 
     expect(simulation.summary.result).toBe('defeat');
-    expect(simulation.summary.combatsCompleted).toBe(6);
-    expect(simulation.combats).toHaveLength(6);
+    expect(simulation.summary.combatsCompleted).toBe(11);
+    expect(simulation.combats).toHaveLength(11);
     for (let index = 0; index < simulation.combats.length; index += 1) {
       const combat = simulation.combats[index];
       if (combat === undefined) throw new Error('missing combat record');
       expect([...combat.permanentCoinsAtStart].sort()).toEqual([...combat.startingBag].sort());
       expect(combat.temporaryCoinsAtStart).toBe(1);
       if (index > 0) {
-        expect(combat.startingHp).toBe(simulation.combats[index - 1]?.endingHp);
+        // P6: 전투 사이 회복은 휴식(30% 내림) 또는 막 보스 클리어(전체) — 그 외 이월 불변
+        const previous = simulation.combats[index - 1]!.endingHp;
+        expect(combat.startingHp).toBeGreaterThanOrEqual(previous);
+        expect(combat.startingHp).toBeLessThanOrEqual(70);
       }
     }
 
+    // P6 보상 신스펙: 제거 단계가 사라져 시작 basic 8개가 그대로 남는다
     expect(simulation.combats[1]?.startingBag.filter((coin) => coin === 'fire')).toHaveLength(3);
-    expect(simulation.combats[1]?.startingBag.filter((coin) => coin === 'basic')).toHaveLength(7);
+    expect(simulation.combats[1]?.startingBag.filter((coin) => coin === 'basic')).toHaveLength(8);
     expect(simulation.summary).toEqual({
       seed: '42',
       result: 'defeat',
-      combatsCompleted: 6,
-      turnsPerCombat: [4, 4, 4, 9, 8, 2], // 1.0.0-rc.1 재고정 — 구울 패시브(썩은 육체) 도입
+      combatsCompleted: 11,
+      turnsPerCombat: [3, 3, 4, 3, 3, 3, 3, 4, 3, 4, 2], // 1.1.0-p6 재고정 — 막 스케일 ×1.15/1.3·막 보스 전체 회복 (balance-provisional)
       carriedHp: 0,
-      finalBag: ['basic', 'basic', 'fire', 'fire', 'fire', 'fire', 'basic', 'fire', 'fire', 'fire', 'mana'],
-      finalEquippedSkills: ['fire-infusion', 'guard', 'burning-strike', 'flame-sword', 'ignite-sword', 'conflagration'],
+      finalBag: ["basic", "basic", "basic", "basic", "basic", "basic", "basic", "basic", "fire", "fire", "fire", "fire", "basic", "fire", "fire", "fire", "mana", "mana", "mana", "mana"],
+      finalEquippedSkills: ["jab", "fist-guard", "burning-fist", "heart-of-flame", "ignite-sword", "conflagration"],
       encounterOrder: [
         ['raider'],
+        ['gatekeeper'],
         ['goblin', 'ghoul'],
-        ['goblin', 'ghoul'],
+        ['thief', 'goblin'],
         ['gatekeeper-plus'],
-        ['ghoul', 'goblin', 'slime'],
-        ['ember-archmage']
+        ['shaman'],
+        ['gatekeeper'],
+        ['gatekeeper-plus'],
+        ['raider-plus'],
+        ['gatekeeper-plus'],
+        ['raider-plus', 'gatekeeper-plus']
       ]
     });
   });

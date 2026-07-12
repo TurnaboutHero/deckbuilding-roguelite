@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import type { ContentDb } from "../content-types";
-import type { CharacterId, CoinDefId, SkillId } from "../ids";
+import type { CharacterId, CoinDefId, EnemyDefId, SkillId } from "../ids";
 import { derive, rngFrom, seedFromString } from "../rng";
 import {
-  chooseCoinReward,
   createRun,
   resolveCoinRemoval,
   settleRunCombat,
@@ -148,7 +147,9 @@ describe("weighted coin rewards (§825 gate)", () => {
   });
 
   it("routes the exhausted-pool fallback through the same weighted canon", () => {
-    // 스킬 풀 소진 db (장착 6종 외 없음) + 코인 5종 → fallback 코인 단계가 가중 3택·무중복
+    // P6 신스펙 보상은 제거 단계를 만들지 않으므로(coinRemovalResolved:true 고정)
+    // fallback은 레거시 v5 저장(acts 없는 그래프 + 미해결 제거 단계)에서만 도달한다.
+    // 스킬 풀 소진 db(장착 6종 외 없음) + 코인 5종 수제 상태로 경로를 직접 검증한다.
     const wide = db(wideCoins);
     const exhausted: ContentDb = {
       ...wide,
@@ -158,38 +159,54 @@ describe("weighted coin rewards (§825 gate)", () => {
         ),
       ),
     };
-    let run = rewardsAt(newRun(exhausted, "FALLBACK"), exhausted);
-    run = chooseCoinReward(run, null);
-    run = resolveCoinRemoval(run, null, exhausted); // 전투 1 보상 완결 → ready
-    // 두 번째 전투 승리 → 스킬 옵션 0 → 제거 해결 시 fallback 코인 단계 진입
-    const started = startRunCombat(run, exhausted);
-    const finished = {
-      ...started.combat,
-      phase: "victory" as const,
-      enemies: started.combat.enemies.map((enemy) => ({ ...enemy, hp: 0 })),
-    };
-    let second = settleRunCombat(started.run, finished, exhausted);
-    second = chooseCoinReward(second, null);
-    second = resolveCoinRemoval(second, null, exhausted);
-    const fallback = second.pendingRewards?.coinOptions.map(String) ?? [];
+    const combatNode = (nodeId: string, enemy: string) => ({
+      id: nodeId,
+      kind: "combat" as const,
+      encounter: [id<EnemyDefId>(enemy)],
+    });
+    // 전투 2 완료(completedCombatCount=2) 후 제거 단계 직전의 v5 보상 상태
+    const fallbackState = (): RunState => ({
+      ...newRun(exhausted, "FALLBACK"),
+      graph: {
+        layers: [
+          [combatNode("l0", "raider")],
+          [combatNode("l1", "shaman")],
+          [combatNode("l2", "gatekeeper")],
+        ],
+      },
+      nodeChoices: [0, 0, 0],
+      combatIndex: 2,
+      phase: "rewards",
+      pendingRewards: {
+        coinOptions: [],
+        coinChoiceResolved: true,
+        coinRemovalResolved: false,
+        skillOptions: [],
+        skillChoiceResolved: true,
+      },
+    });
+    const resolved = resolveCoinRemoval(fallbackState(), null, exhausted);
+    const fallback = resolved.pendingRewards?.coinOptions.map(String) ?? [];
 
+    expect(resolved.phase).toBe("rewards");
+    expect(resolved.pendingRewards?.coinChoiceResolved).toBe(false);
     expect(fallback).toHaveLength(3);
     expect(new Set(fallback).size).toBe(3);
     for (const option of fallback) expect(Object.keys(wideCoins)).toContain(option);
-    // 결정론: 같은 경로 전체 재실행이 동일한 fallback을 낸다
-    let rerun = rewardsAt(newRun(exhausted, "FALLBACK"), exhausted);
-    rerun = chooseCoinReward(rerun, null);
-    rerun = resolveCoinRemoval(rerun, null, exhausted);
-    const startedAgain = startRunCombat(rerun, exhausted);
-    const finishedAgain = {
-      ...startedAgain.combat,
-      phase: "victory" as const,
-      enemies: startedAgain.combat.enemies.map((enemy) => ({ ...enemy, hp: 0 })),
-    };
-    let secondAgain = settleRunCombat(startedAgain.run, finishedAgain, exhausted);
-    secondAgain = chooseCoinReward(secondAgain, null);
-    secondAgain = resolveCoinRemoval(secondAgain, null, exhausted);
-    expect(secondAgain.pendingRewards?.coinOptions.map(String)).toEqual(fallback);
+    // 가중 정본 공유: reward-fallback 스트림의 weightedCoinOptions와 완전 동일
+    const expected = weightedCoinOptions(
+      exhausted,
+      id<CharacterId>("warrior"),
+      fallbackState().bag,
+      rngFrom(derive(seedFromString("FALLBACK"), "reward-fallback", 1)),
+    );
+    expect(fallback).toEqual(expected.map(String));
+    // 결정론: 같은 수제 상태 재구성이 동일한 fallback을 낸다
+    expect(
+      resolveCoinRemoval(fallbackState(), null, exhausted).pendingRewards?.coinOptions.map(
+        String,
+      ),
+    ).toEqual(fallback);
   });
 
   it("ranks signature above basic above other elements across many draws", () => {
