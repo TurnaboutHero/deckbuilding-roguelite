@@ -4,6 +4,14 @@
 
 고정된 스킬 셋(상수)에 매 턴 무작위로 뽑히는 동전(변수)을 장전해 최적 효율을 찾는 퍼즐형 전투. 스킬은 실패하지 않는다 — 기본 효과는 항상 발동하고, 동전의 앞/뒷면이 추가 효과를 결정한다.
 
+## 상태 — 1.0.0-rc.1 (engineering-complete / experience-unverified)
+
+- **플레이**: https://turnabouthero.github.io/deckbuilding-roguelite/ (데스크톱+모바일, GitHub Pages 자동 배포)
+- 콘텐츠: 캐릭터 4종(전사/수호자/마도사/냉기 기사) · 몬스터 9종+보스 · 10-레이어 런 그래프(전투/엘리트/상점/이벤트/보스) · 골드 경제
+- 제품화: 반응형 모바일·런타임 합성 SFX(기본 음소거)·WCAG AA 대비·키보드 완주·저장 이중화+복구·번들 예산 게이트
+- 릴리스 게이트(CI 차단): typecheck/lint/test(400)/sim smoke/playtest(448)/provenance/budget(총 2.6MiB·JS 320KiB·CSS 70KiB·단일 700KiB)/contrast AA/perf(LCP·CLS·롱태스크)
+- **사람 미검증 유보**: 재미·손맛(M2/M4)·밸런스 확정(수치 전부 balance-provisional)·난이도 곡선·음색 취향 — `PRD/PLAYTEST_KIT.md`로 사람 게이트 실행
+
 ## 문서
 
 | 문서 | 내용 |
