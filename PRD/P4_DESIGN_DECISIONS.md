@@ -159,6 +159,23 @@ SSoT 출처: `docs/implementation-plan.md` §12 부록(예약 지점)·B1, `docs
 - **UI**: 이벤트 화면(제시문·위험/보상 명시·수락/거절, 제단·희생은 기본 코인 선택 그리드),
   S26(저장 주입 결정론 — 4종 각각 수락/거절/불가 사유). emoji 금지(픽셀 폰트 안전 텍스트만).
 
+## D11. P4.6 자산 예산 (2026-07-12, 모니터 감사)
+
+- **번들 예산**: 현 dist 2,384,862바이트(~2.27MiB), 상한 2.6MiB까지 여유 ~240KiB.
+  신규 스프라이트 5종(도적·구울·마도사·슬라임·보스)을 원본 그대로 넣으면 초과가 확실하다.
+- **의무 후처리**: 최종 스프라이트 시트는 import 전에 **indexed PNG(P-mode, 256색)** 변환.
+  실측(shaman): 99,979 → 31,447바이트, 알파 바이트 동일·평균 절대 RGB 오차 <1,
+  1024×768 치수·manifest 불변. 신규 5종에 최소 적용, 각 반복마다 visual-verdict.
+- sprite-gen 파이프라인 산출(`sprite-sheet-alpha.png`) 후 변환 단계를 삽입 — 변환도
+  결정론 코드 경로(같은 입력 → 같은 출력)로 수행하고 전후 크기·오차를 provenance에 기록.
+- **P4.6 프리플라이트 (모니터 확정)**: ① 프롬프트 검증기는
+  `~/.claude/skill-repos/gongnyang-prompt-kit/skills/image-prompt/scripts/check_prompt.mjs`
+  직접 실행(WSL SKILL.md는 placeholder — 스킬 문서 아닌 기능 검증기 사용, 가용 확인 완료).
+  ② 모든 이미지 호출 **전** 프롬프트별 JSON 결과(ok=true·errors=0)를
+  `docs/ui/card-art-prompt-validation/` 관례대로 보존(P3.2 감사 후속 프로세스).
+  ③ **sprite-gen raw 행 불가침** — indexed-PNG 최적화는 합성 완료된 최종 아틀라스에만
+  적용, raw/프레임 추출 입력에는 절대 적용하지 않는다.
+
 ## 라운드 분할 (작은 커밋 단위)
 
 - **P4.0** 본 결정 기록 (docs).
