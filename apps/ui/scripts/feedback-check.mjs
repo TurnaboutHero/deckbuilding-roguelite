@@ -102,19 +102,14 @@ const chipText = async (page) =>
 try {
   {
     const { page, errors } = await boot();
-    await placeInto(page, 0);
-    await useLoadedCard(page, 0);
-    await placeInto(page, 1);
-    await useLoadedCard(page, 1);
-    await placeInto(page, 3);
-    await useLoadedCard(page, 3);
-
-    await placeInto(page, 5);
-    await card(page, 5).locator(".card-title").click({ force: true });
+    await placeInto(page, 2, 0);
+    await placeInto(page, 2, 1);
+    await useLoadedCard(page, 2);
+    await card(page, 2).locator(".card-title").click({ force: true });
     const text = await chipText(page);
-    check("턴 3회 캡 사유 표시", /턴당 3회/.test(text), text);
-    check("캡 거부 후 셸 생존", await shellAlive(page));
-    check("캡 시나리오 에러 0", errors.length === 0, errors.join(" | "));
+    check("쿨다운 사유 표시", /쿨다운|재사용 대기/.test(text), text);
+    check("쿨다운 거부 후 셸 생존", await shellAlive(page));
+    check("쿨다운 시나리오 에러 0", errors.length === 0, errors.join(" | "));
     await page.close();
   }
 
@@ -132,15 +127,16 @@ try {
 
   {
     const { page, errors } = await boot();
-    await placeInto(page, 5);
-    const rampagePreview = await card(page, 5)
+    await placeInto(page, 2, 0);
+    await placeInto(page, 2, 1);
+    const strikePreview = await card(page, 2)
       .locator(".preview-tip")
       .innerText({ timeout: 2000 });
-    check("화염 폭주 프리뷰 자해", /자해/.test(rampagePreview), rampagePreview);
+    check("불타는 일격 프리뷰 자해 없음", !/자해/.test(strikePreview), strikePreview);
     check(
-      "화염 폭주 프리뷰 코인 생성",
-      /코인 생성/.test(rampagePreview),
-      rampagePreview,
+      "불타는 일격 프리뷰 코인 생성",
+      /코인 생성/.test(strikePreview),
+      strikePreview,
     );
 
     await placeInto(page, 0);
