@@ -322,17 +322,25 @@ const pendingShopFor = (
   };
 };
 
+// 이벤트 롤의 단일 정본 — 저장 검증(run-storage)이 완료 이벤트 prefix를 재구성할 때
+// 같은 함수를 공유한다 (중복 RNG 규칙 금지 — P4.4 verifier HIGH 수정).
+export const rolledEventIdFor = (
+  runSeed: string,
+  layerIndex: number,
+  db: ContentDb,
+): EventDefId => {
+  const events = db.events ?? {};
+  const eventIds = Object.keys(events).sort();
+  if (eventIds.length === 0) throw new Error("content db has no events");
+  const rng = rngFrom(derive(seedFromString(runSeed), `event-${layerIndex}`));
+  return eventId(eventIds[rng.int(eventIds.length)]!);
+};
+
 const pendingEventFor = (
   run: RunState,
   layerIndex: number,
   db: ContentDb,
-) => {
-  const events = db.events ?? {};
-  const eventIds = Object.keys(events).sort();
-  if (eventIds.length === 0) throw new Error("content db has no events");
-  const rng = rngFrom(derive(seedFromString(run.runSeed), `event-${layerIndex}`));
-  return { eventId: eventId(eventIds[rng.int(eventIds.length)]!) };
-};
+) => ({ eventId: rolledEventIdFor(run.runSeed, layerIndex, db) });
 
 const eventCombatEncounterFor = (
   run: RunState,

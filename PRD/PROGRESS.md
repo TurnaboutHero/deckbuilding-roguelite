@@ -68,7 +68,7 @@ P3.4 마감 `25e4cd1` — 냉기/전기 캐릭터·보상 가중 함수·자산 
 
 ## 다음 단계
 
-**2026-07-11 오너 오버라이드로 Phase 3+ 공학 트랙이 활성화됐다** (`PHASE1_HOLDS.md` 오버라이드 절, 증거 계약 `PHASE3_EVIDENCE_CONTRACT.md`). 실행 순서: P3.0 거버넌스 → P3.1 다중 대상·duration 상태·용광로 → P3.2 마나/수호자 → P3.3 전사 희귀·트리거 → P3.4 냉기/전기 → P4 런 그래프·보스·상점 → P5 제품화. 병행으로 사람 N≥5 플레이테스트(`PLAYTEST_KIT.md` + `sim:human`)는 여전히 열려 있으며, 사람 데이터가 오면 experience-unverified 항목의 최종 판정이 이뤄진다. 수치 변경은 결정론 증거가 방향을 특정할 때만, 전부 provisional로.
+**Phase 4 진행 중** (설계 정본 `P4_DESIGN_DECISIONS.md` D1~D10): P4.0 설계 → P4.1 그래프 코어 → P4.2 몬스터/보스 → P4.3 10레이어 활성화+상점 → P4.4 이벤트까지 배포 완료. 남은 것: **P4.5 경제 Monte Carlo**(report-only — 파산률·구매 분포·이벤트 수락률·보스 도달/승률, `p4-economy-report-v1`) → **P4.6 자산·마감**(신규 몬스터 5종+보스 스프라이트 sprite-gen+킷 선검증, 지도/노드 시각) → P5 제품화. 주의: human trace는 schema v2(경로 사실 필수) — v1 로그는 콘텐츠 드리프트와 함께 거부된다. 사람 N≥5 플레이테스트는 여전히 열려 있고(`PLAYTEST_KIT.md`), 사람 데이터가 오면 experience-unverified 최종 판정. 수치 변경은 결정론 증거가 방향을 특정할 때만(seed42 fight-first 패배 관측치는 P4.5 MC 판정 대상), 전부 provisional로.
 
 ## 리스크 / 블로커
 

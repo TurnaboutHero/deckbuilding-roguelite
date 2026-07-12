@@ -3,6 +3,8 @@ import {
   RUN_ENCOUNTERS,
   RUN_SAVE_VERSION,
   completedCombatCount,
+  nodeGoldReward,
+  rolledEventIdFor,
   rewardEligibleSkillIds,
   signatureElement,
   type CharacterId,
@@ -471,6 +473,53 @@ const normalizeRunSave = (
     nodeChoices,
   } as RunState;
   const completedCombats = completedCombatCount(progressProbe);
+  // ---- P4.4 verifier HIGH 수정: 이벤트 경제 보존 법칙 -------------------------
+  // 완료된 이벤트 레이어의 롤을 코어 정본(rolledEventIdFor)으로 재구성해 counters가
+  // 물리적으로 가능한 수락 조합인지 검증한다. 예: 첫 이벤트가 변환 제단인데 골드
+  // 100 지불 흔적 없이 기본→대표 교체를 주장하는 위조 저장을 거부.
+  {
+    const completedEventTypes = { combat: 0, hp: 0, gold: 0, coin: 0 };
+    let grossGold = 0;
+    const upperLayer = Math.min(value.combatIndex, graph.layers.length);
+    for (let layer = 0; layer < upperLayer; layer += 1) {
+      const node = graph.layers[layer]?.[nodeChoices[layer] ?? 0];
+      if (node === undefined) continue;
+      if (node.kind === "event") {
+        const rolled = (context.events ?? {})[
+          String(rolledEventIdFor(value.runSeed, layer, context as ContentDb))
+        ];
+        if (rolled === undefined) return null;
+        completedEventTypes[rolled.risk] += 1;
+      } else if (node.kind !== "shop") {
+        grossGold += nodeGoldReward(node.kind);
+      }
+    }
+    if (value.phase === "victory") {
+      const node = graph.layers[value.combatIndex]?.[nodeChoices[value.combatIndex] ?? 0];
+      if (node !== undefined && node.kind !== "shop" && node.kind !== "event")
+        grossGold += nodeGoldReward(node.kind);
+    }
+    grossGold += 70 * value.eventCombats;
+    const hasEventNodes = graph.layers.some((layer) =>
+      layer.some((node) => node.kind === "event"),
+    );
+    // 수락 산술: gains−losses = 피의 제물 수락 수, losses = 제단+희생 수락 수
+    const bloodAccepts = value.eventCoinGains - value.eventCoinLosses;
+    if (bloodAccepts < 0 || bloodAccepts > completedEventTypes.hp) return null;
+    if (value.eventCoinLosses > completedEventTypes.gold + completedEventTypes.coin)
+      return null;
+    if (value.eventCombats > completedEventTypes.combat) return null;
+    // HP 보존: 회복이 없으므로 피의 제물 수락마다 5씩 잃었어야 한다
+    if (value.currentHp + 5 * bloodAccepts > value.maxHp) return null;
+    // 골드 보존: 최소 변환 제단 수락 수 = losses − 희생 가용 수, 각 100 지불
+    const minTransmute = Math.max(
+      0,
+      value.eventCoinLosses - completedEventTypes.coin,
+    );
+    // 골드-총수입 상한은 이벤트 시대 그래프에만 적용한다 — 레거시(무이벤트) 그래프
+    // 저장은 골드 의미론이 경제 이전 세대라 counters 검사(위 3종)만 유효하다.
+    if (hasEventNodes && value.gold + 100 * minTransmute > grossGold) return null;
+  }
   // 검증 High: 최종 보스 전투는 승리로 런이 끝나 보상 페이즈가 없다 — victory에서
   // completedCombatCount가 세는 마지막 전투를 코인/스킬 보상 원천에서 제외한다.
   const rewardGrantingCombats =

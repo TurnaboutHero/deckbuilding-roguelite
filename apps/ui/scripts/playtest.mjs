@@ -3156,10 +3156,12 @@ const winCurrentCombat = async (page) => {
 // pendingEvent는 롤 결과가 저장되는 사실이므로 v5 저장 주입으로 4종을 각각 고정한다.
 {
   const injectEvent = async (eventId, extra = {}) => {
+    // 경제 보존 법칙: 골드 120은 엘리트 2승(140) 프리픽스로 정당화한다
     const layers = [
-      [{ id: "v0", kind: "combat", encounter: ["raider"] }],
-      [{ id: "v1", kind: "event" }],
-      [{ id: "v2", kind: "boss", encounter: ["ember-archmage"] }],
+      [{ id: "v0", kind: "elite", encounter: ["raider-plus"] }],
+      [{ id: "v1", kind: "elite", encounter: ["gatekeeper-plus"] }],
+      [{ id: "v2", kind: "event" }],
+      [{ id: "v3", kind: "boss", encounter: ["ember-archmage"] }],
     ];
     const save = {
       version: 5,
@@ -3179,14 +3181,14 @@ const winCurrentCombat = async (page) => {
       ],
       gold: 120,
       graph: { layers },
-      nodeChoices: [0, 0, 0],
+      nodeChoices: [0, 0, 0, 0],
       shopRemovals: 0,
       shopPurchasedCoins: 0,
       shopPurchasedSkills: 0,
       eventCombats: 0,
       eventCoinGains: 0,
       eventCoinLosses: 0,
-      combatIndex: 1,
+      combatIndex: 2,
       attempt: 0,
       phase: "event",
       pendingEvent: { eventId },

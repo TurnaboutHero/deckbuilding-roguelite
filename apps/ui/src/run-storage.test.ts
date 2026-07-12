@@ -683,7 +683,13 @@ describe("run save serialization boundary", () => {
             : layer,
       ),
     };
-    const save = { ...readySave(), graph, equippedSkills: [...STARTING_SKILLS] as never };
+    // 경제 보존 법칙(P4.4): 이벤트 그래프에서 골드는 완료 전투 총수입(레이어 0 = 35) 이내
+    const save = {
+      ...readySave(),
+      graph,
+      gold: 35,
+      equippedSkills: [...STARTING_SKILLS] as never,
+    };
     expect(parse(JSON.stringify(save))).toEqual(save);
   });
 

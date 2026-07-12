@@ -35,7 +35,7 @@ const eventSave = (): RunSave => {
     maxHp: 70,
     bag: [...WARRIOR_BAG] as never,
     equippedSkills: [...WARRIOR_SKILLS] as never,
-    gold: 105,
+    gold: 70, // 완료 레이어 0·1(전투 35+35) 총수입 이내 — 경제 보존 법칙 정합
     graph: graph(),
     nodeChoices,
     shopRemovals: 0,
@@ -73,6 +73,7 @@ describe("P4.4 저장 v5 적대 검증", () => {
     // combat 노드 레이어(1, 단일 전투)로 이동시킨 v4 저장을 쓴다 (레이어 0은
     // 완전 체력 시작 규칙이 있어 currentHp 50 픽스처와 충돌)
     v4.combatIndex = 1;
+    v4.gold = 30; // 완료 레이어 0(전투 35) 총수입 이내
     v4.version = 4;
     delete v4.eventCombats;
     delete v4.eventCoinGains;
