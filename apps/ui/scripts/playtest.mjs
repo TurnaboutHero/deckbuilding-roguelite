@@ -253,6 +253,10 @@ const winCurrentCombat = async (page) => {
 {
   const { page, errors } = await boot();
   await page.screenshot({ path: `${outDir}/01-initial.png` });
+  check(
+    "S1 favicon is explicitly declared",
+    (await page.locator('link[rel~="icon"]').count()) === 1,
+  );
 
   check("S1 첫 손패 5개", (await handCount(page)) === 5);
   // P5.2: 음소거 토글 — 정확히 1개(중복 렌더 금지)·기본 끔·반전·리로드 영속
@@ -3847,6 +3851,25 @@ const winCurrentCombat = async (page) => {
   await page.waitForSelector('[data-testid="corrupt-save-restart"]', {
     timeout: 15000,
   });
+  const recoveryLayers = await page.evaluate(() => {
+    const recovery = document.querySelector(".boot-recovery");
+    const backdrop = document.querySelector(".backdrop");
+    if (recovery === null || backdrop === null) return null;
+    const recoveryStyle = getComputedStyle(recovery);
+    const backdropStyle = getComputedStyle(backdrop);
+    return {
+      recoveryPosition: recoveryStyle.position,
+      recoveryZ: Number(recoveryStyle.zIndex),
+      backdropZ: Number(backdropStyle.zIndex),
+    };
+  });
+  check(
+    "S30 recovery action renders above backdrop",
+    recoveryLayers !== null &&
+      recoveryLayers.recoveryPosition !== "static" &&
+      recoveryLayers.recoveryZ > recoveryLayers.backdropZ,
+    JSON.stringify(recoveryLayers),
+  );
   check(
     "S30 손상 저장 명시 화면 (자동 삭제 아님)",
     (await page

@@ -2802,6 +2802,8 @@ button:focus-visible {
 
 /* P5.4 복구 화면 (런타임 오류·손상 저장) */
 .boot-recovery {
+  position: relative;
+  z-index: 1;
   max-width: 480px;
   margin: 18vh auto;
   padding: 24px;
