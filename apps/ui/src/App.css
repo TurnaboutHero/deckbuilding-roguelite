@@ -2369,3 +2369,295 @@ button:focus-visible {
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* ============================================================
+   P5.1 모바일/터치 — 세로 소형(≤700px) · 가로 저높이(≤500px)
+   원칙: 페이지 스크롤 금지 유지, 넓은 레일(카드·트레이)만 자체
+   가로 스크롤, 패널(상점·이벤트·갈림길·보상)은 자체 세로 스크롤.
+   ============================================================ */
+@media (max-width: 700px) {
+  .combat-shell {
+    min-height: 100svh;
+    min-height: 100dvh;
+    padding: calc(6px + env(safe-area-inset-top)) calc(6px + env(safe-area-inset-right))
+      calc(10px + env(safe-area-inset-bottom)) calc(6px + env(safe-area-inset-left));
+    gap: 6px;
+  }
+  .run-meta {
+    position: static;
+    transform: none;
+    width: 100%;
+    min-height: 0;
+    flex-wrap: wrap;
+    white-space: normal;
+    font-size: 10px;
+    gap: 6px;
+    padding: 4px 8px;
+  }
+  .run-meta strong {
+    font-size: 12px;
+  }
+  .battlefield {
+    padding: 26px 4px 0;
+    min-height: 190px;
+    gap: 4px;
+  }
+  .unit,
+  .enemy-line .unit {
+    min-width: 0;
+    gap: 4px;
+  }
+  .unit-plate,
+  .enemy-line .unit-plate {
+    width: clamp(118px, 44vw, 180px);
+    padding: 4px 7px;
+    gap: 3px;
+  }
+  .unit-name {
+    font-size: 12px;
+  }
+  .block-chip,
+  .burn-chip,
+  .frost-chip,
+  .shock-chip,
+  .attack-buff-chip {
+    font-size: 9px;
+    padding: 1px 4px;
+  }
+  .hp-num {
+    font-size: 11px;
+  }
+  .intent {
+    font-size: 12px;
+    padding: 3px 6px;
+    gap: 4px;
+  }
+  .unit.player .sprite,
+  .unit.enemy .sprite,
+  .enemy-line .unit.enemy .sprite {
+    width: clamp(96px, 32vw, 150px);
+    height: clamp(80px, 26vw, 120px);
+  }
+  .sprite-frame.player,
+  .sprite-frame.enemy {
+    width: clamp(120px, 38vw, 170px);
+    height: clamp(120px, 38vw, 170px);
+    bottom: -12px;
+  }
+  .enemy-line {
+    gap: 4px;
+  }
+  /* 카드 레일: 자체 가로 스크롤 (터치 스와이프) — 겹침 레일 해제.
+     center 정렬은 오버플로 시 양측을 잘라먹으므로 flex-start. */
+  .skill-row {
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+    align-items: flex-start;
+    padding: 6px 4px 10px;
+    gap: 8px;
+  }
+  .skill-row .skill-card {
+    flex: 0 0 auto;
+    min-width: 118px;
+    max-width: 136px;
+    height: auto;
+    min-height: 150px;
+    padding: 10px 8px 8px;
+  }
+  .card-art {
+    width: 72px;
+    height: 46px;
+  }
+  .run-stage-shell {
+    min-height: 100svh;
+  }
+  .bottom-hud {
+    gap: 6px;
+    padding: 6px;
+  }
+  .hand-tray {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+    padding: 4px;
+  }
+  /* 패널류: 자체 세로 스크롤로 하단 제어 도달 보장 */
+  .shop-screen,
+  .event-screen,
+  .node-choice {
+    max-width: 100%;
+    max-height: calc(100svh - 90px);
+    overflow-y: auto;
+    margin: 8px auto;
+    padding: 12px;
+  }
+  .node-choice-options {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .result-overlay .result-panel {
+    max-width: 96vw;
+    max-height: calc(100svh - 40px);
+    overflow-y: auto;
+  }
+  .shop-section ul {
+    gap: 6px;
+  }
+  .shop-item {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+}
+
+@media (max-height: 500px) {
+  .combat-shell {
+    min-height: 100svh;
+    min-height: 100dvh;
+    padding: calc(4px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
+      calc(8px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
+    gap: 2px;
+  }
+  .run-meta {
+    position: static;
+    transform: none;
+    width: 100%;
+    min-height: 0;
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+  .battlefield {
+    padding: 4px 24px 0;
+    min-height: 120px;
+  }
+  .unit.player .sprite,
+  .unit.enemy .sprite,
+  .enemy-line .unit.enemy .sprite {
+    width: clamp(80px, 16vw, 130px);
+    height: clamp(64px, 12vw, 100px);
+  }
+  .sprite-frame.player,
+  .sprite-frame.enemy {
+    width: clamp(100px, 18vw, 150px);
+    height: clamp(100px, 18vw, 150px);
+    bottom: -10px;
+  }
+  .unit-plate,
+  .enemy-line .unit-plate {
+    width: clamp(140px, 22vw, 220px);
+    padding: 3px 7px;
+  }
+  .skill-row {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+    align-items: flex-start;
+    padding: 4px 4px 8px;
+  }
+  .skill-row .skill-card {
+    flex: 0 0 auto;
+    min-width: 104px;
+    max-width: 120px;
+    height: auto;
+    min-height: 0;
+    padding: 8px 8px 6px;
+  }
+  .run-stage-shell {
+    min-height: 100svh;
+  }
+  /* 저높이 가로: 카드 아트를 접어 페이지 스크롤 없이 전 제어 노출 */
+  .card-art {
+    display: none;
+  }
+  /* 효과 행 기본 접힘 — 장전(.lifted)·키보드 포커스 시 펼침 (정보 손실 없이 압축) */
+  .skill-card .card-effects {
+    max-height: 34px;
+    overflow: hidden;
+  }
+  .skill-card.lifted .card-effects,
+  .skill-card:focus-within .card-effects {
+    max-height: none;
+  }
+  .battlefield {
+    min-height: 90px;
+    padding: 2px 20px 0;
+  }
+  .unit.player .sprite,
+  .unit.enemy .sprite,
+  .enemy-line .unit.enemy .sprite {
+    width: clamp(64px, 12vw, 96px);
+    height: clamp(44px, 7.6vw, 62px);
+    --ground-lift: 3px;
+  }
+  .sprite-frame.player,
+  .sprite-frame.enemy {
+    width: clamp(88px, 15vw, 120px);
+    height: clamp(88px, 15vw, 120px);
+    bottom: -8px;
+  }
+  .unit-plate,
+  .enemy-line .unit-plate {
+    width: clamp(130px, 20vw, 200px);
+    padding: 2px 6px;
+    gap: 2px;
+  }
+  .unit-name {
+    font-size: 12px;
+  }
+  .intent {
+    font-size: 11px;
+    padding: 2px 5px;
+  }
+  .hint-strip,
+  .test-encounter-badge {
+    display: none;
+  }
+  .skill-row {
+    padding: 2px 4px 4px;
+  }
+  .bottom-hud {
+    padding: 4px 6px;
+    gap: 4px;
+  }
+  .hand-tray {
+    overflow-x: auto;
+    justify-content: flex-start;
+    padding: 2px;
+  }
+  .shop-screen,
+  .event-screen,
+  .node-choice,
+  .result-overlay .result-panel {
+    max-height: calc(100svh - 24px);
+    overflow-y: auto;
+    margin: 6px auto;
+  }
+}
+
+
+/* P5.1 감사: hover 의존 확장은 fine 포인터에서만 (터치는 .lifted/:focus-within 경로) */
+@media (hover: hover) and (pointer: fine) and (max-height: 500px) {
+  .skill-card:hover .card-effects {
+    max-height: none;
+  }
+}
+
+/* P5.1 감사: coarse 포인터 주요 타깃 44×44 보장 */
+@media (pointer: coarse) {
+  .end-turn,
+  .shop-leave,
+  .event-actions button,
+  .result-panel button,
+  .node-card,
+  .shop-item,
+  .event-pick {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .hand-tray .coin,
+  .socket {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

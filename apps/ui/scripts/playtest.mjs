@@ -3329,6 +3329,208 @@ const winCurrentCombat = async (page) => {
   }
 }
 
+// ---------- 시나리오 28: P5.1 모바일/터치 — 세로·가로 페이지 스크롤 0·도달성·터치 ----------
+{
+  const mobileBoot = async ({ width, height, url, save, waitSel }) => {
+    const context = await browser.newContext({
+      viewport: { width, height },
+      deviceScaleFactor: 1,
+      hasTouch: true,
+    });
+    const page = await context.newPage();
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(String(error.message)));
+    page.on("console", (message) => {
+      if (
+        message.type() === "error" &&
+        !message.location().url.endsWith("/favicon.ico")
+      )
+        errors.push(message.text());
+    });
+    if (save)
+      await page.addInitScript(
+        ([k, v]) => window.localStorage.setItem(k, v),
+        ["deckbuilding-roguelite.run-save", JSON.stringify(save)],
+      );
+    await page.goto(url ?? baseUrl, { waitUntil: "networkidle" });
+    if (waitSel) await page.waitForSelector(waitSel, { timeout: 15000 });
+    await page.waitForTimeout(400);
+    return { page, errors, context };
+  };
+  const noPageScroll = (page) =>
+    page.evaluate(() => ({
+      h: document.documentElement.scrollWidth <= window.innerWidth,
+      v: document.documentElement.scrollHeight <= window.innerHeight,
+    }));
+  const mobileSave = (phase, extra = {}) => ({
+    version: 5,
+    contentVersion: "0.10.0-p4.4",
+    runSeed: "S28",
+    character: "warrior",
+    currentHp: 63,
+    maxHp: 70,
+    bag: [...Array.from({ length: 8 }, () => "basic"), "fire", "fire"],
+    equippedSkills: [
+      "slash",
+      "guard",
+      "burning-strike",
+      "ignite",
+      "ignite-sword",
+      "flame-rampage",
+    ],
+    // 경제 보존: 엘리트 2승 총수입 140 이내
+    gold: 135,
+    graph: {
+      layers: [
+        [{ id: "m0", kind: "elite", encounter: ["raider-plus"] }],
+        [{ id: "m1", kind: "elite", encounter: ["gatekeeper-plus"] }],
+        [{ id: "m2", kind: "shop" }],
+        [{ id: "m3", kind: "event" }],
+        [{ id: "m4", kind: "boss", encounter: ["ember-archmage"] }],
+      ],
+    },
+    nodeChoices: [0, 0, 0, 0, 0],
+    shopRemovals: 0,
+    shopPurchasedCoins: 0,
+    shopPurchasedSkills: 0,
+    eventCombats: 0,
+    eventCoinGains: 0,
+    eventCoinLosses: 0,
+    combatIndex: 2,
+    attempt: 0,
+    phase,
+    ...extra,
+  });
+  const shopPending = {
+    pendingShop: {
+      coinOptions: ["basic", "fire", "mana"],
+      coinPrices: [25, 50, 70],
+      skillOptions: ["smash", "fire-infusion"],
+      skillPrices: [50, 80],
+    },
+  };
+
+  for (const vp of [
+    { name: "세로 390x844", width: 390, height: 844 },
+    { name: "가로 844x390", width: 844, height: 390 },
+  ]) {
+    // 전투: 페이지 스크롤 0 + 터치 장전 1회
+    {
+      const { page, errors, context } = await mobileBoot({
+        ...vp,
+        url: `${baseUrl}?seed=${SEED}&encounter=raider`,
+        waitSel: ".end-turn",
+      });
+      const scroll = await noPageScroll(page);
+      check(`S28 ${vp.name} 전투 페이지 스크롤 0`, scroll.h && scroll.v);
+      const coin = page.locator(".hand-tray .coin").first();
+      await coin.scrollIntoViewIfNeeded();
+      await coin.tap();
+      const card = page.locator(".skill-card", { hasText: "베기" }).first();
+      await card.scrollIntoViewIfNeeded();
+      await card.locator(".socket").first().tap();
+      check(
+        `S28 ${vp.name} 터치 장전 성공`,
+        (await card.locator(".socket-coin").count()) >= 1,
+      );
+      const endTurn = await page.locator(".end-turn").boundingBox();
+      check(
+        `S28 ${vp.name} 턴 종료 뷰포트 내`,
+        endTurn !== null &&
+          endTurn.y + endTurn.height <= vp.height &&
+          endTurn.x + endTurn.width <= vp.width,
+      );
+      check(`S28 ${vp.name} 전투 에러 0`, errors.length === 0, errors.join(" | "));
+      await context.close();
+    }
+    // 상점: 하단 나가기 도달성 (패널 자체 스크롤)
+    {
+      const { page, errors, context } = await mobileBoot({
+        ...vp,
+        save: mobileSave("shop", shopPending),
+        waitSel: '[data-testid="shop-screen"]',
+      });
+      const scroll = await noPageScroll(page);
+      check(`S28 ${vp.name} 상점 페이지 스크롤 0`, scroll.h && scroll.v);
+      const leave = page.locator(".shop-leave");
+      await leave.scrollIntoViewIfNeeded();
+      await leave.tap();
+      check(
+        `S28 ${vp.name} 상점 나가기 도달·동작`,
+        (await page
+          .locator('[data-testid="run-phase"]')
+          .getAttribute("data-run-phase")) !== "shop",
+      );
+      check(`S28 ${vp.name} 상점 에러 0`, errors.length === 0, errors.join(" | "));
+      await context.close();
+    }
+    // 이벤트: 거절 버튼 도달성
+    {
+      const { page, errors, context } = await mobileBoot({
+        ...vp,
+        save: mobileSave("event", {
+          combatIndex: 3,
+          pendingEvent: { eventId: "blood-offering" },
+        }),
+        waitSel: '[data-testid="event-screen"]',
+      });
+      const scroll = await noPageScroll(page);
+      check(`S28 ${vp.name} 이벤트 페이지 스크롤 0`, scroll.h && scroll.v);
+      const decline = page.locator('[data-testid="event-decline"]');
+      await decline.scrollIntoViewIfNeeded();
+      await decline.tap();
+      check(
+        `S28 ${vp.name} 이벤트 거절 도달·동작`,
+        (await page
+          .locator('[data-testid="run-phase"]')
+          .getAttribute("data-run-phase")) !== "event",
+      );
+      check(`S28 ${vp.name} 이벤트 에러 0`, errors.length === 0, errors.join(" | "));
+      await context.close();
+    }
+    // 보상: 스킵 제어 도달성
+    {
+      const { page, errors, context } = await mobileBoot({
+        ...vp,
+        save: mobileSave("rewards", {
+          combatIndex: 2,
+          gold: 60,
+          graph: {
+            layers: [
+              [{ id: "r0", kind: "elite", encounter: ["raider-plus"] }],
+              [{ id: "r1", kind: "combat", encounter: ["raider"] }],
+              [{ id: "r2", kind: "combat", encounter: ["gatekeeper"] }],
+              [{ id: "r3", kind: "event" }],
+              [{ id: "r4", kind: "boss", encounter: ["ember-archmage"] }],
+            ],
+          },
+          pendingRewards: {
+            coinOptions: ["basic", "fire", "mana"],
+            coinChoiceResolved: false,
+            coinRemovalResolved: false,
+            skillOptions: ["smash", "fire-infusion"],
+            skillChoiceResolved: false,
+          },
+        }),
+        waitSel: '[data-testid="reward-stage"]',
+      });
+      const scroll = await noPageScroll(page);
+      check(`S28 ${vp.name} 보상 페이지 스크롤 0`, scroll.h && scroll.v);
+      const skip = page.locator('[data-testid="coin-reward-skip"]');
+      await skip.scrollIntoViewIfNeeded();
+      await skip.tap();
+      check(
+        `S28 ${vp.name} 보상 스킵 도달·동작`,
+        (await page.locator('[data-testid="reward-stage"]').innerText()).includes(
+          "코인 제거",
+        ),
+      );
+      check(`S28 ${vp.name} 보상 에러 0`, errors.length === 0, errors.join(" | "));
+      await context.close();
+    }
+  }
+}
+
 await browser.close();
 if (server !== null)
   await new Promise((resolveClose) => server.httpServer.close(resolveClose));

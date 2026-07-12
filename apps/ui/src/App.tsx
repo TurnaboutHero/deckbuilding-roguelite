@@ -2306,7 +2306,9 @@ const CombatBoard = ({
     if (drag === null) return;
     const dx = event.clientX - drag.x;
     const dy = event.clientY - drag.y;
-    if (!drag.started && Math.hypot(dx, dy) < 6) return;
+    // 터치는 손떨림 오검출을 막기 위해 임계 상향 (P5.1 감사: 6 → 12)
+    const threshold = event.pointerType === "touch" ? 12 : 6;
+    if (!drag.started && Math.hypot(dx, dy) < threshold) return;
     const under = document.elementFromPoint(event.clientX, event.clientY);
     const card = under?.closest("[data-slot]") ?? null;
     const overSlot =
