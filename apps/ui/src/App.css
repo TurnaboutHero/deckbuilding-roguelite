@@ -2185,7 +2185,10 @@ button:focus-visible {
   gap: 8px;
 }
 
-.shop-item {
+/* P5.3 대비: 전역 골드 그라디언트 버튼은 밝은 상단+어두운 하단 스톱이라 어떤
+   단색 텍스트도 최악-스톱 AA를 못 넘는다 — 상점 아이템은 플랫 다크 배경을
+   특이성으로 강제하고 밝은 텍스트를 쓴다 (11:1). */
+.shop-screen button.shop-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2193,21 +2196,23 @@ button:focus-visible {
   border: 2px solid #6b5a2c;
   border-radius: 8px;
   background: #1d2434;
-  color: inherit;
+  color: #f3e9d2;
   cursor: pointer;
 }
 
-.shop-item:disabled {
+.shop-screen button.shop-item:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-.shop-item:not(:disabled):hover {
+.shop-screen button.shop-item:not(:disabled):hover {
   border-color: var(--gold, #c9a227);
 }
 
-.shop-price {
+.shop-screen .shop-price {
+  /* P5.3 대비: 플랫 다크 배경(#1d2434) 위 밝은 금색 — 10:1+ */
   color: #ffd98a;
+  font-weight: 700;
 }
 
 .shop-empty {
@@ -2704,4 +2709,30 @@ button:focus-visible {
   .intent {
     forced-color-adjust: auto;
   }
+}
+
+
+/* P5.4 복구 화면 (런타임 오류·손상 저장) */
+.boot-recovery {
+  max-width: 480px;
+  margin: 18vh auto;
+  padding: 24px;
+  text-align: center;
+  border: 3px solid var(--gold, #c9a227);
+  border-radius: 10px;
+  background: rgba(16, 20, 30, 0.96);
+  color: #f3e9d2;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.boot-recovery button {
+  align-self: center;
+  padding: 12px 22px;
+  border: 2px solid var(--gold, #c9a227);
+  border-radius: 8px;
+  background: #2a3247;
+  color: #f3e9d2;
+  font-weight: 700;
 }

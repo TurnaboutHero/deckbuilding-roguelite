@@ -1,0 +1,117 @@
+{
+ "schemaVersion": "a11y-contrast-report-v2",
+ "blocking": true,
+ "rows": [
+  {
+   "selector": ".unit-name",
+   "label": "유닛 이름",
+   "present": true,
+   "ratio": 9.29,
+   "fontSizePx": 19,
+   "threshold": 4.5,
+   "passAA": true
+  },
+  {
+   "selector": ".hp-num",
+   "label": "HP 숫자",
+   "present": true,
+   "ratio": 8.86,
+   "fontSizePx": 15,
+   "threshold": 4.5,
+   "passAA": true
+  },
+  {
+   "selector": ".card-title",
+   "label": "카드 제목",
+   "present": true,
+   "ratio": 4.7,
+   "fontSizePx": 13,
+   "threshold": 4.5,
+   "passAA": true
+  },
+  {
+   "selector": ".card-effect-copy",
+   "label": "카드 효과 본문",
+   "present": true,
+   "ratio": 14.82,
+   "fontSizePx": 10.5,
+   "threshold": 4.5,
+   "passAA": true
+  },
+  {
+   "selector": ".run-meta strong",
+   "label": "진행 메타",
+   "present": true,
+   "ratio": 8.05,
+   "fontSizePx": 13,
+   "threshold": 4.5,
+   "passAA": true
+  },
+  {
+   "selector": ".end-turn",
+   "label": "턴 종료 버튼",
+   "present": true,
+   "ratio": 9.57,
+   "fontSizePx": 16,
+   "threshold": 4.5,
+   "passAA": true
+  },
+  {
+   "selector": ".rejection-chip",
+   "label": "거부 칩",
+   "present": true,
+   "ratio": 15.76,
+   "fontSizePx": 13,
+   "threshold": 4.5,
+   "passAA": true
+  },
+  {
+   "selector": ".hint-strip",
+   "label": "힌트 스트립",
+   "present": true,
+   "ratio": 15.52,
+   "fontSizePx": 11,
+   "threshold": 4.5,
+   "passAA": true
+  },
+  {
+   "selector": ".mute-toggle",
+   "label": "음소거 토글",
+   "present": true,
+   "ratio": 10.22,
+   "fontSizePx": 11,
+   "threshold": 4.5,
+   "passAA": true
+  },
+  {
+   "selector": ".shop-price",
+   "label": "상점 가격",
+   "present": true,
+   "ratio": 11.48,
+   "fontSizePx": 14,
+   "threshold": 4.5,
+   "passAA": true
+  },
+  {
+   "selector": ".shop-item-name",
+   "label": "상점 품명",
+   "present": true,
+   "ratio": 12.85,
+   "fontSizePx": 14,
+   "threshold": 4.5,
+   "passAA": true
+  },
+  {
+   "selector": ".shop-gold",
+   "label": "상점 골드",
+   "present": true,
+   "ratio": 15.25,
+   "fontSizePx": 18,
+   "threshold": 4.5,
+   "passAA": true
+  }
+ ],
+ "missing": [],
+ "failing": [],
+ "pass": true
+}

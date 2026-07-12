@@ -3732,6 +3732,50 @@ const winCurrentCombat = async (page) => {
   }
 }
 
+// ---------- 시나리오 30: P5.4 복구 — 손상 저장 명시 UX (조용한 삭제 금지) ----------
+{
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    deviceScaleFactor: 1,
+  });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(String(error.message)));
+  // addInitScript는 내비게이션마다 재주입되므로 evaluate+reload로 1회만 손상시킨다
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.evaluate(() =>
+    window.localStorage.setItem(
+      "deckbuilding-roguelite.run-save",
+      "{corrupted-not-json",
+    ),
+  );
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector('[data-testid="corrupt-save-restart"]', {
+    timeout: 15000,
+  });
+  check(
+    "S30 손상 저장 명시 화면 (자동 삭제 아님)",
+    (await page
+      .locator('[data-testid="run-phase"]')
+      .getAttribute("data-run-phase")) === "corrupt-save" &&
+      (await page.evaluate(() =>
+        window.localStorage.getItem("deckbuilding-roguelite.run-save"),
+      )) !== null,
+  );
+  await page.locator('[data-testid="corrupt-save-restart"]').click();
+  await page.waitForSelector('[data-testid="character-select"]', {
+    timeout: 15000,
+  });
+  check(
+    "S30 새 런 시작 → 저장 정리·선택 화면",
+    (await page.evaluate(() =>
+      window.localStorage.getItem("deckbuilding-roguelite.run-save"),
+    )) === null,
+  );
+  check("S30 에러 0", errors.length === 0, errors.join(" | "));
+  await context.close();
+}
+
 await browser.close();
 if (server !== null)
   await new Promise((resolveClose) => server.httpServer.close(resolveClose));

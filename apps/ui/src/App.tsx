@@ -152,7 +152,7 @@ import type {
   CoinPileZone,
   DragSource,
 } from "./interaction";
-import { clearRun, loadRun, saveRun } from "./run-storage";
+import { RUN_SAVE_KEY, clearRun, loadRun, saveRun } from "./run-storage";
 import {
   beginHumanCombat,
   createHumanRunTrace,
@@ -387,7 +387,7 @@ const IntentBadge = ({ enemy }: { enemy: CombatState["enemies"][number] }) => (
       ) : action.kind === "buffNextAttack" ? (
         // 충전 타입 없음(사용자 확정) — 버프 의도로 표시, 강공 예고는 패턴 순서가 담당
         <span key={index} aria-label={`버프: 다음 공격 +${action.amount}`}>
-          ↑ 공격 +{action.amount}
+          <Keyword term="attack-buff">↑ 공격 +{action.amount}</Keyword>
         </span>
       ) : (
         <span key={index} aria-label={`다음 드로우 ${action.amount} 감소`}>
@@ -598,6 +598,7 @@ interface RunSession {
 
 type BootState =
   | { mode: "select"; seed: string | null }
+  | { mode: "corrupt-save" }
   | { mode: "run"; session: RunSession };
 
 const replaceUrlSeed = (seed: string, character?: CharacterId): void => {
@@ -712,6 +713,17 @@ const bootState = (): BootState => {
       session: freshSession(seedFromUrl(), testCharacter ?? ("warrior" as CharacterId)),
     };
   const saved = loadRun(window.localStorage, CONTENT_VERSION, contentDb);
+  // P5.4 복구: 저장이 존재하는데 검증을 통과하지 못하면 조용히 버리지 않고
+  // 명시적으로 알린 뒤 사용자가 새 런을 선택하게 한다.
+  let corruptSave = false;
+  if (saved === null) {
+    try {
+      corruptSave = window.localStorage.getItem(RUN_SAVE_KEY) !== null;
+    } catch {
+      corruptSave = false;
+    }
+  }
+  if (corruptSave) return { mode: "corrupt-save" };
   if (saved === null) {
     // URL contract: existing playtests boot with ?seed= and must keep the legacy
     // warrior fast path. Character selection appears only on pure new entry or
@@ -1630,6 +1642,44 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
 
 export const App = () => {
   const [boot, setBoot] = useState<BootState>(bootState);
+  if (boot.mode === "corrupt-save") {
+    return (
+      <main
+        aria-label="저장 복구 화면"
+        className="run-stage-shell"
+        data-run-phase="corrupt-save"
+        data-testid="run-phase"
+      >
+        <div className="backdrop" aria-hidden="true">
+          <img alt="" className="backdrop-img" src={bgForest} />
+        </div>
+        <section className="boot-recovery" role="alert">
+          <h1>저장 데이터를 읽을 수 없습니다</h1>
+          <p>
+            저장이 손상되었거나 알 수 없는 형식입니다. 기존 저장은 이어할 수
+            없으며, 새 런을 시작하면 삭제됩니다.
+          </p>
+          <button
+            data-testid="corrupt-save-restart"
+            type="button"
+            onClick={() => {
+              try {
+                clearRun(window.localStorage);
+              } catch {
+                // 저장소 접근 불가 시에도 새 런 진입은 가능해야 한다
+              }
+              window.location.replace(
+                `${window.location.pathname}?select=1`,
+              );
+            }}
+          >
+            새 런 시작
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   if (boot.mode === "select") {
     return (
       <main
@@ -2305,10 +2355,10 @@ const CombatBoard = ({
       delay = 260;
     }
 
-    // reduced-motion: 연출 대기 시간을 최소화 (JS 딜레이도 모션의 일부 — P5.3 감사)
+    // reduced-motion: 연출 대기 0 — 다음 태스크로 즉시 진행 (JS 딜레이도 모션이다)
     const timer = window.setTimeout(
       () => setQueue(rest),
-      reducedMotion ? Math.min(delay, 120) : delay + 150,
+      reducedMotion ? 0 : delay + 150,
     );
     return () => window.clearTimeout(timer);
   }, [locked, queue, resolving, state.turnTriggers]);
