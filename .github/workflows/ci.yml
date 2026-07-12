@@ -24,6 +24,15 @@ jobs:
       - run: pnpm test
       - run: pnpm ci:sim
       - run: pnpm build
+      # P5.5 릴리스 게이트 (차단)
+      - run: node scripts/check-provenance.mjs
+      - run: node scripts/check-budget.mjs
+      # P5.5 report-only — 경제 소표본 (실패해도 차단 안 함)
+      - run: npx tsx tools/sim/src/economy-report.ts --games 5 > economy-smoke.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: economy-smoke
+          path: economy-smoke.json
 
   playtest:
     runs-on: ubuntu-latest
@@ -45,6 +54,13 @@ jobs:
       - run: pnpm -F @game/ui build
       - run: pnpm -F @game/ui playtest -- ../../playtest-artifacts
       - run: node apps/ui/scripts/feedback-check.mjs
+      # P5.5: 접근성 대비 게이트 (차단)
+      - run: node apps/ui/scripts/a11y-contrast.mjs contrast-report.json
+        working-directory: .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contrast-report
+          path: contrast-report.json
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

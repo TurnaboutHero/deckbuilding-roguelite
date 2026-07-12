@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install
+      - run: pnpm typecheck && pnpm lint && pnpm test && pnpm ci:sim
+      - run: pnpm build
+      - run: node scripts/check-provenance.mjs
+      - run: node scripts/check-budget.mjs
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "deckbuilding-roguelite ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --notes "engineering-complete / experience-unverified — 라이브: https://turnabouthero.github.io/deckbuilding-roguelite/"
