@@ -444,7 +444,8 @@ const playCombat = (initial: CombatState): CombatState => {
   let expectedCoins = Object.keys(state.coins).length;
   for (
     let commandIndex = 0;
-    commandIndex < 500 && state.phase === "player";
+    // P6: 막 스케일 장기전(냉기 방어형)이 500을 초과 — 커맨드 상한 1500으로 상향
+    commandIndex < 4000 && state.phase === "player";
     commandIndex += 1
   ) {
     const command = chooseRunCommand(state);
@@ -464,7 +465,12 @@ const playCombat = (initial: CombatState): CombatState => {
     assertCombatInvariants(state, expectedCoins);
   }
   if (state.phase !== "victory" && state.phase !== "defeat") {
-    throw new Error("baseline policy did not finish combat within 500 commands");
+    throw new Error(
+      `baseline policy did not finish combat within 4000 commands (turn ${state.turn}, ` +
+        `player ${state.player.hp}hp/${state.player.block}bk, enemies ${state.enemies
+          .map((enemy) => `${String(enemy.defId)}:${enemy.hp}/${enemy.maxHp}`)
+          .join(" ")})`,
+    );
   }
   return state;
 };
