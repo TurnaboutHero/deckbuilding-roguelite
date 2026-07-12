@@ -275,6 +275,31 @@ const winCurrentCombat = async (page) => {
   await page.screenshot({ path: `${outDir}/01-initial.png` });
 
   check("S1 첫 손패 5개", (await handCount(page)) === 5);
+  // P5.2: 음소거 토글 — 정확히 1개(중복 렌더 금지)·기본 끔·반전·리로드 영속
+  check(
+    "S1 음소거 토글 정확히 1개",
+    (await page.locator('[data-testid="mute-toggle"]').count()) === 1,
+  );
+  check(
+    "S1 음소거 토글 기본 꺼짐",
+    (await page.locator('[data-testid="mute-toggle"]').first().getAttribute("aria-pressed")) === "false",
+  );
+  await page.locator('[data-testid="mute-toggle"]').first().click();
+  check(
+    "S1 음소거 토글 켬 반전",
+    (await page.locator('[data-testid="mute-toggle"]').first().getAttribute("aria-pressed")) === "true",
+  );
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForFunction(
+    () => document.querySelector(".end-turn:not(:disabled)") !== null,
+    undefined,
+    { timeout: 15000 },
+  );
+  check(
+    "S1 음소거 설정 리로드 영속",
+    (await page.locator('[data-testid="mute-toggle"]').first().getAttribute("aria-pressed")) === "true",
+  );
+  await page.locator('[data-testid="mute-toggle"]').first().click();
   check(
     "S1 주머니 6 (10+불씨1-드로우5)",
     (await page.locator(".pouch-circle").innerText()) === "6",

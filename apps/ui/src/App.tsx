@@ -42,6 +42,7 @@ import "./App.css";
 import "./vfx.css";
 import { AtlasSprite } from "./AtlasSprite";
 import { REJECTION_TEXT, rejectionReason } from "./action-feedback";
+import { isMuted, playSfx, setMuted } from "./audio";
 import { CardEffectRows } from "./card-effects";
 import { CharacterSelect } from "./character-select";
 import {
@@ -752,6 +753,24 @@ const SkillRewardMark = ({
   return <EmberIcon scale={scale} />;
 };
 
+const MuteToggle = () => {
+  const [muted, setMutedState] = useState(isMuted());
+  return (
+    <button
+      aria-pressed={!muted}
+      className="mute-toggle"
+      data-testid="mute-toggle"
+      type="button"
+      onClick={() => {
+        setMuted(!muted);
+        setMutedState(!muted);
+      }}
+    >
+      소리 {muted ? "끔" : "켬"}
+    </button>
+  );
+};
+
 const currentNodeFor = (run: RunState) =>
   run.graph.layers[run.combatIndex]?.[run.nodeChoices[run.combatIndex] ?? 0];
 
@@ -814,6 +833,7 @@ const RunMeta = ({ run }: { run: RunState }) => {
         골드 {run.gold}
       </span>
       <span>시도 {run.attempt + 1}</span>
+      <MuteToggle />
       <small>SEED {run.runSeed}</small>
     </header>
   );
@@ -898,6 +918,7 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
         layer: run.combatIndex,
         action: fact,
       });
+      if (fact.kind !== "leave") playSfx("purchase");
       setShopRejection(null);
       commitRun(next);
     } catch (error) {
@@ -949,6 +970,7 @@ const RunGame = ({ initialSession }: { initialSession: RunSession }) => {
       completed,
     );
     const settled = settleRunCombat(run, completed, contentDb);
+    playSfx(completed.phase === "victory" ? "victory" : "defeat");
     if (settled.phase === "victory" || settled.phase === "defeat") {
       telemetryRef.current = finishHumanRun(currentTelemetry(), {
         result: settled.phase,
@@ -2188,11 +2210,13 @@ const CombatBoard = ({
         setCoinFaces((faces) => coinFacesAfterEvent(faces, event));
         setFlipping((items) => ({ ...items, [Number(event.coin)]: false }));
         triggerVfx(`coin-${Number(event.coin)}`, 330);
+        playSfx(event.face === "heads" ? "flip-heads" : "flip-tails");
       }, 600);
     } else if (event?.type === "coinsDrawn") {
       setCoinFaces((faces) => coinFacesAfterEvent(faces, event));
       delay = 220;
     } else if (event?.type === "damageDealt") {
+      playSfx("hit");
       triggerVfx(
         event.target.type === "player"
           ? "unit-player"
@@ -2206,6 +2230,7 @@ const CombatBoard = ({
       );
       delay = event.source === "enemy" ? 520 : 420;
     } else if (event?.type === "blockGained") {
+      playSfx("block");
       triggerVfx(
         event.target.type === "player"
           ? "block-player"

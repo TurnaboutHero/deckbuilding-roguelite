@@ -2512,6 +2512,10 @@ button:focus-visible {
 }
 
 @media (max-height: 500px) {
+  /* 44px 터치 타깃 유지 + 메타 줄 높이 불변 (음수 마진으로 흡수) */
+  .run-meta .mute-toggle {
+    margin: -14px 0;
+  }
   .combat-shell {
     min-height: 100svh;
     min-height: 100dvh;
@@ -2614,7 +2618,7 @@ button:focus-visible {
     display: none;
   }
   .skill-row {
-    padding: 2px 4px 4px;
+    padding: 2px 4px 0;
   }
   .bottom-hud {
     padding: 4px 6px;
@@ -2656,8 +2660,24 @@ button:focus-visible {
     min-width: 44px;
   }
   .hand-tray .coin,
-  .socket {
+  .socket,
+  .mute-toggle {
     min-width: 44px;
     min-height: 44px;
   }
+}
+
+
+/* P5.2 음소거 토글 — 픽셀 폰트 안전 텍스트 버튼 */
+.mute-toggle {
+  padding: 3px 8px;
+  border: 2px solid var(--out);
+  background: #2a3247;
+  color: #d9e7ff;
+  font-size: 11px;
+}
+
+.mute-toggle[aria-pressed="true"] {
+  background: #3c5a35;
+  color: #d6f5c9;
 }
