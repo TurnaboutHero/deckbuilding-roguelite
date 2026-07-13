@@ -45,9 +45,9 @@ export const feedbackCuesFor = (event: CombatEvent): FeedbackCue[] => {
     case "summonActed":
       return [cue(`summon-${event.uid}`, 320)];
     case "coinPlaced":
-      return [cue(`coin-placed-${Number(event.coin)}`, 180)];
+      return [cue(`coin-${Number(event.coin)}`, 360)];
     case "coinUnplaced":
-      return [cue(`coin-unplaced-${Number(event.coin)}`, 180)];
+      return [cue(`coin-${Number(event.coin)}`, 360)];
     case "skillUsed":
       return [cue(`skill-slot-${Number(event.slot)}`, 260)];
     case "coinFlipped":

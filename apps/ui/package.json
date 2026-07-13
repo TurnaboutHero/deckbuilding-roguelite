@@ -5,6 +5,7 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "feedback-regression": "node scripts/feedback-regression.mjs",
     "shot": "node scripts/screenshot.mjs",
     "playtest": "node scripts/playtest.mjs"
   },
