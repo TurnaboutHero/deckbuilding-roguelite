@@ -1,7 +1,7 @@
 // P5.2 사운드 — 음소거 영속·무음 폴백 (AudioContext 부재 환경에서 무예외)
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { isMuted, playSfx, setMuted } from "./audio";
+import { isMuted, playSfx, setMuted, sfxKinds } from "./audio";
 
 const storage = new Map<string, string>();
 beforeEach(() => {
@@ -53,8 +53,8 @@ describe("audio (합성 SFX)", () => {
 
   it("AudioContext 부재 환경에서 playSfx가 무음 폴백한다 (무예외)", () => {
     setMuted(false);
-    expect(() => playSfx("hit")).not.toThrow();
-    expect(() => playSfx("victory")).not.toThrow();
+    expect(sfxKinds.length).toBeGreaterThan(20);
+    for (const kind of sfxKinds) expect(() => playSfx(kind)).not.toThrow();
     setMuted(true);
     expect(() => playSfx("flip-heads")).not.toThrow();
   });

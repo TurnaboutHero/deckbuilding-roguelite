@@ -94,6 +94,7 @@ import { buildResolutionSummary, statusKo } from "./resolution-summary";
 import { ResolutionTicket } from "./resolution-ticket";
 import type { ResolutionSummary } from "./resolution-summary";
 import { feedbackCuesFor } from "./feedback-cues";
+import { sfxCuesFor } from "./combat-sfx";
 import {
   cycleTarget,
   defaultTarget,
@@ -2760,6 +2761,7 @@ const CombatBoard = ({
     if (event !== undefined && !reducedMotion) {
       for (const cue of feedbackCuesFor(event)) triggerVfx(cue.key, cue.duration);
     }
+    if (event !== undefined) for (const cue of sfxCuesFor(event)) playSfx(cue);
     if (event?.type === "coinFlipped") {
       setFlipping((items) => ({ ...items, [Number(event.coin)]: true }));
       delay = 750;
@@ -2767,13 +2769,11 @@ const CombatBoard = ({
         setCoinFaces((faces) => coinFacesAfterEvent(faces, event));
         setFlipping((items) => ({ ...items, [Number(event.coin)]: false }));
         triggerVfx(`coin-${Number(event.coin)}`, 330);
-        playSfx(event.face === "heads" ? "flip-heads" : "flip-tails");
       }, 600);
     } else if (event?.type === "coinsDrawn") {
       setCoinFaces((faces) => coinFacesAfterEvent(faces, event));
       delay = 220;
     } else if (event?.type === "damageDealt") {
-      playSfx("hit");
       showFloat(
         `-${event.amount}`,
         event.target.type === "player" ? "player" : "enemy",
@@ -2782,7 +2782,6 @@ const CombatBoard = ({
       );
       delay = event.source === "enemy" ? 520 : 420;
     } else if (event?.type === "blockGained") {
-      playSfx("block");
       showFloat(
         `+${event.amount}`,
         event.target.type === "player" ? "player" : "enemy",
