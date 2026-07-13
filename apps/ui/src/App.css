@@ -26,6 +26,14 @@
   --frame-edge: #6e552d;
   --frame-light: #d7ad55;
   --panel-deep: #171a23;
+  --z-world: 0;
+  --z-stage: 10;
+  --z-controls: 100;
+  --z-popover: 200;
+  --z-tooltip: 300;
+  --z-drag: 400;
+  --z-modal: 500;
+  --z-notice: 600;
   font-family: "NeoDunggeunmo", ui-monospace, Menlo, Consolas, monospace;
   color: var(--paper);
   font-synthesis: none;
@@ -71,7 +79,7 @@ button:focus-visible {
 .backdrop {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: var(--z-world);
   pointer-events: none;
 }
 
@@ -88,14 +96,14 @@ button:focus-visible {
 .seed-strip,
 .run-meta {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-stage);
 }
 
 .run-meta {
   position: absolute;
   top: 10px;
   left: 50%;
-  z-index: 11;
+  z-index: var(--z-controls);
   transform: translateX(-50%);
   width: clamp(520px, 42vw, 760px);
   min-height: clamp(34px, 2.4vw, 42px);
@@ -1046,7 +1054,7 @@ button:focus-visible {
   position: absolute;
   left: 0;
   bottom: calc(100% + 10px);
-  z-index: 12;
+  z-index: var(--z-popover);
   min-width: 168px;
   max-width: min(240px, 60vw);
   max-height: min(300px, 55vh);
@@ -1301,7 +1309,7 @@ button:focus-visible {
 
 .drag-proxy {
   position: fixed;
-  z-index: 30;
+  z-index: var(--z-drag);
   width: 46px;
   height: 46px;
   transform: translate(-50%, -58%) scale(1.1);
@@ -1529,7 +1537,7 @@ button:focus-visible {
 .result-overlay {
   position: absolute;
   inset: 0;
-  z-index: 10;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1689,7 +1697,7 @@ button:focus-visible {
   position: fixed;
   top: max(12px, env(safe-area-inset-top));
   right: max(12px, env(safe-area-inset-right));
-  z-index: 18;
+  z-index: var(--z-controls);
   min-width: 72px;
   min-height: 42px;
   padding: 8px 14px;
@@ -1709,7 +1717,7 @@ button:focus-visible {
 
 .run-menu-overlay {
   position: fixed;
-  z-index: 40;
+  z-index: var(--z-modal);
   padding: 24px;
 }
 
@@ -2989,7 +2997,7 @@ button:focus-visible {
 /* P5.4 복구 화면 (런타임 오류·손상 저장) */
 .boot-recovery {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-notice);
   max-width: 480px;
   margin: 18vh auto;
   padding: 24px;

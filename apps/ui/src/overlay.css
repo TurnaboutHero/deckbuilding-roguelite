@@ -1,0 +1,39 @@
+#overlay-root {
+  position: relative;
+}
+
+.overlay-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.overlay-layer-popover {
+  z-index: var(--z-popover);
+}
+
+.overlay-layer-tooltip {
+  z-index: var(--z-tooltip);
+}
+
+.overlay-layer-drag {
+  z-index: var(--z-drag);
+}
+
+.overlay-layer-modal {
+  z-index: var(--z-modal);
+}
+
+.overlay-layer-notice {
+  z-index: var(--z-notice);
+}
+
+.anchored-overlay {
+  position: fixed;
+  margin: 0;
+  pointer-events: none;
+}
+
+.anchored-overlay.interactive {
+  pointer-events: auto;
+}

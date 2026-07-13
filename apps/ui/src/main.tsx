@@ -3,6 +3,12 @@ import ReactDOM from 'react-dom/client';
 
 import { App } from './App';
 
+if (document.getElementById('overlay-root') === null) {
+  const overlayRoot = document.createElement('div');
+  overlayRoot.id = 'overlay-root';
+  document.body.append(overlayRoot);
+}
+
 // P5.4 복구: 런타임 오류가 전체 백지로 끝나지 않도록 최소 재시도 UI를 제공한다.
 // 저장은 매 상태 변화마다 이미 영속되므로 새로고침 = 이어하기다.
 class RecoveryBoundary extends React.Component<

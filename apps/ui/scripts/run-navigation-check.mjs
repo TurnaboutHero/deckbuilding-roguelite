@@ -38,6 +38,25 @@ try {
   await page.evaluate(() => window.localStorage.clear());
   await page.reload({ waitUntil: "networkidle" });
 
+  const layerTokens = await page.evaluate(() => {
+    const style = getComputedStyle(document.documentElement);
+    return [
+      "--z-world",
+      "--z-stage",
+      "--z-controls",
+      "--z-popover",
+      "--z-tooltip",
+      "--z-drag",
+      "--z-modal",
+      "--z-notice",
+    ].map((name) => [name, style.getPropertyValue(name).trim()]);
+  });
+  check(
+    "shared overlay layer tokens exist",
+    layerTokens.every(([, value]) => value !== ""),
+    layerTokens.filter(([, value]) => value === "").map(([name]) => name).join(", "),
+  );
+
   const hasTitle = (await page.locator('[data-testid="title-screen"]').count()) === 1;
   check("title shown without save", hasTitle);
   if (!hasTitle) {
