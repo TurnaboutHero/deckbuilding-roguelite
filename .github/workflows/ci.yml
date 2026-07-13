@@ -62,6 +62,7 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm --filter @game/ui exec playwright install --with-deps chromium
       - run: pnpm -F @game/ui build
+      - run: pnpm check:feedback-regression
       - run: node apps/ui/scripts/run-navigation-check.mjs
       - run: pnpm -F @game/ui playtest -- ../../playtest-artifacts
       - run: node apps/ui/scripts/feedback-check.mjs

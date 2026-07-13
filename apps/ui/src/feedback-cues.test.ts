@@ -27,6 +27,15 @@ describe("feedbackCuesFor", () => {
     ]);
   });
 
+  it("maps coin placement and recovery to the rendered coin key", () => {
+    expect(keys({ type: "coinPlaced", coin: 4 as never, slot: 0 as never })).toEqual([
+      "coin-4",
+    ]);
+    expect(keys({ type: "coinUnplaced", coin: 4 as never, slot: 0 as never })).toEqual([
+      "coin-4",
+    ]);
+  });
+
   it("does not create motion cues for zero-value or bookkeeping events", () => {
     expect(keys({ type: "healed", target: { type: "player" }, amount: 0, hp: 5 })).toEqual([]);
     expect(keys({ type: "turnStarted", turn: 2 })).toEqual([]);

@@ -666,6 +666,11 @@ const CoinDisc = ({
     className={`socket-coin ${coinVisualClasses(state, coin)} ${flipping === true ? "flipping" : ""} ${
       face !== undefined ? `face-${face}` : ""
     } ${vfx ? "vfx-reveal" : ""}`}
+    style={
+      vfx && face === undefined
+        ? { animation: "vfx-coin-heads-reveal 300ms steps(3) 1" }
+        : undefined
+    }
   >
     {face !== undefined ? (
       <span className={`coin-face-mark ${face}`}>
@@ -2405,6 +2410,18 @@ const CombatBoard = ({
     setCoinChoice(null);
     setTargeting(null);
     // 장전/회수는 상태 반영이 곧 피드백 — 큐·잠금 없이 즉답해 연속 장전이 끊기지 않는다
+    const immediate = events.filter(
+      (event) => event.type === "coinPlaced" || event.type === "coinUnplaced",
+    );
+    const reducedMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    for (const event of immediate) {
+      if (!reducedMotion)
+        for (const cue of feedbackCuesFor(event))
+          triggerVfx(cue.key, cue.duration);
+      for (const cue of sfxCuesFor(event)) playSfx(cue);
+    }
     const animated = events.filter(
       (event) => event.type !== "coinPlaced" && event.type !== "coinUnplaced",
     );
@@ -3588,9 +3605,16 @@ const CombatBoard = ({
                   drag !== null && drag.started && drag.coin === coin
                     ? "drag-origin"
                     : ""
-                } ${shakeCoin === coin ? "drag-cancel" : ""}`}
+                } ${shakeCoin === coin ? "drag-cancel" : ""} ${
+                  vfx.has(`coin-${Number(coin)}`) ? "vfx-reveal" : ""
+                }`}
                 disabled={locked}
                 key={coin}
+                style={
+                  vfx.has(`coin-${Number(coin)}`)
+                    ? { animation: "vfx-coin-heads-reveal 300ms steps(3) 1" }
+                    : undefined
+                }
                 type="button"
                 onClick={() => {
                   if (clickGuard()) return;

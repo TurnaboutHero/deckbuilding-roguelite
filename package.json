@@ -20,9 +20,10 @@
     "check:content": "vitest run packages/content",
     "check:assets": "node scripts/check-provenance.mjs",
     "check:a11y": "node apps/ui/scripts/a11y-contrast.mjs",
+    "check:feedback-regression": "pnpm -F @game/ui feedback-regression",
     "check:mobile": "pnpm -F @game/ui playtest",
     "check:perf": "node scripts/check-budget.mjs && node apps/ui/scripts/perf-check.mjs",
-    "release:verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm ci:sim && pnpm build && pnpm check:content && pnpm check:assets && pnpm check:perf && pnpm check:a11y && pnpm check:mobile"
+    "release:verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm ci:sim && pnpm build && pnpm check:feedback-regression && pnpm check:content && pnpm check:assets && pnpm check:perf && pnpm check:a11y && pnpm check:mobile"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",
