@@ -1,7 +1,10 @@
-# 코인플립 로그라이크 (deckbuilding-roguelite) — PRD
+# [역사 문서] 코인플립 로그라이크 — 초기 PRD 요약
 
 > 생성일: 2026-07-10 · 생성 도구: Show Me The PRD
-> **심층 명세는 [docs/PRD.md](../docs/PRD.md)(v0.3)와 [docs/implementation-plan.md](../docs/implementation-plan.md)(v1.1)가 원본(SSoT)이다.** 이 문서는 바이브코딩 세션에 바로 먹이는 요약본이며, 충돌 시 원본이 이긴다.
+>
+> ⚠️ 이 문서는 초기 MVP를 시작할 때 만든 스냅샷이다. **현재 규칙 정본이 아니다.** 본문의 5전투 런, 전사 중심 범위, 상점·이벤트·보스·모바일 미구현 전제는 당시 상태를 보존하기 위해 남겨 둔다.
+>
+> 현재 작업은 [`../docs/README.md`](../docs/README.md)의 문서 우선순위를 따르고, [`../docs/PRD.md`](../docs/PRD.md), [`P7_NEW_DESIGN_DECISIONS.md`](./P7_NEW_DESIGN_DECISIONS.md), [`../docs/current-implementation.md`](../docs/current-implementation.md)를 함께 읽는다.
 
 ---
 
@@ -37,81 +40,71 @@
 
 | 기능 | 설명 | 우선순위 | 복잡도 |
 |------|------|----------|--------|
-| 전투 코어 (드로우→장전→플립→해결) | docs/implementation-plan §5 파이프라인 그대로 | P1 (MVP) | 복잡 |
+| 전투 코어 (드로우→장전→플립→해결) | 당시 `docs/implementation-plan` §5 파이프라인 | P1 (MVP) | 복잡 |
 | 화염 코인 + 화상 | 속성 동전과 스택형 상태이상 | P1 (MVP) | 보통 |
 | 소비형 스킬 + 취급 태그 | 확정 효과, "이번 턴 화염 취급" | P1 (MVP) | 보통 |
-| 전투 UI (PRD §15.1 레이아웃) | 캡슐 프레임 / 노란 소켓 / 주머니 원 / 플립 연출 | P1 (MVP) | 복잡 |
+| 전투 UI | 캡슐 프레임 / 노란 소켓 / 주머니 원 / 플립 연출 | P1 (MVP) | 복잡 |
 | 5전투 런 + 보상 | 코인 3택1 + 제거 1회 + 스킬 2택1 | P1 (MVP) | 보통 |
-| 밸런스 시뮬레이터 | 봇 수천 판, §16.2 지표 리포트 | P2 | 보통 |
+| 밸런스 시뮬레이터 | 봇 수천 판, 초기 지표 리포트 | P2 | 보통 |
 | 마나 코인, 추가 스킬 풀 | 방어 속성, 강타·화염 주입 등 | P2 | 간단 |
 | 추가 캐릭터·속성·보스·상점 | 수호자(마나), 동상/감전 등 | P3 | 복잡 |
 
 ## 4. 사용자 흐름
 
-```
+```text
 런 시작(전사) → [전투: 드로우 5 → 장전/소비 → 플립 → 효과 → 턴 종료 ⟲] → 승리
 → 보상(코인/스킬/제거) → 다음 전투 … ×5 → 런 결과(시드 표시) → 재시작
 ```
 
-상세: docs/PRD.md §5(전투 루프), docs/implementation-plan.md §5.1(턴 구조 확정판)
+당시 상세: `docs/PRD.md` §5, `docs/implementation-plan.md` §5.1.
 
 ---
 
-## 5. 성공 기준 (MVP)
+## 5. 성공 기준 (초기 MVP)
 
 - [ ] 플레이테스터 다수가 "플립 전에 결과가 궁금했다"고 답한다 (M2 손맛 게이트)
 - [ ] "속성 코인을 플립할지 소비할지 고민됐다"는 반응 관찰 (M4 게이트)
-- [ ] 1전투 평균 4~7턴, 완전 무효 행동 5% 이하 (사람 플레이 로그 기준 — docs 계획 §8.3)
+- [ ] 1전투 평균 4~7턴, 완전 무효 행동 5% 이하 (사람 플레이 로그 기준)
 - [ ] 시드 하나로 런 전체가 재현된다 (버그 리포트 가능)
 
-## 6. 안 만드는 것 (Out of Scope — Phase 1)
+현재까지 사람 경험 평가는 `experience-unverified`로 유지한다. 실행 절차는 [`PLAYTEST_KIT.md`](./PLAYTEST_KIT.md)를 사용한다.
 
-- 계정/서버/클라우드 저장 — 이유: 로컬 localStorage로 충분, MVP는 재미 검증이 목적
-- 상점·이벤트·보스·맵 — 이유: PRD §14.2가 명시적으로 제외
-- 모바일 터치 대응 — 이유: 데스크톱 웹 우선 확정, 검증 후 대응
-- 냉기/전기/혈액 속성, 전사 외 캐릭터 — 이유: Phase 3
-- 사운드/BGM — 이유: 손맛 검증은 시각 연출 우선 (가정 원장 #3)
+## 6. 당시 Out of Scope — Phase 1
+
+아래 항목은 **현재 비목표가 아니라 2026-07-10 당시 Phase 1 제외 범위**다.
+
+- 계정/서버/클라우드 저장 — 로컬 localStorage 사용
+- 상점·이벤트·보스·맵
+- 모바일 터치 대응
+- 냉기/전기/혈액 속성, 전사 외 캐릭터
+- 사운드/BGM
+
+현재 구현에는 위 항목 중 다수가 포함되어 있다. 현재 범위는 [`../docs/current-implementation.md`](../docs/current-implementation.md)를 본다.
 
 ---
 
-## 7. 디자인 방향
+## 7. 당시 디자인 방향
 
-**스타일: 픽셀 아트 레트로** (사용자 확정). 동전 플립 프레임 애니메이션과 궁합이 좋고 에셋 규격화가 쉽다.
+**스타일: 픽셀 아트 레트로.** 동전 플립 프레임 애니메이션과 궁합이 좋고 에셋 규격화가 쉽다는 판단이었다.
 
-**아트 디렉션 확정 (목업 검토 후)**: 밝은 전체 톤 + 어두운 금속 프레임의 HUD/카드. 유닛은 캡슐 초상화가 아닌 **필드 스프라이트**(유닛별 HP바·의도 아이콘). 캐릭터 비율은 **Die in the Dungeon풍 통통한 SD**(ref2가 1차 앵커). 상세: docs/PRD.md §15.1 (v0.3.1).
+**아트 디렉션:** 밝은 전체 톤 + 어두운 금속 프레임의 HUD/카드. 유닛은 캡슐 초상화가 아닌 **필드 스프라이트**와 유닛별 HP바·의도 아이콘을 사용한다. 캐릭터 비율은 통통한 SD를 지향한다.
 
-레퍼런스 (로컬 무드보드 — `PRD/references/`, 출처는 `sources.json`):
+레퍼런스는 `PRD/references/`와 `sources.json`에 당시 무드보드로 보존한다. 산출물 재게시가 아니라 방향 합의용이다.
 
-| 파일 | 출처 | 참고 포인트 |
+자체 생성 목업: `docs/ui/combat-ui-mockup.png`, `docs/ui/combat-ui-full-art.png`.
+
+---
+
+## 8. 당시 가정 원장
+
+| # | 가정 | 당시 확인 |
 |---|---|---|
-| ref1-degenerate-gamblers.png | [Dungeons & Degenerate Gamblers](https://purplemosscollectors.itch.io/dndg) | 테이블 위 칩/카드 — 동전 덱빌딩과 가장 근접한 무드, 색 대비 |
-| ref2-die-in-the-dungeon.png | [Die in the Dungeon](https://alarts.itch.io/die-in-the-dungeon) | 비카드 토큰(주사위) 자원 UI의 선례 — 동전 표현 참고 |
-| ref3-shogun-showdown.png | [Shogun Showdown](https://roboatino.itch.io/shogunshowdown) | 제한 팔레트 + 실루엣 — 전투 화면 톤 |
-| ref4-dungeon-deck.png | [Dungeon Deck](https://incinious.itch.io/dungeon-deck) | 밝은 카툰 픽셀 — 가독성 높은 라이트 톤 옵션 |
+| 1 | 픽셀 아트 규격: 32px 스프라이트, 한글 픽셀 폰트 | 확정 |
+| 2 | 배포: GitHub Pages | 확정 |
+| 3 | 사운드/BGM은 MVP 제외 | 당시 미확인 |
+| 4 | 한국어 단일 언어 | 당시 미확인 |
+| 5 | 디자인 레퍼런스는 itch.io 커버아트 중심 | 고지됨 |
+| 6 | 당시 MVP 규칙을 v0.3/v1.1 문서에서 승계 | 당시 확정, P7에서 대체됨 |
+| 7 | 최신 데스크톱 브라우저 중심 | 당시 미확인 |
 
-> 레퍼런스는 방향 합의용 무드보드다. **산출물에 재게시 금지** — 문서에는 경로/출처 링크만.
-> ⚠️ 가정: Dribbble/Cosmos가 차단되어 UI 상세 샷 대신 itch.io 게임 커버아트로 수집했다 — UI 디테일 레퍼런스가 더 필요하면 알려주세요.
-
-UI 레이아웃은 docs/PRD.md §15.1이 확정본: 상단 캡슐 유닛 프레임 / 카드의 노란 코스트 소켓 / 좌하단 주머니 회색 원 / 드래그 장전.
-
-자체 생성 목업 (레이아웃·톤 비교용): [docs/ui/combat-ui-mockup.png](../docs/ui/combat-ui-mockup.png) (밝은 톤) · [docs/ui/combat-ui-full-art.png](../docs/ui/combat-ui-full-art.png) (던전 다크 톤)
-
-픽셀 규격: **32px 스프라이트 + 한글 픽셀 폰트 Neo둥근모** (확정).
-
----
-
-## 8. [NEEDS CLARIFICATION]
-
-- [ ] 없음 — 구조적 미결 0건. 소소한 가정은 아래 원장 참조.
-
-## 가정 원장
-
-| # | 가정 | 영향 문서 | 확인 |
-|---|---|---|---|
-| 1 | 픽셀 아트 규격: 32px 스프라이트, 한글 픽셀 폰트 Neo둥근모 | 01, 04 | **확정** |
-| 2 | 배포: GitHub Pages (정적 SPA, base path 설정 필요) | 03, 04 | **확정** |
-| 3 | 사운드/BGM은 MVP 제외 | 01, 03 | 미확인 |
-| 4 | 한국어 단일 언어 (i18n 없음) | 04 | 미확인 |
-| 5 | 디자인 레퍼런스는 itch.io 커버아트(무드/팔레트용) — UI 상세 레퍼런스 미수집 | 01 | 고지됨 |
-| 6 | MVP 범위·기술 스택·규칙은 docs/ 확정 문서(v0.3/v1.1)를 그대로 승계 (질문 생략) | 전체 | 대화로 확정 |
-| 7 | 지원 브라우저: 최신 데스크톱 Chrome/Edge/Firefox | 04 | 미확인 |
+이 표는 현재 의사결정 원장이 아니다. 최신 결정은 P7 로그와 후속 단계별 결정 문서를 확인한다.
