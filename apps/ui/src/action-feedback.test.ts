@@ -7,7 +7,7 @@ import { REJECTION_TEXT, cooldownReason, rejectionReason } from "./action-feedba
 
 const slot = (value: number): SlotId => value as SlotId;
 
-// P7 D2 워리어 슬롯: 0 정권 / 1 가드 / 2 불꽃 스트레이트 / 3 내면의 발화(소비) / 4~7 빈 슬롯
+// P9 워리어 슬롯: 0 정권 / 1 가드 / 2 불꽃 스트레이트 / 3 잿불 베기 / 4~7 빈 슬롯
 const boot = (): CombatState =>
   createCombat(
     { character: "warrior" as never, enemies: ["raider" as never] },
@@ -140,7 +140,7 @@ describe("rejectionReason", () => {
   });
 
   it("classifies missing consume fuel in hand", () => {
-    const state = {
+    const state = withSlotState({
       ...boot(),
       coins: Object.fromEntries(
         Object.entries(boot().coins).map(([key, coin]) => [
@@ -148,11 +148,11 @@ describe("rejectionReason", () => {
           { ...coin, defId: "basic" as never, grants: [] },
         ]),
       ),
-    };
+    }, 4, { skillId: "inner-passion" as never });
     expect(
       rejectionReason(
         state,
-        { type: "useConsumeSkill", slot: slot(3), coins: [], target: 0 },
+        { type: "useConsumeSkill", slot: slot(4), coins: [], target: 0 },
         contentDb,
       ),
     ).toBe(REJECTION_TEXT.noFuel);

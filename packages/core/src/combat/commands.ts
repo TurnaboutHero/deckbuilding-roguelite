@@ -1,4 +1,4 @@
-import type { ContentDb, EffectAtom, FlipSkillDef } from '../content-types';
+import type { ContentDb, EffectAtom, FlipSkillDef, SkillDef } from '../content-types';
 import { effectiveElements } from '../content-types';
 import type { CoinUid, EquipmentDefId, SlotId } from '../ids';
 import type { CombatState } from './state';
@@ -7,7 +7,7 @@ export type Command =
   | { type: 'placeCoin'; coin: CoinUid; slot: SlotId }
   | { type: 'unplaceCoin'; coin: CoinUid }
   | { type: 'useFlipSkill'; slot: SlotId; target?: number; chosen?: CoinUid[]; chosenEquipment?: EquipmentDefId; chosenSummon?: number }
-  | { type: 'useConsumeSkill'; slot: SlotId; coins: CoinUid[]; target?: number }
+  | { type: 'useConsumeSkill'; slot: SlotId; coins: CoinUid[]; target?: number; chosenSummon?: number }
   | { type: 'endTurn' };
 
 const livingEnemyTargets = (state: CombatState): number[] =>
@@ -68,10 +68,29 @@ export const skillRequiresEquipmentChoice = (skill: FlipSkillDef): boolean =>
     (effect) => effect.kind === 'summonEquipment' && effect.equipment === 'chosen'
   );
 
-export const skillCommandsSummon = (skill: FlipSkillDef): boolean =>
-  [...skill.base, ...(skill.heads?.effects ?? []), ...(skill.tails?.effects ?? [])].some(
-    (effect) => effect.kind === 'commandChosenSummon'
+const skillEffects = (skill: SkillDef): readonly EffectAtom[] =>
+  skill.type === 'flip'
+    ? [
+        ...skill.base,
+        ...(skill.heads?.effects ?? []),
+        ...(skill.tails?.effects ?? []),
+        ...(skill.mixed?.effects ?? []),
+        ...(skill.elementFaces ?? []).flatMap((bonus) => bonus.effects),
+        ...(skill.overheatBonus ?? [])
+      ]
+    : [...skill.effects, ...(skill.overheatBonus ?? [])];
+
+export const skillRequiresSummonChoice = (skill: SkillDef): boolean =>
+  skillEffects(skill).some((effect) =>
+    effect.kind === 'commandChosenSummon' ||
+    effect.kind === 'grantChosenSummonAoe' ||
+    effect.kind === 'extendChosenSummon' ||
+    effect.kind === 'cloneChosenSummon'
   );
+
+// Backward-compatible name retained for existing callers/tests.
+export const skillCommandsSummon = (skill: FlipSkillDef): boolean =>
+  skillRequiresSummonChoice(skill);
 
 const hasChooseBasicInHand = (skill: FlipSkillDef): boolean =>
   [...skill.base, ...(skill.heads?.effects ?? []), ...(skill.tails?.effects ?? [])].some(
@@ -104,18 +123,22 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
     if (skill.type === 'flip') {
       if ((state.zones.placed[slot]?.length ?? 0) === skill.cost) {
         // P6 D6 — 명령 스킬은 소환이 있어야 합법 (없으면 낭비 사용 제안 안 함)
-        if (skillCommandsSummon(skill) && state.summons.length === 0) continue;
+        if (skillRequiresSummonChoice(skill) && state.summons.length === 0) continue;
         const chosen = hasChooseBasicInHand(skill) ? suggestedChosen(state, db) : undefined;
         const chosenEquipment = skillRequiresEquipmentChoice(skill)
           ? (Object.keys(db.equipment ?? {}).sort()[0] as EquipmentDefId | undefined)
           : undefined;
-        const chosenSummon = skillCommandsSummon(skill) ? state.summons[0]?.uid : undefined;
+        const summonChoices = skillRequiresSummonChoice(skill)
+          ? state.summons.map((summon) => summon.uid)
+          : [undefined];
         for (const target of targetsForSkill(state, skill, slot, db)) {
-          const command: Command = { type: 'useFlipSkill', slot, target };
-          if (chosen !== undefined) command.chosen = chosen;
-          if (chosenEquipment !== undefined) command.chosenEquipment = chosenEquipment;
-          if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
-          commands.push(command);
+          for (const chosenSummon of summonChoices) {
+            const command: Command = { type: 'useFlipSkill', slot, target };
+            if (chosen !== undefined) command.chosen = chosen;
+            if (chosenEquipment !== undefined) command.chosenEquipment = chosenEquipment;
+            if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
+            commands.push(command);
+          }
         }
       }
       if ((state.zones.placed[slot]?.length ?? 0) < skill.cost) {
@@ -137,8 +160,16 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
         })
         .slice(0, skill.consume.count);
       if (usable.length === skill.consume.count) {
+        if (skillRequiresSummonChoice(skill) && state.summons.length === 0) continue;
+        const summonChoices = skillRequiresSummonChoice(skill)
+          ? state.summons.map((summon) => summon.uid)
+          : [undefined];
         for (const target of targetsForSkill(state, skill, slot, db)) {
-          commands.push({ type: 'useConsumeSkill', slot, coins: usable, target });
+          for (const chosenSummon of summonChoices) {
+            const command: Command = { type: 'useConsumeSkill', slot, coins: usable, target };
+            if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
+            commands.push(command);
+          }
         }
       }
     }

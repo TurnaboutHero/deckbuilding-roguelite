@@ -743,7 +743,7 @@ button:focus-visible {
    (아트 하한 36px). 카드 폭·HUD 높이는 불변 */
 .skill-card .card-effects {
   flex: 0 0 auto;
-  max-height: 88px;
+  max-height: 104px;
   overflow: hidden;
   transition: opacity 0.14s;
 }
@@ -3097,6 +3097,10 @@ button:focus-visible {
   border: 1px solid #45619c;
   color: #cfe0ff;
   font-size: 11px;
+}
+
+.summon-slot[data-selectable] {
+  outline: 2px solid;
 }
 
 .summon-slot.empty {

@@ -42,7 +42,8 @@ export const resolveConsume = (
   skill: ConsumeSkillDef,
   coins: readonly CoinUid[],
   target: number | undefined,
-  db: ContentDb
+  db: ContentDb,
+  chosenSummon?: number
 ): ResolveConsumeResult => {
   const slotState = input.slots[Number(slot)];
   if (slotState === undefined) throw new Error('slot does not exist');
@@ -112,7 +113,7 @@ export const resolveConsume = (
   }
   for (const atom of effects) {
     for (const effectTarget of targetsForSkillEffect(state, atom, skill, skillTarget)) {
-      state = applyEffectAtom(state, atom, effectTarget, db, events, undefined, { turnTriggerScope, sourceSlot: slot });
+      state = applyEffectAtom(state, atom, effectTarget, db, events, undefined, { turnTriggerScope, sourceSlot: slot, chosenSummon });
       if (state.phase === 'victory' || state.phase === 'defeat') return finish(state);
     }
   }

@@ -1,5 +1,4 @@
-// P5.5/P5.6 번들 예산 게이트 (차단) — 빌드 후 실행한다.
-// 예산: 총량 ≤ 2.61MiB, JS 총량 ≤ 400KiB, CSS 총량 ≤ 70KiB, 단일 파일 ≤ 700KiB.
+// 번들 예산 게이트 (차단) — 빌드 후 실행한다.
 // 사용: node scripts/check-budget.mjs
 import { readdirSync, statSync } from "node:fs";
 import { join, resolve, dirname, extname } from "node:path";
@@ -7,13 +6,13 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "apps/ui/dist");
-// P6: 3막 런·패시브·강화·소환 시스템 추가로 JS 예산 320→400KiB 상향 (게임 시스템
-// 2종 규모 증가분. 런 내비게이션 UI는 새 이미지 없이 기존 캐릭터 아틀라스를 재사용하며
-// 총량만 10KiB 상향한다. JS·CSS·단일 파일 한도와 LCP·CLS 게이트는 유지한다.
+// P9: 마도기사·전기 결투사의 두 빌드와 선택형 소환/르미즈 해결 규칙을 추가했다.
+// 이미지 자산 증가는 없으며, 중복 명령 비교·선택 라우팅을 제거한 뒤의 실측치에
+// 총 22KiB, JS 5KiB, CSS 64B만 허용한다. 단일 파일·LCP·CLS 게이트는 유지한다.
 const BUDGETS = {
-  total: 2744729, // P8.3 합성 SFX 팔레트 반영: P8.1 예산 + 4 KiB (오디오 자산 0)
-  js: 409600, // 400 KiB
-  css: 71680, // 70 KiB
+  total: 2767257,
+  js: 414720, // 405 KiB
+  css: 71744, // 70 KiB + 64 B
   maxFile: 716800, // 700 KiB
 };
 
@@ -43,7 +42,9 @@ if (total > BUDGETS.total) failures.push(`총량 ${total}B > ${BUDGETS.total}B`)
 if (js > BUDGETS.js) failures.push(`JS ${js}B > ${BUDGETS.js}B`);
 if (css > BUDGETS.css) failures.push(`CSS ${css}B > ${BUDGETS.css}B`);
 if (maxFile.bytes > BUDGETS.maxFile)
-  failures.push(`단일 파일 ${maxFile.path} ${maxFile.bytes}B > ${BUDGETS.maxFile}B`);
+  failures.push(
+    `단일 파일 ${maxFile.path} ${maxFile.bytes}B > ${BUDGETS.maxFile}B`,
+  );
 
 const mib = (total / 1048576).toFixed(3);
 if (failures.length > 0) {

@@ -18,11 +18,11 @@ const SEED_42_GOLDEN = {
   result: "defeat",
   combatsCompleted: 11,
   // 1.1.0-p6 재고정 — 3막·격투가 셋·막 스케일 ×1.15/1.3·막 보스 전체 회복 (balance-provisional)
-  // 1.2.0-p7 재고정 — 캡 폐지·쿨다운·시작 4스킬·봇 정책 확장(P7) 반영 (balance-provisional)
-  turnsPerCombat: [3, 4, 4, 3, 4, 3, 3, 5, 4, 5, 2],
+  // 1.3.0-p9 재고정 — P9 캐릭터·스킬·패시브 콘텐츠 반영 (balance-provisional)
+  turnsPerCombat: [3, 3, 4, 2, 3, 3, 3, 4, 4, 4, 2],
   carriedHp: 0,
   finalBag: ["basic", "basic", "basic", "basic", "basic", "basic", "basic", "basic", "fire", "fire", "fire", "fire", "basic", "fire", "fire", "fire", "basic", "basic", "basic", "basic"],
-  finalEquippedSkills: ["jab", "fist-guard", "burning-fist", "inner-passion", "null", "null", "null", "conflagration"],
+  finalEquippedSkills: ["jab", "fist-guard", "burning-fist", "flame-hook", "null", "null", "null", "conflagration"],
   encounterOrder: [
     ["raider"],
     ["gatekeeper"],

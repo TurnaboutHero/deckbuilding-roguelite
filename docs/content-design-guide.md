@@ -1,8 +1,8 @@
-# 콘텐츠 기획 가이드 v2.0 — P7 현재 규칙
+# 콘텐츠 기획 가이드 v2.1 — P9 현재 규칙
 
-> 마지막 동기화: 2026-07-13 · PRD v1.3 · 콘텐츠 `1.2.0-p7`
+> 마지막 동기화: 2026-07-13 · PRD v1.3 · 콘텐츠 `1.3.0-p9`
 >
-> 신규 코인·스킬·캐릭터·몬스터·패시브를 작성할 때 사용하는 **활성 가이드**다. 제품 규칙은 [`PRD.md`](./PRD.md)와 [`../PRD/P7_NEW_DESIGN_DECISIONS.md`](../PRD/P7_NEW_DESIGN_DECISIONS.md), 실제 스키마와 검증은 `packages/core/src/content-types.ts`, 현재 수치는 `packages/content/src/index.ts`가 정본이다.
+> 신규 코인·스킬·캐릭터·몬스터·패시브를 작성할 때 사용하는 **활성 가이드**다. 제품 규칙은 [`PRD.md`](./PRD.md)와 최신 [`../PRD/P9_NEW_DESIGN_DECISIONS.md`](../PRD/P9_NEW_DESIGN_DECISIONS.md)가 정본이며, 기반 전투 규칙의 역사적 근거는 [`../PRD/P7_NEW_DESIGN_DECISIONS.md`](../PRD/P7_NEW_DESIGN_DECISIONS.md)에 남긴다. 실제 스키마와 검증은 `packages/core/src/content-types.ts`, 현재 수치는 `packages/content/src/index.ts`가 정본이다.
 
 과거 가이드의 **턴당 스킬 3회**, **스킬별 턴당 1회**, **6슬롯**, **단면 속성 코인**, **전사 4스킬 구구성**은 폐기됐다. 역사적 근거가 필요하면 [`implementation-plan.md`](./implementation-plan.md)를 보되 신규 콘텐츠 규칙으로 사용하지 않는다.
 
@@ -21,7 +21,7 @@
 
 ### 1.1 쿨다운 값
 
-`cooldown?: 0 | 1 | 2 | 3`이며 미지정 기본값은 1이다.
+`cooldown?: 0 | 1 | 2 | 3 | 4`이며 미지정 기본값은 1이다.
 
 | 값 | 사용 감각 | 권장 역할 |
 |---|---|---|
@@ -29,6 +29,7 @@
 | 1 | 다음 턴 바로 다시 사용 | 일반적인 주력기 |
 | 2 | 한 턴 쉬고 재사용 | 강한 엔진·광역·고효율 행동 |
 | 3 | 두 턴 쉬고 재사용 | 빌드 전환, 강한 셋업, 고효율 지원 |
+| 4 | 세 턴 쉬고 재사용 | 강화로 일회성이 제거된 희귀 엔진 |
 
 `oncePerCombat: true`는 전투당 1회 메커니즘이다. 전투당 1회 스킬에는 `cooldown >= 1`을 함께 선언하지 않는다. 강화로 전투당 1회가 제거되면 기본 쿨다운 1이 적용된다.
 

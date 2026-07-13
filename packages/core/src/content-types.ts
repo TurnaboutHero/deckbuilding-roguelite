@@ -36,9 +36,13 @@ export interface CoinInstance {
 export type SkillUpgradePatch =
   | { kind: 'baseAmount'; index: number; delta: number }
   | { kind: 'addFaceEffect'; face: 'heads' | 'tails'; effect: EffectAtom }
+  | { kind: 'addMixedFaceEffect'; effect: EffectAtom }
+  | { kind: 'setFaceMode'; face: 'heads' | 'tails'; mode: 'any' | 'per' }
+  | { kind: 'replaceEffect'; section: 'base' | 'heads' | 'tails'; index: number; effect: EffectAtom }
+  | { kind: 'setRemiseLightningCount'; count: number }
   | { kind: 'addCoinOnUse'; coin: CoinDefId; zone: 'draw' | 'discard' | 'hand'; count: number }
   | { kind: 'costDelta'; delta: number }
-  | { kind: 'removeOncePerCombat' };
+  | { kind: 'removeOncePerCombat'; cooldown?: 1 | 2 | 3 | 4 };
 
 export interface SkillUpgradeDef {
   name: string;
@@ -56,6 +60,7 @@ export interface PassiveDef {
   element: Element | null;
   hook: 'combatStart' | 'turnStart';
   effects: EffectAtom[];
+  mechanic?: 'continuousMotion' | 'retrievalHabit' | 'balanceSense' | 'lastMove' | 'residualCharge' | 'overcurrent' | 'dischargeSuppression';
   price: number;
 }
 
@@ -65,9 +70,9 @@ export interface SkillDefBase {
   rarity: 'common' | 'advanced' | 'rare';
   tags: readonly ('attack' | 'defense' | 'utility' | 'ultimate')[];
   targetType: 'single-enemy' | 'all-enemies' | 'self' | 'none';
-  // P7 D1 — 스킬별 쿨다운: 0=반복(같은 턴 무제한), 1~3=사용 후 N-1턴 봉인.
+  // P7/P9 — 스킬별 쿨다운: 0=반복(같은 턴 무제한), 1~4=사용 후 N-1턴 봉인.
   // 미지정 기본값 1(기존 턴당 1회 케이던스). oncePerCombat과 1+ 동시 지정 금지.
-  cooldown?: 0 | 1 | 2 | 3;
+  cooldown?: 0 | 1 | 2 | 3 | 4;
   oncePerCombat?: boolean;
   // P7 D5 — 과열 강화 분기: 해결 시 과열이면 기본 효과 뒤에 추가, 해결 후 과열 소비.
   overheatBonus?: EffectAtom[];
@@ -83,8 +88,14 @@ export interface FlipSkillDef extends SkillDefBase {
   base: EffectAtom[];
   heads?: { mode: 'any' | 'per'; effects: EffectAtom[] };
   tails?: { mode: 'any' | 'per'; effects: EffectAtom[] };
+  mixed?: { effects: EffectAtom[] };
   // P7 D5 — 특정 속성 코인 면 보너스 (일반 면 보너스와 합산, 항상 per 면당)
   elementFaces?: { element: Element; face: Face; effects: EffectAtom[] }[];
+  remise?: {
+    reuseOnReflipTails?: boolean;
+    returnFirstCoinOnReuse?: boolean;
+    addLightningToHandAfterReuse?: number;
+  };
 }
 
 // P7 D1 — 쿨다운 미지정 기본값 1 (기존 usedThisTurn=턴당 1회와 동일 케이던스).
@@ -133,7 +144,19 @@ export type EffectAtom =
   // P6 D6 — 명령: 선택 소환 즉시 행동(+뒷면당 효과 보너스), 지속 -1
   | { kind: 'commandChosenSummon'; bonusPerTails: number }
   // P6 D6 — 마나 병기: 아군 소환 전체 강화 (이번 전투 지속)
-  | { kind: 'empowerSummons'; amount: number };
+  | { kind: 'empowerSummons'; amount: number }
+  | { kind: 'increaseWeaponOutput'; amount: number }
+  | { kind: 'extendAllSummons'; amount: number }
+  | { kind: 'extendChosenSummon'; amount: number }
+  | { kind: 'grantChosenSummonAoe'; uses: number; usesPerHeads?: number }
+  | { kind: 'cloneChosenSummon'; duration: number; fullCapExtension: number }
+  | { kind: 'virtualManaSwordVolley'; baseDamage: number }
+  | { kind: 'doubleTargetShock' }
+  | { kind: 'blockPerTargetShock'; base: number; cap: number }
+  | { kind: 'executeOrDischargeShock' }
+  | { kind: 'damageIfTargetShocked'; amount: number }
+  | { kind: 'damageIfReused'; amount: number }
+  | { kind: 'readyRemise'; amount?: number };
 
 // P6 D6 — 소환 장비: 플레이어 턴 종료 시 자동 행동, 지속 1 감소, 0이면 소멸.
 // 적 공격 대상에서 제외된다 (유닛이 아니라 슬롯 위젯).
@@ -155,6 +178,7 @@ export interface CharacterDef {
     name: string;
     hook: 'combatStart' | 'turnStart';
     effects: EffectAtom[];
+    mechanic?: 'remise';
   };
 }
 
@@ -255,8 +279,8 @@ const validateCooldowns = (skills: readonly SkillDef[]): string[] => {
   const errors: string[] = [];
   for (const skill of skills) {
     if (skill.cooldown !== undefined) {
-      if (!Number.isInteger(skill.cooldown) || skill.cooldown < 0 || skill.cooldown > 3) {
-        errors.push(`skill ${String(skill.id)}: cooldown must be an integer from 0 to 3`);
+      if (!Number.isInteger(skill.cooldown) || skill.cooldown < 0 || skill.cooldown > 4) {
+        errors.push(`skill ${String(skill.id)}: cooldown must be an integer from 0 to 4`);
       }
       if (skill.oncePerCombat === true && skill.cooldown >= 1) {
         errors.push(`skill ${String(skill.id)}: oncePerCombat and cooldown >= 1 cannot be combined`);
@@ -293,6 +317,7 @@ const validateAtomAmounts = (db: Omit<ContentDb, 'validate'>): string[] => {
       checkAtoms(skill.base, owner);
       if (skill.heads) checkAtoms(skill.heads.effects, owner);
       if (skill.tails) checkAtoms(skill.tails.effects, owner);
+      if (skill.mixed) checkAtoms(skill.mixed.effects, owner);
       for (const bonus of skill.elementFaces ?? []) checkAtoms(bonus.effects, owner);
     }
     checkAtoms(skill.overheatBonus ?? [], owner);
@@ -416,6 +441,7 @@ const validateTurnTriggers = (db: Omit<ContentDb, 'validate'>): string[] => {
       validateTriggerAtoms(skill.base, owner, false, errors);
       if (skill.heads) validateTriggerAtoms(skill.heads.effects, owner, false, errors);
       if (skill.tails) validateTriggerAtoms(skill.tails.effects, owner, false, errors);
+      if (skill.mixed) validateTriggerAtoms(skill.mixed.effects, owner, false, errors);
     }
   }
   for (const character of Object.values(db.characters)) {
@@ -475,7 +501,7 @@ const validatePassives = (passives: Record<string, PassiveDef> | undefined): str
     if (passive.description.length === 0) errors.push(`${owner}: description is required`);
     if (!Number.isInteger(passive.price) || passive.price <= 0)
       errors.push(`${owner}: price must be a positive integer`);
-    if (passive.effects.length === 0) errors.push(`${owner}: must declare at least one effect`);
+    if (passive.effects.length === 0 && passive.mechanic === undefined) errors.push(`${owner}: must declare at least one effect or mechanic`);
     for (const atom of passive.effects) {
       if (!PASSIVE_SAFE_ATOMS.has(atom.kind))
         errors.push(`${owner}: atom ${atom.kind} is not allowed in a passive`);
@@ -510,12 +536,28 @@ const validateSkillUpgrades = (skills: readonly SkillDef[]): string[] => {
     if (patch.kind === 'baseAmount') {
       const atoms = skill.type === 'flip' ? skill.base : skill.effects;
       const atom = atoms[patch.index];
-      if (atom === undefined || !('amount' in atom))
+      if (atom === undefined || !('amount' in atom) || typeof atom.amount !== 'number')
         errors.push(`${owner}: baseAmount index ${patch.index} has no amount`);
       if (!Number.isInteger(patch.delta) || patch.delta === 0)
         errors.push(`${owner}: baseAmount delta must be a nonzero integer`);
-    } else if (patch.kind === 'addFaceEffect') {
+    } else if (patch.kind === 'addFaceEffect' || patch.kind === 'addMixedFaceEffect') {
       if (skill.type !== 'flip') errors.push(`${owner}: addFaceEffect requires a flip skill`);
+    } else if (patch.kind === 'setFaceMode') {
+      if (skill.type !== 'flip' || skill[patch.face] === undefined)
+        errors.push(`${owner}: setFaceMode requires an existing flip face`);
+    } else if (patch.kind === 'replaceEffect') {
+      if (patch.section !== 'base' && skill.type !== 'flip')
+        errors.push(`${owner}: replaceEffect ${patch.section} requires a flip skill`);
+      const atoms = patch.section === 'base'
+        ? (skill.type === 'flip' ? skill.base : skill.effects)
+        : skill.type === 'flip'
+          ? skill[patch.section]?.effects
+          : undefined;
+      if (atoms?.[patch.index] === undefined)
+        errors.push(`${owner}: replaceEffect index ${patch.index} does not exist`);
+    } else if (patch.kind === 'setRemiseLightningCount') {
+      if (skill.type !== 'flip' || skill.remise === undefined || !Number.isInteger(patch.count) || patch.count <= 0)
+        errors.push(`${owner}: setRemiseLightningCount requires a remise flip skill and positive count`);
     } else if (patch.kind === 'costDelta') {
       if (skill.type === 'flip') {
         const cost = skill.cost + patch.delta;

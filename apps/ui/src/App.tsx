@@ -20,6 +20,7 @@ import {
   chooseRunNode,
   choosePassiveReward,
   skillCooldown,
+  skillRequiresSummonChoice,
   deriveUpgradedSkill,
   claimTreasure,
   restHeal,
@@ -2248,6 +2249,8 @@ const CombatBoard = ({
   const [rejection, setRejection] = useState<RejectionChip | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [targeting, setTargeting] = useState<TargetingSelection | null>(null);
+  const [summonTargeting, setSummonTargeting] =
+    useState<TargetingCommand | null>(null);
   const [lastAttackTarget, setLastAttackTarget] = useState<number | null>(null);
   const [shakeCoin, setShakeCoin] = useState<CoinUid | null>(null);
   const [hintStage, setHintStage] = useState<0 | 1 | 2>(0);
@@ -2409,6 +2412,7 @@ const CombatBoard = ({
     setFuelSelection(null);
     setCoinChoice(null);
     setTargeting(null);
+    setSummonTargeting(null);
     // 장전/회수는 상태 반영이 곧 피드백 — 큐·잠금 없이 즉답해 연속 장전이 끊기지 않는다
     const immediate = events.filter(
       (event) => event.type === "coinPlaced" || event.type === "coinUnplaced",
@@ -2523,6 +2527,7 @@ const CombatBoard = ({
     setFuelSelection(null);
     setCoinChoice(null);
     setTargeting(null);
+    setSummonTargeting(null);
     if (cmd.type === "useFlipSkill") {
       const ghosts = [...(state.zones.placed[cmd.slot] ?? [])];
       const committed =
@@ -2534,6 +2539,31 @@ const CombatBoard = ({
       return;
     }
     runCommand(cmd, showFeedback);
+  };
+
+  const beginSummonTargeting = (
+    command: TargetingCommand,
+    showFeedback = true,
+  ): boolean => {
+    if (state.summons.length === 0) {
+      if (showFeedback) showRejection("선택할 소환 장비가 없다");
+      return false;
+    }
+    selectCoin(null);
+    setFuelSelection(null);
+    setCoinChoice(null);
+    setTargeting(null);
+    setSummonTargeting({ ...command, chosenSummon: undefined });
+    return true;
+  };
+
+  const confirmSummonTargeting = (chosenSummon: number): boolean => {
+    if (summonTargeting === null) return false;
+    const command = { ...summonTargeting, chosenSummon };
+    setSummonTargeting(null);
+    if (commandRequiresTargeting(command)) return beginTargeting(command, true);
+    useSkill(command, true);
+    return true;
   };
 
   const beginTargeting = (
@@ -2578,6 +2608,20 @@ const CombatBoard = ({
     return true;
   };
 
+  const routeSkill = (
+    skill: NonNullable<(typeof contentDb.skills)[string]>,
+    command: TargetingCommand,
+    showFeedback: boolean,
+    selectedFuel = false,
+  ) => {
+    if (skillRequiresSummonChoice(skill))
+      beginSummonTargeting(command, showFeedback);
+    else if (commandRequiresTargeting(command))
+      beginTargeting(command, showFeedback);
+    else if (selectedFuel) runSelectedFuel(command, showFeedback);
+    else useSkill(command, showFeedback);
+  };
+
   const activateConsumeSkill = (
     slotId: SlotId,
     skill: NonNullable<(typeof contentDb.skills)[string]>,
@@ -2589,9 +2633,7 @@ const CombatBoard = ({
     // legalCommands auto suggestion immediately, without fuel-selection state.
     if (!requiresFuelSelection(state, slotId, contentDb)) {
       if (autoCommand !== undefined) {
-        if (commandRequiresTargeting(autoCommand))
-          beginTargeting(autoCommand, showFeedback);
-        else useSkill(autoCommand, showFeedback);
+        routeSkill(skill, autoCommand, showFeedback);
       } else
         runCommand(
           {
@@ -2631,12 +2673,7 @@ const CombatBoard = ({
       if (showFeedback) showRejection(REJECTION_TEXT.coinCost);
       return;
     }
-    if (
-      command.type === "useConsumeSkill" &&
-      skill.targetType === "single-enemy"
-    )
-      beginTargeting(command, showFeedback);
-    else runSelectedFuel(command, showFeedback);
+    routeSkill(skill, command, showFeedback, true);
   };
 
   const activateFlipSkill = (
@@ -2648,9 +2685,7 @@ const CombatBoard = ({
     if (skill.type !== "flip") return;
     if (!requiresCoinChoiceSelection(state, slotId, contentDb)) {
       if (autoCommand !== undefined) {
-        if (skill.targetType === "single-enemy")
-          beginTargeting(autoCommand, showFeedback);
-        else useSkill(autoCommand, showFeedback);
+        routeSkill(skill, autoCommand, showFeedback);
       } else {
         const coins = autoSuggestCoinChoice(state, slotId, contentDb);
         const command = coinChoiceCommand(
@@ -2659,9 +2694,7 @@ const CombatBoard = ({
           contentDb,
         );
         if (command !== null) {
-          if (commandRequiresTargeting(command))
-            beginTargeting(command, showFeedback);
-          else useSkill(command, showFeedback);
+          routeSkill(skill, command, showFeedback);
         } else
           runCommand(
             {
@@ -2689,8 +2722,7 @@ const CombatBoard = ({
       if (showFeedback) showRejection(REJECTION_TEXT.coinCost);
       return;
     }
-    if (commandRequiresTargeting(command)) beginTargeting(command, showFeedback);
-    else useSkill(command, showFeedback);
+    routeSkill(skill, command, showFeedback);
   };
 
   const onFuelCoinClick = (coin: CoinUid): boolean => {
@@ -2776,7 +2808,8 @@ const CombatBoard = ({
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let delay = 180;
     if (event !== undefined && !reducedMotion) {
-      for (const cue of feedbackCuesFor(event)) triggerVfx(cue.key, cue.duration);
+      for (const cue of feedbackCuesFor(event))
+        triggerVfx(cue.key, cue.duration);
     }
     if (event !== undefined) for (const cue of sfxCuesFor(event)) playSfx(cue);
     if (event?.type === "coinFlipped") {
@@ -2998,12 +3031,14 @@ const CombatBoard = ({
   }, [coinChoice]);
 
   useEffect(() => {
-    if (targeting === null) return undefined;
+    if (targeting === null && summonTargeting === null) return undefined;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setTargeting(null);
+        setSummonTargeting(null);
         return;
       }
+      if (targeting === null) return;
       if (event.key === "Enter") {
         event.preventDefault();
         confirmTargeting();
@@ -3020,7 +3055,7 @@ const CombatBoard = ({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [targeting]);
+  }, [summonTargeting, targeting]);
 
   const clickGuard = (): boolean => {
     if (suppressClick.current) {
@@ -3066,10 +3101,13 @@ const CombatBoard = ({
   }, [onComplete, showResult, state]);
 
   useEffect(() => {
-    if (ended) setOpenPile(null);
-    if (ended) setFuelSelection(null);
-    if (ended) setCoinChoice(null);
-    if (ended) setTargeting(null);
+    if (ended) {
+      setOpenPile(null);
+      setFuelSelection(null);
+      setCoinChoice(null);
+      setTargeting(null);
+      setSummonTargeting(null);
+    }
   }, [ended]);
 
   return (
@@ -3094,7 +3132,10 @@ const CombatBoard = ({
       </div>
       <RunMeta run={run} />
       {isTestEncounter ? (
-        <span className="test-encounter-badge" aria-label="테스트 전용 전투 진입로">
+        <span
+          className="test-encounter-badge"
+          aria-label="테스트 전용 전투 진입로"
+        >
           TEST duo-raiders
         </span>
       ) : null}
@@ -3110,6 +3151,14 @@ const CombatBoard = ({
           block={state.player.block}
           statuses={state.player.statuses}
           overheat={state.player.overheat}
+          weaponOutput={
+            run.character === "arcanist" ? state.player.weaponOutput : undefined
+          }
+          remiseCharges={
+            run.character === "sorcerer"
+              ? state.player.remiseCharges
+              : undefined
+          }
           floats={floats}
           motion={playerMotion}
           playKey={playerMotion === "idle" ? 0 : spritePlayKey}
@@ -3124,6 +3173,9 @@ const CombatBoard = ({
             className="summon-rail"
             data-testid="summon-rail"
           >
+            {summonTargeting !== null ? (
+              <span aria-live="polite">사용할 소환 장비 선택</span>
+            ) : null}
             {Array.from({ length: 3 }, (_, slotIndex) => {
               const summon = state.summons[slotIndex];
               if (summon === undefined) {
@@ -3142,23 +3194,41 @@ const CombatBoard = ({
                   className="summon-slot-host"
                   entry={{
                     label: def?.name ?? String(summon.defId),
-                    description: `${def?.description ?? ""} · 남은 지속 ${summon.duration}${summon.enhance > 0 ? ` · 강화 +${summon.enhance}` : ""}`,
+                    description: `${def?.description ?? ""} · 남은 지속 ${summon.duration}${summon.enhance > 0 ? ` · 강화 +${summon.enhance}` : ""}${summon.aoeUses > 0 ? ` · 광역 ${summon.aoeUses}회` : ""}`,
                   }}
                   key={summon.uid}
                   term="passive"
                 >
-                  <span
-                    aria-label={`${def?.name ?? "장비"} 지속 ${summon.duration}${summon.enhance > 0 ? ` 강화 +${summon.enhance}` : ""}`}
+                  <button
+                    aria-label={`${def?.name ?? "장비"} 지속 ${summon.duration}${summon.enhance > 0 ? ` 강화 +${summon.enhance}` : ""}${summon.aoeUses > 0 ? ` 광역 ${summon.aoeUses}회` : ""}${summonTargeting !== null ? " 선택" : ""}`}
+                    aria-disabled={summonTargeting === null || locked}
                     className={`summon-slot ${isWard ? "ward" : "strike"}`}
                     data-testid={`summon-slot-${slotIndex}`}
-                    style={vfx.has(`summon-${summon.uid}`) ? feedbackPulse : undefined}
+                    data-selectable={summonTargeting !== null || undefined}
+                    onClick={() => {
+                      if (summonTargeting !== null && !locked)
+                        confirmSummonTargeting(summon.uid);
+                    }}
+                    style={
+                      vfx.has(`summon-${summon.uid}`)
+                        ? feedbackPulse
+                        : undefined
+                    }
+                    type="button"
                   >
-                    {isWard ? <ShieldIcon scale={1.6} /> : <SwordIcon scale={1.6} />}
+                    {isWard ? (
+                      <ShieldIcon scale={1.6} />
+                    ) : (
+                      <SwordIcon scale={1.6} />
+                    )}
                     <em className="summon-duration">{summon.duration}</em>
                     {summon.enhance > 0 ? (
                       <em className="summon-enhance">+{summon.enhance}</em>
                     ) : null}
-                  </span>
+                    {summon.aoeUses > 0 ? (
+                      <em className="summon-enhance">전체 {summon.aoeUses}</em>
+                    ) : null}
+                  </button>
                 </Keyword>
               );
             })}
@@ -3166,7 +3236,8 @@ const CombatBoard = ({
         ) : null}
         <div className="enemy-line" aria-label="적 목록">
           {state.enemies.map((enemy, index) => {
-            const targetLegal = targeting?.legalTargets.includes(index) === true;
+            const targetLegal =
+              targeting?.legalTargets.includes(index) === true;
             const targetSelected = targeting?.selected === index;
             const enemyMotion =
               activeEvent?.type === "damageDealt" &&
@@ -3239,12 +3310,9 @@ const CombatBoard = ({
           const use =
             skill?.type === "consume"
               ? consumeUse
-              : flipAttempt !== null &&
-                  skill?.targetType === "single-enemy"
+              : flipAttempt !== null
                 ? targetingCommandFor(flipAttempt)
-                : flipAttempt !== null
-                  ? findLegal(flipAttempt)
-                  : undefined;
+                : undefined;
           const canPlaceSelected =
             selectedCoin !== null &&
             findLegal({
@@ -3303,7 +3371,12 @@ const CombatBoard = ({
               className={`skill-card ${use !== undefined ? "ready" : ""} ${slotState.cooldownRemaining > 0 ? "spent" : ""} ${slotState.skillId === null ? "empty-slot" : ""} ${lockedOnce ? "combat-locked" : ""} ${placed.length > 0 || isResolving ? "lifted" : ""} ${isResolving ? "resolving" : ""} ${dropTarget && drag?.over === index ? "drop-target" : ""}`}
               data-slot={index}
               key={`${index}-${String(slotState.skillId)}`}
-              style={vfx.has(`skill-slot-${index}`) || vfx.has(`cooldown-slot-${index}`) ? feedbackPulse : undefined}
+              style={
+                vfx.has(`skill-slot-${index}`) ||
+                vfx.has(`cooldown-slot-${index}`)
+                  ? feedbackPulse
+                  : undefined
+              }
               ref={(element) => {
                 const anchor = skillCardRefs.current[index];
                 if (anchor !== undefined) anchor.current = element;
@@ -3483,10 +3556,15 @@ const CombatBoard = ({
               </div>
               {skill !== undefined ? <CardEffectRows skill={skill} /> : null}
               {slotState.cooldownRemaining > 0 ? (
-                <span className="spent-label">쿨 {slotState.cooldownRemaining}</span>
+                <span className="spent-label">
+                  쿨 {slotState.cooldownRemaining}
+                </span>
               ) : null}
               {skill !== undefined && skillCooldown(skill) === 0 ? (
-                <span className="repeat-label" title="반복 — 같은 턴에 코인이 남는 한 계속 사용">
+                <span
+                  className="repeat-label"
+                  title="반복 — 같은 턴에 코인이 남는 한 계속 사용"
+                >
                   반복
                 </span>
               ) : null}
@@ -3506,9 +3584,8 @@ const CombatBoard = ({
                   방어 {preview.byAxis.block.min}~{preview.byAxis.block.max}{" "}
                   (기대 {preview.expected.block})
                   <br />
-                  <Keyword term="burn">화상</Keyword>{" "}
-                  {preview.byAxis.burn.min}~{preview.byAxis.burn.max} (기대{" "}
-                  {preview.expected.burn})
+                  <Keyword term="burn">화상</Keyword> {preview.byAxis.burn.min}~
+                  {preview.byAxis.burn.max} (기대 {preview.expected.burn})
                   {preview.byAxis.selfDamage.max > 0 ? (
                     <>
                       <br />
@@ -3570,10 +3647,8 @@ const CombatBoard = ({
         </div>
         <div className="hand-tray" aria-label="손패 동전 트레이">
           {state.zones.hand.map((coin) => {
-            const fuelSelected =
-              fuelSelection?.coins.includes(coin) === true;
-            const choiceSelected =
-              coinChoice?.coins.includes(coin) === true;
+            const fuelSelected = fuelSelection?.coins.includes(coin) === true;
+            const choiceSelected = coinChoice?.coins.includes(coin) === true;
             const emptyFuelSelection =
               fuelSelection === null
                 ? null
@@ -3731,6 +3806,8 @@ interface UnitPanelProps {
   attackBuff?: number;
   passive?: { name: string; description: string };
   overheat?: boolean;
+  weaponOutput?: number;
+  remiseCharges?: number;
 }
 
 const UnitPanel = ({
@@ -3754,15 +3831,25 @@ const UnitPanel = ({
   attackBuff = 0,
   passive,
   overheat = false,
+  weaponOutput,
+  remiseCharges,
 }: UnitPanelProps) => (
   <div
     className={`unit ${side} ${vfx.has(`unit-${unitKey}`) ? "vfx-hit" : ""} ${targeting ? "targetable" : ""} ${targetSelected ? "target-selected" : ""}`}
     onClick={targeting ? onTarget : undefined}
-    style={vfx.has(`heal-${unitKey}`) || vfx.has(`overheat-${unitKey}`) ? feedbackPulse : undefined}
+    style={
+      vfx.has(`heal-${unitKey}`) || vfx.has(`overheat-${unitKey}`)
+        ? feedbackPulse
+        : undefined
+    }
   >
     <div
       className={`unit-plate ${vfx.has(`wither-${side}`) ? "vfx-wither" : ""}`}
-      style={vfx.has(`frostbite-${unitKey}`) || vfx.has(`shock-${unitKey}`) ? feedbackPulse : undefined}
+      style={
+        vfx.has(`frostbite-${unitKey}`) || vfx.has(`shock-${unitKey}`)
+          ? feedbackPulse
+          : undefined
+      }
     >
       <div className="plate-row">
         <span className="unit-name">{name}</span>
@@ -3832,6 +3919,24 @@ const UnitPanel = ({
             </em>
           </Keyword>
         ) : null}
+        {weaponOutput !== undefined ? (
+          <em
+            aria-label={`병기 출력 ${weaponOutput}/5`}
+            className="passive-chip"
+          >
+            병기 출력 {weaponOutput}/5
+          </em>
+        ) : null}
+        {remiseCharges !== undefined ? (
+          <em
+            aria-label={
+              remiseCharges > 0 ? "르미즈 사용 가능" : "르미즈 사용됨"
+            }
+            className="passive-chip"
+          >
+            {remiseCharges > 0 ? "르미즈 준비" : "르미즈 사용됨"}
+          </em>
+        ) : null}
         {attackBuff > 0 ? (
           <Keyword className="chip-keyword" term="attack-buff">
             <em
@@ -3875,7 +3980,9 @@ const UnitPanel = ({
       disabled={!targeting}
       type="button"
       data-sprite-fallback={
-        sprite.fallbackFor === undefined ? undefined : String(sprite.fallbackFor)
+        sprite.fallbackFor === undefined
+          ? undefined
+          : String(sprite.fallbackFor)
       }
       onClick={(event) => {
         event.stopPropagation();

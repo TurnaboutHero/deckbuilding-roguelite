@@ -21,6 +21,10 @@ export type CombatEvent =
   | { type: 'cooldownReduced'; slots: number[]; amount: number }
   | { type: 'overheatEntered' }
   | { type: 'overheatConsumed'; skill: SkillId }
+  | { type: 'remiseChecked'; coin: CoinUid; face: Face }
+  | { type: 'remiseReflipped'; coin: CoinUid; face: Face }
+  | { type: 'remiseReused'; skill: SkillId }
+  | { type: 'weaponOutputChanged'; amount: number; value: number }
   | { type: 'statusApplied'; target: TargetRef; status: StatusId; stacks: number; turns?: number }
   | { type: 'statusTicked'; target: TargetRef; status: StatusId; amount: number; remaining: number; turns?: number }
   | { type: 'coinCreated'; coin: CoinUid; defId: string; zone: 'draw' | 'discard' | 'hand' }
@@ -30,6 +34,8 @@ export type CombatEvent =
   | { type: 'summonReplaced'; uid: number; equipment: string }
   | { type: 'summonActed'; uid: number; equipment: string; bonus: number }
   | { type: 'summonExpired'; uid: number; equipment: string }
+  | { type: 'summonCloned'; sourceUid: number; uid: number; equipment: string }
+  | { type: 'summonAoeGranted'; uid: number; uses: number }
   | { type: 'turnTriggerAdded'; trigger: string }
   | { type: 'turnTriggerFired'; trigger: string; hook: string }
   | { type: 'turnTriggersExpired'; count: number }

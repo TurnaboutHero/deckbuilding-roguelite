@@ -37,6 +37,7 @@ declare class Buffer {
 
 declare const process: {
   argv: string[];
+  execPath: string;
   cwd(): string;
   exit(code?: number): never;
 };

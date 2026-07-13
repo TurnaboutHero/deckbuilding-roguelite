@@ -38,11 +38,19 @@ export const sfxCuesFor = (event: CombatEvent): SfxKind[] => {
     case "overheatConsumed":
       return ["overheat-consume"];
     case "summonAdded":
+    case "summonCloned":
       return ["summon-add"];
     case "summonReplaced":
       return ["summon-replace"];
     case "summonActed":
       return ["summon-act"];
+    case "remiseReflipped":
+      return [event.face === "heads" ? "flip-heads" : "flip-tails"];
+    case "remiseReused":
+      return ["skill"];
+    case "weaponOutputChanged":
+    case "summonAoeGranted":
+      return ["mana"];
     case "summonExpired":
       return ["summon-expire"];
     case "elementGranted":
@@ -60,6 +68,7 @@ export const sfxCuesFor = (event: CombatEvent): SfxKind[] => {
     case "blockCleared":
     case "statusTicked":
     case "traitTriggered":
+    case "remiseChecked":
     case "passiveTriggered":
     case "turnTriggerAdded":
     case "turnTriggerFired":

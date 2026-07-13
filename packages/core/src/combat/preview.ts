@@ -54,7 +54,7 @@ const scriptedFlips = (faces: readonly Face[]): Rng => {
 };
 
 const enumerateFaces = (count: number): Face[][] => {
-  if (count > 5) throw new Error("preview supports up to 5 placed coins");
+  if (count > 15) throw new Error("preview supports up to 15 flip outcomes");
   const branchCount = 2 ** count;
   return Array.from({ length: branchCount }, (_, branch) =>
     Array.from({ length: count }, (_unused, bit) =>
@@ -133,7 +133,15 @@ export const previewFlip = (
     throw new Error("slot is not a flip skill");
 
   const placed = state.zones.placed[slot] ?? [];
-  const faceBranches = enumerateFaces(placed.length);
+  const character = db.characters[String(state.characterId)];
+  const remiseFlipBudget =
+    character?.trait.mechanic === "remise" && state.player.remiseCharges > 0
+      ? 1 + placed.length
+      : 0;
+  // Remise can add one check reflip and then a full free reuse. Enumerating the
+  // complete flip budget keeps previews and simulator policies deterministic
+  // without under-supplying the resolver's scripted RNG.
+  const faceBranches = enumerateFaces(placed.length + remiseFlipBudget);
   const probability = 1 / faceBranches.length;
   const chosen = hasChooseBasicInHand(skill) ? suggestedChosen(state, db) : undefined;
   const firstLivingTarget = state.enemies.findIndex((enemy) => enemy.hp > 0);

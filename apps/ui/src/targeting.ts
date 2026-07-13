@@ -18,6 +18,7 @@ const sameTargetingBase = (
 ): boolean =>
   left.type === right.type &&
   left.slot === right.slot &&
+  left.chosenSummon === right.chosenSummon &&
   (left.type !== "useConsumeSkill" ||
     right.type !== "useConsumeSkill" ||
     (left.coins.length === right.coins.length &&

@@ -23,11 +23,12 @@ export const initialIntent = (defId: string, db: ContentDb): { intent: EnemyInte
   return { intent, index: 0 };
 };
 
-const tickEnemyDurations = (input: CombatState, enemyIndex: number, events: CombatEvent[]): CombatState => {
+const tickEnemyDurations = (input: CombatState, enemyIndex: number, events: CombatEvent[], preserveShock = false): CombatState => {
   const enemy = input.enemies[enemyIndex];
   if (enemy === undefined) return input;
   let statuses = enemy.statuses;
   for (const status of ['frostbite', 'shock'] as const) {
+    if (status === 'shock' && preserveShock) continue;
     const current = statuses[status];
     if (current?.kind !== 'duration') continue;
     const turns = Math.max(0, current.turns - 1);
@@ -187,7 +188,18 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
   for (let enemyIndex = 0; enemyIndex < state.enemies.length; enemyIndex += 1) {
     const enemy = state.enemies[enemyIndex];
     if (enemy === undefined || enemy.hp <= 0) continue;
-    state = tickEnemyDurations(state, enemyIndex, events);
+    const suppressesDischarge = state.passives.some((id) => (db.passives ?? {})[String(id)]?.mechanic === 'dischargeSuppression');
+    const maxShock = Math.max(0, ...state.enemies.map((candidate) => candidate.statuses.shock?.kind === 'duration' ? candidate.statuses.shock.turns : 0));
+    const maxShockEnemyIndexes = state.enemies.flatMap((candidate, index) =>
+      candidate.hp > 0 && candidate.statuses.shock?.kind === 'duration' && candidate.statuses.shock.turns === maxShock
+        ? [index]
+        : []
+    );
+    const preservedEnemyIndex = maxShockEnemyIndexes.includes(state.lastTargetedEnemy ?? -1)
+      ? state.lastTargetedEnemy
+      : maxShockEnemyIndexes[0];
+    const preserveShock = suppressesDischarge && maxShock > 0 && enemyIndex === preservedEnemyIndex;
+    state = tickEnemyDurations(state, enemyIndex, events, preserveShock);
   }
 
   const ai = state.rngImpl?.ai ?? rngFrom(state.rng.ai);

@@ -36,6 +36,18 @@ describe("feedbackCuesFor", () => {
     ]);
   });
 
+  it("maps Remise and weapon output feedback to the rendered player unit", () => {
+    expect(keys({ type: "remiseReflipped", coin: 4 as never, face: "heads" })).toEqual([
+      "unit-player",
+    ]);
+    expect(keys({ type: "remiseReused", skill: "fente" as never })).toEqual([
+      "unit-player",
+    ]);
+    expect(keys({ type: "weaponOutputChanged", amount: 1, value: 2 })).toEqual([
+      "unit-player",
+    ]);
+  });
+
   it("does not create motion cues for zero-value or bookkeeping events", () => {
     expect(keys({ type: "healed", target: { type: "player" }, amount: 0, hp: 5 })).toEqual([]);
     expect(keys({ type: "turnStarted", turn: 2 })).toEqual([]);

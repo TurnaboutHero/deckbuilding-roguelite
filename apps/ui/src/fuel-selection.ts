@@ -1,5 +1,5 @@
 import type { CoinUid, CombatState, Command, ContentDb, SlotId } from "@game/core";
-import { effectiveElements, legalCommands, step } from "@game/core";
+import { effectiveElements, legalCommands } from "@game/core";
 
 export interface FuelSelection {
   slot: SlotId;
@@ -92,7 +92,7 @@ export function fuelCommand(
   selection: FuelSelection,
   state: CombatState,
   db: ContentDb,
-): Command | null {
+): Extract<Command, { type: "useConsumeSkill" }> | null {
   const skill = consumeSkill(state, selection.slot, db);
   if (skill === null || selection.coins.length !== skill.consume.count)
     return null;
@@ -102,7 +102,7 @@ export function fuelCommand(
     coins.some((coin) => !isFuelCoin(state, coin, selection.slot, db))
   )
     return null;
-  const command: Command = {
+  const command: Extract<Command, { type: "useConsumeSkill" }> = {
     type: "useConsumeSkill",
     slot: selection.slot,
     coins,
@@ -114,6 +114,5 @@ export function fuelCommand(
       candidate.slot === command.slot &&
       candidate.target === command.target,
   );
-  if (!hasLegalConsumeSlot) return null;
-  return step(state, command, db).ok ? command : null;
+  return hasLegalConsumeSlot ? command : null;
 }

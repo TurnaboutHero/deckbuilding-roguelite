@@ -8,9 +8,10 @@
 
 1. [`README.md`](./README.md) — 문서 우선순위와 현재/역사 문서 구분
 2. [`PRD.md`](./PRD.md) — 제품·게임 규칙 정본; v1.3 변경 이력이 본문 충돌보다 우선
-3. [`../PRD/P7_NEW_DESIGN_DECISIONS.md`](../PRD/P7_NEW_DESIGN_DECISIONS.md) — P7 오버라이드
-4. [`current-implementation.md`](./current-implementation.md) — 현재 코드의 전투·런·저장·CI 구현 계약
-5. [`content-design-guide.md`](./content-design-guide.md) — 신규 콘텐츠 작성 규칙
+3. [`../PRD/P9_NEW_DESIGN_DECISIONS.md`](../PRD/P9_NEW_DESIGN_DECISIONS.md) — 최신 P9 오버라이드
+4. [`../PRD/P7_NEW_DESIGN_DECISIONS.md`](../PRD/P7_NEW_DESIGN_DECISIONS.md) — 활성 기반 전투 규칙
+5. [`current-implementation.md`](./current-implementation.md) — 현재 코드의 전투·런·저장·CI 구현 계약
+6. [`content-design-guide.md`](./content-design-guide.md) — 신규 콘텐츠 작성 규칙
 
 ## v1.2 원문과 현재의 대표 차이
 

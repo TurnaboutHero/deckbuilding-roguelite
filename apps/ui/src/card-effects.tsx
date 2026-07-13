@@ -6,7 +6,7 @@ import type { KeywordTerm } from "./keywords";
 import "./card-effects.css";
 
 export interface EffectRowModel {
-  kind: "base" | "heads" | "tails" | "cost" | "effect" | "element-face" | "overheat";
+  kind: "base" | "heads" | "tails" | "mixed" | "cost" | "effect" | "element-face" | "overheat";
   badge: string;
   modeNote?: string;
   segments: Array<{ text: string; term?: KeywordTerm }>;
@@ -101,7 +101,19 @@ const atomSegment = (atom: EffectAtom): { text: string; term?: KeywordTerm } => 
   if (atom.kind === "empowerSummons") {
     return { text: `소환 장비 강화 +${atom.amount}` };
   }
-  return { text: "특수" };
+  if (atom.kind === "increaseWeaponOutput") return { text: `병기 출력 +${atom.amount}` };
+  if (atom.kind === "extendAllSummons") return { text: `모든 소환 지속 +${atom.amount}` };
+  if (atom.kind === "extendChosenSummon") return { text: `선택 소환 지속 +${atom.amount}` };
+  if (atom.kind === "grantChosenSummonAoe") return { text: `선택 소환 광역 행동 ${atom.uses}회` };
+  if (atom.kind === "cloneChosenSummon") return { text: `선택 소환 복제 (지속 ${atom.duration})` };
+  if (atom.kind === "virtualManaSwordVolley") return { text: `임시 마나 검 일제 공격 (기본 피해 ${atom.baseDamage})` };
+  if (atom.kind === "doubleTargetShock") return { text: "대상의 감전 2배", term: "shock" };
+  if (atom.kind === "blockPerTargetShock") return { text: `방어 ${atom.base} + 감전 (최대 +${atom.cap})`, term: "shock" };
+  if (atom.kind === "executeOrDischargeShock") return { text: "감전이 HP보다 높으면 처형, 아니면 감전만큼 피해 후 제거", term: "shock" };
+  if (atom.kind === "damageIfTargetShocked") return { text: `감전 대상 피해 +${atom.amount}`, term: "shock" };
+  if (atom.kind === "damageIfReused") return { text: `무료 재사용 시 피해 +${atom.amount}` };
+  if (atom.kind === "readyRemise") return { text: `이번 턴 르미즈 기회 +${atom.amount ?? 1}` };
+  return { text: "효과" };
 };
 
 const atomSegments = (
@@ -189,12 +201,18 @@ export function skillEffectRows(skill: SkillDef): EffectRowModel[] {
       segments: bonusSegments(skill.tails.effects),
     });
   }
+  if (skill.mixed !== undefined) {
+    rows.push({
+      kind: "mixed",
+      badge: "앞/뒤",
+      segments: bonusSegments(skill.mixed.effects),
+    });
+  }
   // P7 D5 — 특정 속성 코인 면 보너스 (예: 화염 앞면 추가 +1)
   for (const bonus of skill.elementFaces ?? []) {
     rows.push({
       kind: "element-face",
       badge: `${elementKo(bonus.element)} ${bonus.face === "heads" ? "앞면" : "뒷면"}`,
-      modeNote: "동전마다",
       segments: bonusSegments(bonus.effects),
     });
   }

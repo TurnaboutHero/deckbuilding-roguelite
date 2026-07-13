@@ -23,6 +23,8 @@ export interface ResolveResult {
 interface ApplyEffectOptions {
   // P6 D6 — 소환 원자 컨텍스트: 이번 플립의 뒷면 수, 명시 선택 파라미터
   tailsCount?: number;
+  headsCount?: number;
+  isReuse?: boolean;
   chosenEquipment?: EquipmentDefId;
   chosenSummon?: number;
   suppressTurnTriggers?: boolean;
@@ -352,6 +354,82 @@ export const applyEffectAtom = (
         ...state,
         summons: state.summons.map((summon) => ({ ...summon, enhance: summon.enhance + atom.amount }))
       };
+    case 'increaseWeaponOutput': {
+      const value = Math.min(5, state.player.weaponOutput + atom.amount);
+      const gained = value - state.player.weaponOutput;
+      if (gained <= 0) return state;
+      events.push({ type: 'weaponOutputChanged', amount: gained, value });
+      return { ...state, player: { ...state.player, weaponOutput: value } };
+    }
+    case 'extendAllSummons':
+      return { ...state, summons: state.summons.map((summon) => ({ ...summon, duration: summon.duration + atom.amount })) };
+    case 'extendChosenSummon': {
+      if (state.summons.length === 0) return state;
+      const uid = options?.chosenSummon ?? state.summons[0]!.uid;
+      return {
+        ...state,
+        summons: state.summons.map((summon) =>
+          summon.uid === uid ? { ...summon, duration: summon.duration + atom.amount } : summon
+        )
+      };
+    }
+    case 'grantChosenSummonAoe': {
+      if (state.summons.length === 0) return state;
+      const uid = options?.chosenSummon ?? state.summons[0]!.uid;
+      const uses = atom.uses + (atom.usesPerHeads ?? 0) * (options?.headsCount ?? 0);
+      events.push({ type: 'summonAoeGranted', uid, uses });
+      return { ...state, summons: state.summons.map((summon) => summon.uid === uid ? { ...summon, aoeUses: summon.aoeUses + uses } : summon) };
+    }
+    case 'cloneChosenSummon': {
+      if (state.summons.length === 0) return state;
+      const uid = options?.chosenSummon ?? state.summons[0]!.uid;
+      const source = state.summons.find((summon) => summon.uid === uid);
+      if (source === undefined) return state;
+      if (state.summons.length >= 3) {
+        return { ...state, summons: state.summons.map((summon) => summon.uid === uid ? { ...summon, duration: summon.duration + atom.fullCapExtension } : summon) };
+      }
+      const clone = { ...source, uid: state.nextSummonUid, duration: atom.duration };
+      events.push({ type: 'summonCloned', sourceUid: source.uid, uid: clone.uid, equipment: String(clone.defId) });
+      return { ...state, summons: [...state.summons, clone], nextSummonUid: state.nextSummonUid + 1 };
+    }
+    case 'virtualManaSwordVolley': {
+      const count = 3 + state.summons.length;
+      let next = state;
+      for (let volley = 0; volley < count; volley += 1) {
+        for (let index = 0; index < next.enemies.length; index += 1) {
+          if ((next.enemies[index]?.hp ?? 0) <= 0) continue;
+          next = applyDamage(next, { type: 'enemy', index }, atom.baseDamage + next.player.weaponOutput, 'skill', events, { type: 'player' });
+        }
+      }
+      return next;
+    }
+    case 'doubleTargetShock': {
+      if (target.type !== 'enemy') return state;
+      const turns = statusTurns(state.enemies[target.index]?.statuses ?? {}, 'shock');
+      if (turns <= 0) return state;
+      return { ...state, enemies: state.enemies.map((enemy, index) => index === target.index ? { ...enemy, statuses: { ...enemy.statuses, shock: { kind: 'duration', turns: turns * 2 } } } : enemy) };
+    }
+    case 'blockPerTargetShock': {
+      const turns = target.type === 'enemy' ? statusTurns(state.enemies[target.index]?.statuses ?? {}, 'shock') : 0;
+      return applyBlock(state, { type: 'player' }, atom.base + Math.min(atom.cap, turns), events);
+    }
+    case 'executeOrDischargeShock': {
+      if (target.type !== 'enemy') return state;
+      const enemy = state.enemies[target.index];
+      const turns = statusTurns(enemy?.statuses ?? {}, 'shock');
+      if (enemy === undefined || turns <= 0) return state;
+      if (turns > enemy.hp) return applyDamage(state, target, enemy.hp + enemy.block, 'skill', events, { type: 'player' });
+      const damaged = applyDamage(state, target, turns, 'skill', events, { type: 'player' });
+      return { ...damaged, enemies: damaged.enemies.map((item, index) => index === target.index ? { ...item, statuses: { ...item.statuses, shock: undefined } } : item) };
+    }
+    case 'damageIfTargetShocked': {
+      if (target.type !== 'enemy' || statusTurns(state.enemies[target.index]?.statuses ?? {}, 'shock') <= 0) return state;
+      return applyDamage(state, target, atom.amount, 'skill', events, { type: 'player' });
+    }
+    case 'damageIfReused':
+      return options?.isReuse === true ? applyDamage(state, target, atom.amount, 'skill', events, { type: 'player' }) : state;
+    case 'readyRemise':
+      return { ...state, player: { ...state.player, remiseCharges: state.player.remiseCharges + (atom.amount ?? 1) } };
   }
 };
 
@@ -453,6 +531,7 @@ const collectEffects = (
   };
   addFaceEffects(skill.heads, headCount);
   addFaceEffects(skill.tails, tailCount);
+  if (headCount > 0 && tailCount > 0) effects.push(...(skill.mixed?.effects ?? []));
   // P7 D5 — 특정 속성 코인 면 보너스 (일반 면 보너스와 합산, 코인·면당 1회)
   for (const bonus of skill.elementFaces ?? []) {
     for (let i = 0; i < faces.length; i += 1) {
@@ -514,16 +593,47 @@ export const resolveFlip = (
   const skillTarget = targetForSkill(input, skill, target);
   const events: CombatEvent[] = [{ type: 'skillUsed', slot, skill: skill.id, kind: 'flip' }];
   const turnTriggerScope = input.turnTriggers;
+  const passiveMechanics = new Set(
+    input.passives.flatMap((id) => {
+      const mechanic = (db.passives ?? {})[String(id)]?.mechanic;
+      return mechanic === undefined ? [] : [mechanic];
+    })
+  );
+  let returnFirstCoinToHand = false;
+  let retrievalCoin: CoinUid | undefined;
+  const residualCoin = !input.player.residualChargeUsed && passiveMechanics.has('residualCharge')
+    ? placed.find((uid) => {
+        const coin = input.coins[Number(uid)];
+        return coin !== undefined && effectiveElements(coin, db).includes('lightning');
+      })
+    : undefined;
   // P7 D5 — 과열 강화 분기 보유 스킬이 성공 해결되면 해결 후 과열 소비 (finish 단일 경로)
   const consumesOverheat = input.player.overheat && (skill.overheatBonus?.length ?? 0) > 0;
   const finish = (finishedState: CombatState): ResolveResult => {
-    events.push({ type: 'coinsDiscarded', coins: [...placed], reason: 'skillCost' });
+    const handCoin = returnFirstCoinToHand ? placed[0] : undefined;
+    const routedToDraw = new Set(
+      [retrievalCoin, residualCoin].filter(
+        (coin): coin is CoinUid => coin !== undefined && coin !== handCoin
+      )
+    );
+    // Cost order is the deterministic top-of-draw order. Two passives may route
+    // different coins, while a coin claimed by both is returned only once.
+    const topDraw = placed.filter((coin) => routedToDraw.has(coin));
+    const discarded = placed.filter((coin) => coin !== handCoin && !routedToDraw.has(coin));
+    events.push({ type: 'coinsDiscarded', coins: [...discarded], reason: 'skillCost' });
     let state = {
       ...finishedState,
+      player: {
+        ...finishedState.player,
+        retrievalHabitUsed: finishedState.player.retrievalHabitUsed || retrievalCoin !== undefined,
+        residualChargeUsed: finishedState.player.residualChargeUsed || residualCoin !== undefined
+      },
       zones: {
         ...finishedState.zones,
         placed: { ...finishedState.zones.placed, [slot]: [] },
-        discard: [...finishedState.zones.discard, ...placed]
+        hand: handCoin === undefined ? finishedState.zones.hand : [...finishedState.zones.hand, handCoin],
+        draw: topDraw.length === 0 ? finishedState.zones.draw : [...topDraw, ...finishedState.zones.draw],
+        discard: [...finishedState.zones.discard, ...discarded]
       }
     };
     if (consumesOverheat && state.player.overheat) {
@@ -559,39 +669,168 @@ export const resolveFlip = (
     const instance = state.coins[Number(coin)];
     return instance === undefined ? [] : effectiveElements(instance, db);
   });
-  const tailsCount = faces.filter((face) => face === 'tails').length;
-  for (const atom of collectEffects(skill, faces, coinElements, input.player.overheat)) {
-    for (const effectTarget of targetsForSkillEffect(state, atom, skill, skillTarget)) {
-      state = applyEffectAtom(state, atom, effectTarget, db, events, chosen, {
-        turnTriggerScope,
-        tailsCount,
-        chosenEquipment: summonChoice?.chosenEquipment,
-        chosenSummon: summonChoice?.chosenSummon,
-        sourceSlot: slot
-      });
-      if (state.phase === 'victory' || state.phase === 'defeat') return finish(state);
+  const applyResolution = (
+    resolutionFaces: Face[],
+    resolutionElements: readonly (readonly Element[])[],
+    isReuse: boolean,
+    includeBase = true,
+    resolutionCoins: readonly CoinUid[] = placed,
+    effectSkill: FlipSkillDef = skill
+  ): boolean => {
+    const tailsCount = resolutionFaces.filter((face) => face === 'tails').length;
+    const headsCount = resolutionFaces.length - tailsCount;
+    const resolutionSkill = includeBase ? effectSkill : { ...effectSkill, base: [] };
+    const effects = collectEffects(resolutionSkill, resolutionFaces, resolutionElements, includeBase && input.player.overheat);
+    if (includeBase && !isReuse && input.zones.hand.length === 0 && !state.player.lastMoveUsed && passiveMechanics.has('lastMove')) {
+      if (effects.some((atom) => atom.kind === 'damage')) effects.push({ kind: 'damage', amount: 2 });
+      if (effects.some((atom) => atom.kind === 'block')) effects.push({ kind: 'block', amount: 2 });
+      state = { ...state, player: { ...state.player, lastMoveUsed: true } };
     }
-  }
+    if (resolutionFaces.includes('heads') && resolutionFaces.includes('tails') && !state.player.balanceSenseUsed && passiveMechanics.has('balanceSense')) {
+      effects.push({ kind: 'block', amount: 3 });
+      state = { ...state, player: { ...state.player, balanceSenseUsed: true } };
+    }
+    if (isReuse && skill.tags.includes('attack') && !state.player.overcurrentUsed && passiveMechanics.has('overcurrent') && resolutionElements.some((elements) => elements.includes('lightning'))) {
+      effects.push({ kind: 'damage', amount: 2 }, { kind: 'applyStatus', status: 'shock', stacks: 1, to: 'target' });
+      state = { ...state, player: { ...state.player, overcurrentUsed: true } };
+    }
+    for (const atom of effects) {
+      for (const effectTarget of targetsForSkillEffect(state, atom, skill, skillTarget)) {
+        state = applyEffectAtom(state, atom, effectTarget, db, events, chosen, {
+          turnTriggerScope, tailsCount, headsCount, isReuse,
+          chosenEquipment: summonChoice?.chosenEquipment,
+          chosenSummon: summonChoice?.chosenSummon,
+          sourceSlot: slot
+        });
+        if (state.phase === 'victory' || state.phase === 'defeat') return false;
+      }
+    }
+    for (let i = 0; i < resolutionFaces.length; i += 1) {
+      const coin = state.coins[Number(resolutionCoins[i])];
+      const face = resolutionFaces[i];
+      if (coin === undefined || face === undefined) continue;
+      for (const element of effectiveElements(coin, db)) {
+        const procs = Object.values(db.coins).find((def) => def.element === element)?.procs;
+        const atoms = face === 'heads' ? procs?.heads : procs?.tails;
+        for (const atom of atoms ?? []) {
+          for (const procTarget of targetsForElementProc(state, atom, skill, skillTarget, target)) {
+            state = applyEffectAtom(state, atom, procTarget, db, events, undefined, { turnTriggerScope, isReuse });
+            if (state.phase === 'victory' || state.phase === 'defeat') return false;
+          }
+        }
+      }
+    }
+    return true;
+  };
 
-  for (let i = 0; i < placed.length; i += 1) {
-    const coin = state.coins[Number(placed[i])];
-    const face = faces[i];
-    if (coin === undefined || face === undefined) continue;
-    for (const element of effectiveElements(coin, db)) {
-      const procs = Object.values(db.coins).find((def) => def.element === element)?.procs;
-      const atoms = face === 'heads' ? procs?.heads : procs?.tails;
-      for (const atom of atoms ?? []) {
-        for (const procTarget of targetsForElementProc(state, atom, skill, skillTarget, target)) {
-          state = applyEffectAtom(state, atom, procTarget, db, events, undefined, { turnTriggerScope });
+  const character = db.characters[String(input.characterId)];
+  const canRemise = character?.trait.mechanic === 'remise' && input.player.remiseCharges > 0;
+  const fireAttackResolved = (): void => {
+    if (state.phase !== 'victory' && state.phase !== 'defeat' && skill.tags.includes('attack')) {
+      state = fireTurnTriggers(state, 'onAttackSkillResolved', skillTarget, db, events, turnTriggerScope);
+    }
+  };
+
+  let reuseAfterPrimary = false;
+  if (!canRemise) {
+    if (!applyResolution(faces, coinElements, false)) return finish(state);
+    fireAttackResolved();
+  } else {
+    // Remise resolves the first physical coin before the rest of the skill:
+    // first face/proc -> immediate reflip face/proc -> base -> remaining coins.
+    // This keeps the reflip observable even when a later base/coin effect is lethal.
+    const appliedAnyFaces = new Set<Face>();
+    const applyInitialCoin = (index: number, face: Face, separateResolution = false): boolean => {
+      const section = face === 'heads' ? skill.heads : skill.tails;
+      const allowSection = section?.mode !== 'any' || separateResolution || !appliedAnyFaces.has(face);
+      if (!separateResolution && section?.mode === 'any') appliedAnyFaces.add(face);
+      const coinSkill: FlipSkillDef = {
+        ...skill,
+        base: [],
+        heads: face === 'heads' && allowSection ? skill.heads : undefined,
+        tails: face === 'tails' && allowSection ? skill.tails : undefined,
+        mixed: undefined,
+        overheatBonus: undefined
+      };
+      return applyResolution(
+        [face],
+        [coinElements[index] ?? []],
+        false,
+        false,
+        [placed[index]!],
+        coinSkill
+      );
+    };
+
+    state = { ...state, player: { ...state.player, remiseCharges: Math.max(0, state.player.remiseCharges - 1) } };
+    events.push({ type: 'remiseChecked', coin: placed[0]!, face: faces[0]! });
+    const firstContinues = applyInitialCoin(0, faces[0]!);
+    if (faces[0] === 'heads') {
+      const reflip = rng.flip();
+      events.push({ type: 'remiseReflipped', coin: placed[0]!, face: reflip });
+      events.push({ type: 'coinFlipped', coin: placed[0]!, face: reflip });
+      if (!state.player.retrievalHabitUsed && passiveMechanics.has('retrievalHabit')) retrievalCoin = placed[0];
+      state = { ...state, rng: { ...state.rng, flip: rng.snapshot() } };
+      reuseAfterPrimary = reflip === 'heads' || skill.remise?.reuseOnReflipTails === true;
+      if (firstContinues && !applyInitialCoin(0, reflip, true)) return finish(state);
+    }
+    if (!firstContinues || state.phase === 'victory' || state.phase === 'defeat') return finish(state);
+
+    const baseOnlySkill: FlipSkillDef = {
+      ...skill,
+      heads: undefined,
+      tails: undefined,
+      mixed: undefined
+    };
+    if (!applyResolution([], [], false, true, [], baseOnlySkill)) return finish(state);
+    for (let index = 1; index < faces.length; index += 1) {
+      if (!applyInitialCoin(index, faces[index]!)) return finish(state);
+    }
+    if (faces.includes('heads') && faces.includes('tails')) {
+      if (!state.player.balanceSenseUsed && passiveMechanics.has('balanceSense')) {
+        state = applyEffectAtom(state, { kind: 'block', amount: 3 }, { type: 'player' }, db, events);
+        state = { ...state, player: { ...state.player, balanceSenseUsed: true } };
+      }
+      for (const atom of skill.mixed?.effects ?? []) {
+        for (const effectTarget of targetsForSkillEffect(state, atom, skill, skillTarget)) {
+          state = applyEffectAtom(state, atom, effectTarget, db, events, chosen, {
+            turnTriggerScope,
+            tailsCount: faces.filter((face) => face === 'tails').length,
+            headsCount: faces.filter((face) => face === 'heads').length,
+            chosenEquipment: summonChoice?.chosenEquipment,
+            chosenSummon: summonChoice?.chosenSummon,
+            sourceSlot: slot
+          });
           if (state.phase === 'victory' || state.phase === 'defeat') return finish(state);
         }
       }
     }
+    fireAttackResolved();
+  }
+
+  if (reuseAfterPrimary && state.phase !== 'victory' && state.phase !== 'defeat') {
+    const reuseFaces = placed.map((coin) => {
+      const face = rng.flip();
+      events.push({ type: 'coinFlipped', coin, face });
+      return face;
+    });
+    events.push({ type: 'remiseReused', skill: skill.id });
+    state = { ...state, rng: { ...state.rng, flip: rng.snapshot() } };
+    const reuseContinues = applyResolution(reuseFaces, coinElements, true);
+    fireAttackResolved();
+    if (!reuseContinues) return finish(state);
+    if (skill.remise?.returnFirstCoinOnReuse === true) returnFirstCoinToHand = true;
+    if ((skill.remise?.addLightningToHandAfterReuse ?? 0) > 0) {
+      const lightning = Object.values(db.coins).find((def) => def.element === 'lightning')?.id;
+      if (lightning !== undefined) state = applyEffectAtom(state, { kind: 'addCoin', coin: lightning, zone: 'hand', count: skill.remise!.addLightningToHandAfterReuse! }, { type: 'player' }, db, events);
+    }
+    if (!state.player.continuousMotionUsed && passiveMechanics.has('continuousMotion')) {
+      const drawn = drawCards(state, 1);
+      state = { ...drawn.state, player: { ...drawn.state.player, continuousMotionUsed: true } };
+      events.push(...drawn.events);
+    }
   }
 
   state = checkCombatEnd(state, events);
-  if (state.phase !== 'victory' && state.phase !== 'defeat' && skill.tags.includes('attack')) {
-    state = fireTurnTriggers(state, 'onAttackSkillResolved', skillTarget, db, events, turnTriggerScope);
-  }
   return finish(state);
 };

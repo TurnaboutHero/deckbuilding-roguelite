@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ContentDb, EnemyDef } from '../content-types';
 import { validateContentDb } from '../content-types';
-import type { CharacterId, CoinDefId, EnemyDefId } from '../ids';
+import type { CharacterId, CoinDefId, EnemyDefId, PassiveId } from '../ids';
 import { createCombat, step } from './reducer';
 import type { CombatState } from './state';
 
@@ -44,6 +44,12 @@ const testDb = (overrides?: Partial<EnemyDef>): ContentDb => ({
       startingBag: Array.from({ length: 10 }, () => id<CoinDefId>('basic')),
       startingSkills: [],
       trait: { id: 'none', name: '없음', hook: 'combatStart', effects: [] }
+    }
+  },
+  passives: {
+    'discharge-suppression': {
+      id: id<PassiveId>('discharge-suppression'), name: '방전 억제', description: '',
+      hook: 'combatStart', effects: [], mechanic: 'dischargeSuppression', element: 'lightning', price: 0
     }
   },
   validate: () => []
@@ -114,6 +120,31 @@ describe('enemy passive — enemyTurnStart', () => {
       return endTurn(state, db).state.enemies[0]?.hp;
     };
     expect(run()).toBe(run());
+  });
+
+  it('uses the last targeted enemy to break equal-shock discharge suppression ties', () => {
+    const db = testDb();
+    const created = createCombat(
+      {
+        character: id<CharacterId>('warrior'),
+        enemies: [id<EnemyDefId>('striker'), id<EnemyDefId>('striker')],
+        passives: [id<PassiveId>('discharge-suppression')]
+      },
+      db,
+      'discharge-tie'
+    );
+    const state: CombatState = {
+      ...created,
+      lastTargetedEnemy: 1,
+      enemies: created.enemies.map((enemy) => ({
+        ...enemy,
+        statuses: { shock: { kind: 'duration', turns: 3 } }
+      }))
+    };
+
+    const result = endTurn(state, db);
+    expect(result.state.enemies[0]?.statuses.shock).toEqual({ kind: 'duration', turns: 2 });
+    expect(result.state.enemies[1]?.statuses.shock).toEqual({ kind: 'duration', turns: 3 });
   });
 });
 

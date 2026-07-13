@@ -172,12 +172,19 @@ export const sameCommand = (left: Command, right: Command): boolean => {
   if (left.type === "unplaceCoin" && right.type === "unplaceCoin")
     return left.coin === right.coin;
   if (left.type === "useFlipSkill" && right.type === "useFlipSkill")
-    return left.slot === right.slot && left.target === right.target;
+    return (
+      left.slot === right.slot &&
+      left.target === right.target &&
+      left.chosenSummon === right.chosenSummon &&
+      left.chosenEquipment === right.chosenEquipment &&
+      JSON.stringify(left.chosen ?? []) === JSON.stringify(right.chosen ?? [])
+    );
   if (left.type === "endTurn" && right.type === "endTurn") return true;
   if (left.type === "useConsumeSkill" && right.type === "useConsumeSkill") {
     return (
       left.slot === right.slot &&
       left.target === right.target &&
+      left.chosenSummon === right.chosenSummon &&
       left.coins.length === right.coins.length &&
       left.coins.every((coin, index) => coin === right.coins[index])
     );

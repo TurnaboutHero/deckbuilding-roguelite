@@ -319,7 +319,8 @@ export const deriveUpgradedSkill = (def: SkillDef): SkillDef => {
   const upgrade = def.upgrade;
   if (upgrade === undefined) return def;
   const patch = upgrade.patch;
-  if (patch.kind === "removeOncePerCombat") return { ...def, oncePerCombat: undefined };
+  if (patch.kind === "removeOncePerCombat")
+    return { ...def, oncePerCombat: undefined, cooldown: patch.cooldown };
   if (patch.kind === "costDelta") {
     if (def.type === "flip") return { ...def, cost: def.cost + patch.delta };
     return { ...def, consume: { ...def.consume, count: def.consume.count + patch.delta } };
@@ -339,10 +340,41 @@ export const deriveUpgradedSkill = (def: SkillDef): SkillDef => {
         : { ...face, effects: [...face.effects, patch.effect] },
     };
   }
+  if (patch.kind === "addMixedFaceEffect") {
+    if (def.type !== "flip") throw new Error(`upgrade addMixedFaceEffect requires a flip skill: ${String(def.id)}`);
+    return {
+      ...def,
+      mixed: { effects: [...(def.mixed?.effects ?? []), patch.effect] },
+    };
+  }
+  if (patch.kind === "setFaceMode") {
+    if (def.type !== "flip" || def[patch.face] === undefined)
+      throw new Error(`upgrade setFaceMode requires an existing face: ${String(def.id)}`);
+    return { ...def, [patch.face]: { ...def[patch.face]!, mode: patch.mode } };
+  }
+  if (patch.kind === "replaceEffect") {
+    if (patch.section === "base") {
+      const atoms = def.type === "flip" ? [...def.base] : [...def.effects];
+      if (atoms[patch.index] === undefined) throw new Error(`upgrade replaceEffect target is invalid: ${String(def.id)}`);
+      atoms[patch.index] = patch.effect;
+      return def.type === "flip" ? { ...def, base: atoms } : { ...def, effects: atoms };
+    }
+    if (def.type !== "flip" || def[patch.section] === undefined)
+      throw new Error(`upgrade replaceEffect face is invalid: ${String(def.id)}`);
+    const effects = [...def[patch.section]!.effects];
+    if (effects[patch.index] === undefined) throw new Error(`upgrade replaceEffect target is invalid: ${String(def.id)}`);
+    effects[patch.index] = patch.effect;
+    return { ...def, [patch.section]: { ...def[patch.section]!, effects } };
+  }
+  if (patch.kind === "setRemiseLightningCount") {
+    if (def.type !== "flip" || def.remise === undefined)
+      throw new Error(`upgrade setRemiseLightningCount requires remise: ${String(def.id)}`);
+    return { ...def, remise: { ...def.remise, addLightningToHandAfterReuse: patch.count } };
+  }
   // baseAmount — 지정 인덱스 원자의 수치 가산 (콘텐츠 검증이 인덱스/원자 종류를 보증)
   const atoms = def.type === "flip" ? [...def.base] : [...def.effects];
   const atom = atoms[patch.index];
-  if (atom === undefined || !("amount" in atom))
+  if (atom === undefined || !("amount" in atom) || typeof atom.amount !== "number")
     throw new Error(`upgrade baseAmount target is invalid: ${String(def.id)}`);
   atoms[patch.index] = { ...atom, amount: atom.amount + patch.delta } as typeof atom;
   return def.type === "flip" ? { ...def, base: atoms } : { ...def, effects: atoms };

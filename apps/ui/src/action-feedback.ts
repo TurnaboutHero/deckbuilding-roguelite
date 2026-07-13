@@ -1,5 +1,6 @@
 import type { CombatState, Command, ContentDb } from "@game/core";
 import { effectiveElements, legalCommands } from "@game/core";
+import { sameCommand } from "./interaction";
 
 export const REJECTION_TEXT = {
   generic: "지금은 할 수 없다",
@@ -13,26 +14,8 @@ export const REJECTION_TEXT = {
   emptySlot: "빈 슬롯이다",
 } as const;
 
-export const cooldownReason = (turns: number): string => `재사용 대기 ${turns}턴`;
-
-const sameCommand = (left: Command, right: Command): boolean => {
-  if (left.type !== right.type) return false;
-  if (left.type === "endTurn" && right.type === "endTurn") return true;
-  if (left.type === "placeCoin" && right.type === "placeCoin")
-    return left.coin === right.coin && left.slot === right.slot;
-  if (left.type === "unplaceCoin" && right.type === "unplaceCoin")
-    return left.coin === right.coin;
-  if (left.type === "useFlipSkill" && right.type === "useFlipSkill")
-    return left.slot === right.slot && left.target === right.target;
-  if (left.type === "useConsumeSkill" && right.type === "useConsumeSkill")
-    return (
-      left.slot === right.slot &&
-      left.target === right.target &&
-      left.coins.length === right.coins.length &&
-      left.coins.every((coin, index) => coin === right.coins[index])
-    );
-  return false;
-};
+export const cooldownReason = (turns: number): string =>
+  `재사용 대기 ${turns}턴`;
 
 const slotReason = (
   state: CombatState,

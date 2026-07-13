@@ -33,7 +33,7 @@ interface MutableTurnTrace {
   readonly turn: number;
   readonly drawnCoinUids: Set<number>;
   readonly elementalCoinUidsSeen: Set<number>;
-  elementalCoinsFlippedHeads: number;
+  readonly elementalCoinUidsFlippedHeads: Set<number>;
   elementalCoinsConsumed: number;
   consumeOpportunity: boolean;
   multiCoinSkillOpportunity: boolean;
@@ -77,12 +77,12 @@ export const combatInvariantViolations = (
     violations.push("player HP out of range");
   }
   if (state.player.block < 0) violations.push("player block is negative");
-  // P7 D1 — 캡 카운터 폐지: 슬롯 쿨다운 범위만 검증 (0~3)
+  // P9 — 캡 카운터 폐지: 슬롯 쿨다운 범위만 검증 (0~4)
   for (const slot of state.slots) {
     if (
       !Number.isInteger(slot.cooldownRemaining) ||
       slot.cooldownRemaining < 0 ||
-      slot.cooldownRemaining > 3
+      slot.cooldownRemaining > 4
     ) {
       violations.push("slot cooldown is out of range");
       break;
@@ -101,7 +101,7 @@ const newTurnTrace = (turn: number): MutableTurnTrace => ({
   turn,
   drawnCoinUids: new Set<number>(),
   elementalCoinUidsSeen: new Set<number>(),
-  elementalCoinsFlippedHeads: 0,
+  elementalCoinUidsFlippedHeads: new Set<number>(),
   elementalCoinsConsumed: 0,
   consumeOpportunity: false,
   multiCoinSkillOpportunity: false,
@@ -144,7 +144,10 @@ const applyEventsToTurn = (
       }
     } else if (event.type === "coinFlipped" && event.face === "heads") {
       if (isElementalCoin(eventState, event.coin)) {
-        turn.elementalCoinsFlippedHeads += 1;
+        // Remise can flip the same physical coin more than once. Utilization
+        // remains a unique-coin metric even though the event stream records
+        // every actual flip for presentation and replay.
+        turn.elementalCoinUidsFlippedHeads.add(Number(event.coin));
       }
     } else if (event.type === "coinsConsumed") {
       turn.elementalCoinsConsumed += event.coins.filter((coin) =>
@@ -277,7 +280,7 @@ const finalizeTurn = (turn: MutableTurnTrace): M6TurnTrace => ({
   drawnCoinCount: turn.drawnCoinUids.size,
   unusedCoinCount: turn.unusedCoinCount,
   elementalCoinsSeen: turn.elementalCoinUidsSeen.size,
-  elementalCoinsFlippedHeads: turn.elementalCoinsFlippedHeads,
+  elementalCoinsFlippedHeads: turn.elementalCoinUidsFlippedHeads.size,
   elementalCoinsConsumed: turn.elementalCoinsConsumed,
   consumeOpportunity: turn.consumeOpportunity,
   multiCoinSkillOpportunity: turn.multiCoinSkillOpportunity,
@@ -425,6 +428,7 @@ export const playPolicyCombat = (
 
   if (
     state.phase === "player" &&
+    activeTurn.decisions.length > 0 &&
     turns.every((turn) => turn.turn !== activeTurn.turn)
   ) {
     activeTurn.unusedCoinCount = unusedCoinCount(state);

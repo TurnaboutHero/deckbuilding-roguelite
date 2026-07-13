@@ -1,8 +1,8 @@
 # 현재 구현 스냅샷
 
-> 마지막 동기화: 2026-07-13 · 기준: P7 / PRD v1.3 · 콘텐츠 `1.2.0-p7` · 런 저장 v7
+> 마지막 동기화: 2026-07-13 · 기준: P9 / PRD v1.3 · 콘텐츠 `1.3.0-p9` · 런 저장 v7
 
-이 문서는 **현재 `main` 코드가 실제로 수행하는 동작**을 설명한다. 제품 의도와 게임 규칙의 정본은 [`PRD.md`](./PRD.md)와 [`../PRD/P7_NEW_DESIGN_DECISIONS.md`](../PRD/P7_NEW_DESIGN_DECISIONS.md)이며, 이 문서는 구현을 읽기 위한 기술 안내다.
+이 문서는 **현재 코드가 실제로 수행하는 동작**을 설명한다. 제품 의도와 게임 규칙의 정본은 [`PRD.md`](./PRD.md)와 최신 [`../PRD/P9_NEW_DESIGN_DECISIONS.md`](../PRD/P9_NEW_DESIGN_DECISIONS.md)이며, 기반 전투 규칙의 역사적 근거는 [`../PRD/P7_NEW_DESIGN_DECISIONS.md`](../PRD/P7_NEW_DESIGN_DECISIONS.md)에 남긴다. 이 문서는 구현을 읽기 위한 기술 안내다.
 
 문서 우선순위와 역사 문서 구분은 [`docs/README.md`](./README.md)를 먼저 본다.
 
@@ -10,8 +10,8 @@
 
 | 항목 | 현재 기준 | 코드 정본 |
 |---|---|---|
-| 제품 규칙 | PRD v1.3 + P7 오버라이드 | `docs/PRD.md`, `PRD/P7_NEW_DESIGN_DECISIONS.md` |
-| 콘텐츠 | `1.2.0-p7` | `packages/content/src/index.ts` |
+| 제품 규칙 | PRD v1.3 + P9 오버라이드 | `docs/PRD.md`, `PRD/P9_NEW_DESIGN_DECISIONS.md` |
+| 콘텐츠 | `1.3.0-p9` | `packages/content/src/index.ts` |
 | 런 저장 | v7 | `packages/core/src/run/types.ts`, `apps/ui/src/run-storage.ts` |
 | 장착 슬롯 | 8칸, 빈 슬롯 `null`, 시작 스킬 4개 | `packages/core/src/combat/state.ts` |
 | 행동 제한 | 전역 사용 횟수 캡 없음, 스킬별 쿨다운 | `packages/core/src/content-types.ts`, `combat/commands.ts` |
@@ -74,7 +74,7 @@ sim     → core + content
 
 ### 4.3 쿨다운
 
-`SkillDefBase.cooldown`은 `0 | 1 | 2 | 3`이다. 미지정 기본값은 1이다.
+`SkillDefBase.cooldown`은 `0 | 1 | 2 | 3 | 4`이다. 미지정 기본값은 1이다.
 
 | 값 | 의미 |
 |---|---|
@@ -82,6 +82,7 @@ sim     → core + content
 | 1 | 사용 후 다음 플레이어 턴 시작에 0이 되어 즉시 가용 |
 | 2 | 다음 한 턴 동안 봉인된 뒤 가용 |
 | 3 | 다음 두 턴 동안 봉인된 뒤 가용 |
+| 4 | 다음 세 턴 동안 봉인된 뒤 가용 |
 
 `oncePerCombat`은 별도의 전투당 1회 잠금이다. 콘텐츠에서는 `oncePerCombat`과 `cooldown >= 1`을 함께 선언할 수 없다.
 
@@ -115,6 +116,8 @@ sim     → core + content
 8. 사용한 코인을 버림 더미로 보내고, 과열 강화 분기를 사용했다면 과열을 소비한다.
 
 각 효과 적용 뒤 승패를 검사한다. 전투가 끝나면 남은 효과와 훅은 실행하지 않는다.
+
+번개 결투사의 `르미즈`가 준비된 장전 스킬은 첫 코인만 별도 순서로 해결한다. 첫 코인의 최초 면 효과와 속성 효과를 적용한 직후 같은 코인을 재플립하고, 재플립 효과를 적용한 다음 기본 효과와 나머지 코인을 해결한다. 무료 재사용이 성립하면 별도 공격 해결로 취급하므로 `onAttackSkillResolved`도 다시 발동한다.
 
 면 모드는 데이터에 명시한다.
 

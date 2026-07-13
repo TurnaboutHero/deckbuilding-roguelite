@@ -43,7 +43,7 @@ interface ExecFileSyncError extends Error {
 }
 
 const repoRoot = process.cwd();
-const tsxBin = join(repoRoot, "node_modules", ".bin", "tsx");
+const tsxCli = join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs");
 const humanReportEntry = join(repoRoot, "tools", "sim", "src", "human", "human-report.ts");
 
 const hpList = (state: CombatState): number[] =>
@@ -287,7 +287,7 @@ const makeTrace = (seed: string): HumanRunTraceLike => {
 
 const runCli = (args: readonly string[]): CliResult => {
   try {
-    const stdout = execFileSync(tsxBin, [humanReportEntry, ...args], {
+    const stdout = execFileSync(process.execPath, [tsxCli, humanReportEntry, ...args], {
       cwd: repoRoot,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],

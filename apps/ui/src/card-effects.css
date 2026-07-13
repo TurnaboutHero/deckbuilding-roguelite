@@ -12,10 +12,10 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
-  gap: 4px;
-  min-height: 15px;
-  font-size: 10.5px;
-  line-height: 1.25;
+  gap: 3px;
+  min-height: 13px;
+  font-size: 10px;
+  line-height: 1.15;
   text-align: left;
 }
 

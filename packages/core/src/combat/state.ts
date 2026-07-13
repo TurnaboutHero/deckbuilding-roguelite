@@ -33,6 +33,14 @@ export interface PlayerState extends UnitState {
   nextDrawBonus: number;
   // P7 D5 — 과열: 비중첩 불리언, 턴 넘어 지속, 과열 강화 스킬 해결 후 소비
   overheat: boolean;
+  weaponOutput: number;
+  remiseCharges: number;
+  continuousMotionUsed: boolean;
+  retrievalHabitUsed: boolean;
+  balanceSenseUsed: boolean;
+  lastMoveUsed: boolean;
+  residualChargeUsed: boolean;
+  overcurrentUsed: boolean;
 }
 
 export interface EnemyState extends UnitState {
@@ -81,6 +89,9 @@ export interface CombatState {
   characterId: CharacterId;
   passives: PassiveId[];
   enemyScale: number;
+  // Battle-only targeting memory. Discharge suppression uses it to break ties
+  // without introducing another persistent run-state field.
+  lastTargetedEnemy: number | null;
   // P6 D6 — 소환 장비 슬롯 (최대 3, 배열 순서 = 소환 순서 = 행동 순서)
   summons: SummonState[];
   nextSummonUid: number;
@@ -92,6 +103,7 @@ export interface SummonState {
   defId: EquipmentDefId;
   duration: number;
   enhance: number;
+  aoeUses: number;
 }
 
 export const clonePlaced = (placed: Record<SlotId, CoinUid[]>): Record<SlotId, CoinUid[]> => {

@@ -6,7 +6,7 @@
 
 ## 현재 기준
 
-> P7 · PRD v1.3 · 콘텐츠 `1.2.0-p7` · 런 저장 v7  
+> P9 · PRD v1.3 · 콘텐츠 `1.3.0-p9` · 런 저장 v7
 > 공학 상태: engineering-safe · 밸런스: balance-provisional · 경험: experience-unverified
 
 - **플레이**: https://turnabouthero.github.io/deckbuilding-roguelite/

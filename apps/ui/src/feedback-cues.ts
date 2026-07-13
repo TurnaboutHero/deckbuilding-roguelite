@@ -39,11 +39,21 @@ export const feedbackCuesFor = (event: CombatEvent): FeedbackCue[] => {
     case "overheatConsumed":
       return [cue("overheat-player", 420)];
     case "summonAdded":
+    case "summonCloned":
       return [cue(`summon-${event.uid}`, 400)];
     case "summonReplaced":
       return [cue(`summon-${event.uid}`, 440)];
     case "summonActed":
       return [cue(`summon-${event.uid}`, 320)];
+    case "remiseChecked":
+    case "remiseReflipped":
+      return [cue("unit-player", 380)];
+    case "remiseReused":
+      return [cue("unit-player", 520)];
+    case "weaponOutputChanged":
+      return [cue("unit-player", 420)];
+    case "summonAoeGranted":
+      return [cue(`summon-${event.uid}`, 380)];
     case "coinPlaced":
       return [cue(`coin-${Number(event.coin)}`, 360)];
     case "coinUnplaced":

@@ -49,6 +49,7 @@ export const addSummon = (
     defId,
     duration,
     enhance: 0,
+    aoeUses: 0,
   };
   let summons = [...input.summons];
   if (summons.length >= SUMMON_SLOT_CAP) {
@@ -81,7 +82,7 @@ export const actSummon = (
   const summon = input.summons[summonIndex];
   if (summon === undefined) return input;
   const def = equipmentDefOf(db, summon.defId);
-  const bonus = commandBonus + summon.enhance;
+  const bonus = commandBonus + summon.enhance + input.player.weaponOutput;
   let state = input;
   if (def.action.kind === 'strike') {
     const target = firstLivingEnemyIndex(state);
@@ -92,14 +93,15 @@ export const actSummon = (
       equipment: String(summon.defId),
       bonus,
     });
-    state = applyDamage(
-      state,
-      { type: 'enemy', index: target },
-      def.action.damage + bonus,
-      'skill',
-      events,
-      { type: 'player' },
-    );
+    const targets = summon.aoeUses > 0
+      ? state.enemies.flatMap((enemy, index) => enemy.hp > 0 ? [index] : [])
+      : [target];
+    for (const index of targets) {
+      state = applyDamage(state, { type: 'enemy', index }, def.action.damage + bonus, 'skill', events, { type: 'player' });
+    }
+    if (summon.aoeUses > 0) {
+      state = { ...state, summons: state.summons.map((item) => item.uid === summon.uid ? { ...item, aoeUses: item.aoeUses - 1 } : item) };
+    }
     return checkCombatEnd(state, events);
   }
   events.push({

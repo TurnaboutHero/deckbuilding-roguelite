@@ -1,7 +1,7 @@
 import type { ContentDb, FlipSkillDef } from '../content-types';
 import type { CharacterId, CoinDefId, CoinUid, EnemyDefId, PassiveId, SkillId, SlotId } from '../ids';
 import { derive, rngFrom, seedFromString } from '../rng';
-import { flipSkillRequiresEnemyTarget } from './commands';
+import { flipSkillRequiresEnemyTarget, skillRequiresSummonChoice } from './commands';
 import type { Command } from './commands';
 import { drawCards } from './draw';
 import { initialIntent, runEnemyPhase } from './enemy';
@@ -79,6 +79,16 @@ const startPlayerTurn = (
     ...input,
     phase: 'player' as const,
     // P7 D1 — 턴 시작에 쿨다운 감소 (쿨1=다음 턴 가용, 쿨3=두 턴 봉인 후 가용)
+    player: {
+      ...input.player,
+      remiseCharges: db.characters[String(input.characterId)]?.trait.mechanic === 'remise' ? 1 : 0,
+      continuousMotionUsed: false,
+      retrievalHabitUsed: false,
+      balanceSenseUsed: false,
+      lastMoveUsed: false,
+      residualChargeUsed: false,
+      overcurrentUsed: false
+    },
     slots: input.slots.map((candidate) => ({
       ...candidate,
       cooldownRemaining: Math.max(0, candidate.cooldownRemaining - 1)
@@ -177,7 +187,13 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
   const base: CombatState = {
     turn: 1,
     phase: 'player',
-    player: { hp: currentHp, maxHp, block: 0, statuses: {}, nextDrawPenalty: 0, nextDrawBonus: 0, overheat: false },
+    player: {
+      hp: currentHp, maxHp, block: 0, statuses: {}, nextDrawPenalty: 0, nextDrawBonus: 0,
+      overheat: false, weaponOutput: 0,
+      remiseCharges: character.trait.mechanic === 'remise' ? 1 : 0,
+      continuousMotionUsed: false, retrievalHabitUsed: false, balanceSenseUsed: false,
+      lastMoveUsed: false, residualChargeUsed: false, overcurrentUsed: false
+    },
     enemies,
     coins,
     zones: { draw: shuffledBag, hand: [], placed: emptyPlaced(), discard: [], exhausted: [] },
@@ -193,6 +209,7 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
     characterId: cfg.character,
     passives: [...(cfg.passives ?? [])],
     enemyScale,
+    lastTargetedEnemy: null,
     summons: [],
     nextSummonUid: 1,
     events: []
@@ -381,9 +398,12 @@ export const step = (state: CombatState, cmd: Command, db: ContentDb): StepResul
       }
       const chosenError = validateChosenBasicInHand(input, skill, cmd.chosen, db);
       if (chosenError !== undefined) return chosenError;
+      if (skillRequiresSummonChoice(skill) && !input.summons.some((summon) => summon.uid === cmd.chosenSummon))
+        return { ok: false, error: 'a valid summon choice is required' };
+      const targetedInput = cmd.target === undefined ? input : { ...input, lastTargetedEnemy: cmd.target };
       return {
         ok: true,
-        ...resolveFlip(input, cmd.slot, skill, cmd.target, db, cmd.chosen, {
+        ...resolveFlip(targetedInput, cmd.slot, skill, cmd.target, db, cmd.chosen, {
           chosenEquipment: cmd.chosenEquipment,
           chosenSummon: cmd.chosenSummon
         })
@@ -398,7 +418,10 @@ export const step = (state: CombatState, cmd: Command, db: ContentDb): StepResul
         const targetError = validateSingleEnemyTarget(input, cmd.target);
         if (targetError !== undefined) return targetError;
       }
-      return { ok: true, ...resolveConsume(input, cmd.slot, skill, cmd.coins, cmd.target, db) };
+      if (skillRequiresSummonChoice(skill) && !input.summons.some((summon) => summon.uid === cmd.chosenSummon))
+        return { ok: false, error: 'a valid summon choice is required' };
+      const targetedInput = cmd.target === undefined ? input : { ...input, lastTargetedEnemy: cmd.target };
+      return { ok: true, ...resolveConsume(targetedInput, cmd.slot, skill, cmd.coins, cmd.target, db, cmd.chosenSummon) };
     }
     return { ok: false, error: 'unknown command' };
   } catch (error) {

@@ -1008,7 +1008,14 @@ const winCurrentCombat = async (page) => {
 
 // ---------- 시나리오 11: 버림·소모 인스펙터 + 이동·리셔플 수명주기 피드백 ----------
 {
-  const { page, errors } = await boot();
+  // P9 전사 시작 4번 슬롯은 잿불 베기다. 이 시나리오는 소모 영역 자체의
+  // 계약을 검증하므로 테스트 전용 스킬 오버라이드로 내면의 열정을 명시한다.
+  const { page, errors } = await boot(undefined, {
+    url: urlWith({
+      seed: SEED,
+      skills: "jab,fist-guard,burning-fist,inner-passion",
+    }),
+  });
   const pileSum = async (selector) => {
     const text = await page.locator(selector).innerText();
     return [...text.matchAll(/×(\d+)/g)].reduce(
@@ -1525,7 +1532,7 @@ const winCurrentCombat = async (page) => {
   // 경제 보존: 골드 105 = 완료 노드(전투 35 + 엘리트 70) 총수입과 일치.
   const injectBase = {
     version: 7,
-    contentVersion: "1.2.0-p7",
+    contentVersion: "1.3.0-p9",
     runSeed: "S12-INJECT",
     character: "warrior",
     currentHp: 63,
@@ -1535,7 +1542,7 @@ const winCurrentCombat = async (page) => {
       "jab",
       "fist-guard",
       "burning-fist",
-      "inner-passion",
+      "flame-hook",
       null,
       null,
       null,
@@ -2124,6 +2131,8 @@ const winCurrentCombat = async (page) => {
       return {
         title: card.querySelector(".card-title")?.textContent?.trim() ?? "",
         overflow: wrap.scrollHeight > wrap.clientHeight + 1,
+        clientHeight: wrap.clientHeight,
+        scrollHeight: wrap.scrollHeight,
       };
     }),
   );
@@ -2133,8 +2142,10 @@ const winCurrentCombat = async (page) => {
     JSON.stringify(rowClipReport.filter((item) => item.overflow)),
   );
   check(
-    "S15 내면의 발화 비용 행",
-    ignition.includes("비용") && ignition.includes("소비"),
+    "S15 잿불 베기 속성 면 행",
+    ignition.includes("화염 앞면") &&
+      ignition.includes("화염 뒷면") &&
+      ignition.includes("화상"),
     ignition.replace(/\n/g, " / "),
   );
   check(
@@ -3057,12 +3068,12 @@ const winCurrentCombat = async (page) => {
 // 정식 콘텐츠 무접촉). 가격·경계 진실은 코어/저장 검증기가 소유 — 여기선 DOM 반영만 확인.
 // P6: 상점 패시브 1슬롯 진열·구매 커버리지 추가.
 {
-  const CONTENT_VERSION_PIN = "1.2.0-p7"; // 버전 승격 시 골든처럼 함께 재고정
+  const CONTENT_VERSION_PIN = "1.3.0-p9"; // 버전 승격 시 골든처럼 함께 재고정
   const WARRIOR_SKILLS = [
     "jab",
     "fist-guard",
     "burning-fist",
-    "inner-passion",
+    "flame-hook",
     null,
     null,
     null,
@@ -3314,7 +3325,7 @@ const winCurrentCombat = async (page) => {
     ];
     const save = {
       version: 7,
-      contentVersion: "1.2.0-p7",
+      contentVersion: "1.3.0-p9",
       runSeed: "S26-EVENT",
       character: "warrior",
       currentHp: 63,
@@ -3324,7 +3335,7 @@ const winCurrentCombat = async (page) => {
         "jab",
         "fist-guard",
         "burning-fist",
-        "inner-passion",
+        "flame-hook",
         null,
         null,
         null,
@@ -3523,7 +3534,7 @@ const winCurrentCombat = async (page) => {
     }));
   const mobileSave = (phase, extra = {}) => ({
     version: 7,
-    contentVersion: "1.2.0-p7",
+    contentVersion: "1.3.0-p9",
     runSeed: "S28",
     character: "warrior",
     currentHp: 63,
@@ -3533,7 +3544,7 @@ const winCurrentCombat = async (page) => {
       "jab",
       "fist-guard",
       "burning-fist",
-      "inner-passion",
+      "flame-hook",
       null,
       null,
       null,
@@ -3733,7 +3744,7 @@ const winCurrentCombat = async (page) => {
   };
   const kbSave = (phase, extra = {}) => ({
     version: 7,
-    contentVersion: "1.2.0-p7",
+    contentVersion: "1.3.0-p9",
     runSeed: "S29",
     character: "warrior",
     currentHp: 63,
@@ -3743,7 +3754,7 @@ const winCurrentCombat = async (page) => {
       "jab",
       "fist-guard",
       "burning-fist",
-      "inner-passion",
+      "flame-hook",
       null,
       null,
       null,
@@ -3953,7 +3964,7 @@ const winCurrentCombat = async (page) => {
 {
   const phaseSave = (phase, extra = {}) => ({
     version: 7,
-    contentVersion: "1.2.0-p7",
+    contentVersion: "1.3.0-p9",
     runSeed: "S31",
     character: "warrior",
     currentHp: 63,
@@ -3963,7 +3974,7 @@ const winCurrentCombat = async (page) => {
       "jab",
       "fist-guard",
       "burning-fist",
-      "inner-passion",
+      "flame-hook",
       null,
       null,
       null,
@@ -4242,7 +4253,7 @@ const V7_WARRIOR_SKILLS = [
   "jab",
   "fist-guard",
   "burning-fist",
-  "inner-passion",
+  "flame-hook",
   null,
   null,
   null,
@@ -4250,7 +4261,7 @@ const V7_WARRIOR_SKILLS = [
 ];
 const v6Save = (overrides = {}) => ({
   version: 7,
-  contentVersion: "1.2.0-p7",
+  contentVersion: "1.3.0-p9",
   runSeed: "S33-P6",
   character: "warrior",
   currentHp: 63,
