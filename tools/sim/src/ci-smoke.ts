@@ -18,7 +18,7 @@ const SEED_42_GOLDEN = {
   result: "defeat",
   combatsCompleted: 10,
   // 1.1.0-p6 재고정 — 3막·격투가 셋·막 스케일 ×1.15/1.3·막 보스 전체 회복 (balance-provisional)
-  // 1.4.0-p10 재고정 — 화염 전사·마도기사 최신 설계 반영 (balance-provisional)
+  // 1.5.0-p11 재고정 — 냉기 도적 최신 설계 반영 (balance-provisional)
   turnsPerCombat: [3, 3, 4, 2, 3, 3, 3, 4, 4, 3],
   carriedHp: 0,
   finalBag: ["basic", "basic", "basic", "basic", "basic", "basic", "basic", "basic", "fire", "fire", "fire", "fire", "basic", "fire", "fire", "fire", "basic", "basic", "basic"],

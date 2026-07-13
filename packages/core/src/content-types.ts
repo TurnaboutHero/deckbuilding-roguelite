@@ -29,11 +29,14 @@ export interface CoinInstance {
   defId: CoinDefId;
   permanent: boolean;
   grants: Element[];
+  // P11 — 보존 동전은 턴 정리에서 제외되며 실제 사용/소비 시 해제된다.
+  preserved?: boolean;
 }
 
 // P6 D3 — 스킬 강화: 스킬당 정의 1종, 런당 1회 (휴식 노드에서 적용).
 // patch는 선언적 — deriveUpgradedSkill이 순수 적용. 요구 5종 그대로.
 export type SkillUpgradePatch =
+  | { kind: 'multi'; patches: SkillUpgradePatch[] }
   | { kind: 'baseAmount'; index: number; delta: number }
   | { kind: 'addFaceEffect'; face: 'heads' | 'tails'; effect: EffectAtom }
   | { kind: 'addMixedFaceEffect'; effect: EffectAtom }
@@ -65,7 +68,9 @@ export interface PassiveDef {
     | 'shieldMastery' | 'preparedStance' | 'indomitableSpirit' | 'combatBreathing'
     | 'ignitionInstinct' | 'emberBlade' | 'hotBarrier'
     | 'previewDeployment' | 'inverseGuard' | 'crossCalculation' | 'residualRebuild'
-    | 'commandPreservation' | 'manaMembrane' | 'blueCircuit' | 'armamentResonance';
+    | 'commandPreservation' | 'manaMembrane' | 'blueCircuit' | 'armamentResonance'
+    | 'coinAppraiser' | 'smallChangeInsurance' | 'doubleEntry' | 'maturedHand' | 'profitSettlement'
+    | 'coldHands' | 'frostCompound' | 'refrozenLoot';
   price: number;
 }
 
@@ -76,12 +81,17 @@ export interface SkillDefBase {
   tags: readonly ('attack' | 'defense' | 'utility' | 'ultimate')[];
   targetType: 'single-enemy' | 'all-enemies' | 'self' | 'none';
   // P7/P9 — 스킬별 쿨다운: 0=반복(같은 턴 무제한), 1~4=사용 후 N-1턴 봉인.
-  // 미지정 기본값 1(기존 턴당 1회 케이던스). oncePerCombat과 1+ 동시 지정 금지.
+  // 미지정 기본값 1(기존 턴당 1회 케이던스). oncePerCombat 중에는 전투당 1회
+  // 잠금이 우선하며, 명시 쿨다운은 일회성 제거 강화의 복귀 주기를 문서화할 수 있다.
   cooldown?: 0 | 1 | 2 | 3 | 4;
   oncePerCombat?: boolean;
   // P7 D5 — 과열 강화 분기: 해결 시 과열이면 기본 효과 뒤에 추가, 해결 후 과열 소비.
   overheatBonus?: EffectAtom[];
   upgrade?: SkillUpgradeDef;
+  // P11 — 보존 동전으로 해결했을 때만 추가되는 효과. 기본 동전의 냉기 취급은
+  // 해당 스킬 판정에만 적용되며 소비 비용에는 절대 사용되지 않는다.
+  preservedBonus?: EffectAtom[];
+  treatPreservedBasicAsElement?: Element;
   // 캐릭터 전용 스킬 — 공용 보상 풀에서 제외되고 해당 캐릭터 런에서만 노출된다.
   // 숨김 프로퍼티 같은 암묵 경계 대신 명시적 데이터로 풀 경계를 표현한다 (P3.2 결정).
   exclusiveTo?: CharacterId;
@@ -113,7 +123,7 @@ export const skillCooldown = (skill: SkillDefBase): number =>
 
 export interface ConsumeSkillDef extends SkillDefBase {
   type: 'consume';
-  consume: { element: Element; count: number };
+  consume: { element: Element; count: number; mode?: 'exact' | 'upTo' | 'all' };
   effects: EffectAtom[];
 }
 
@@ -133,7 +143,10 @@ export type EffectAtom =
   | { kind: 'heal'; amount: number }
   // P7 D3 — 즉시 드로우 / 다음 턴 드로우 보너스
   | { kind: 'draw'; count: number }
+  | { kind: 'drawSpecific'; coins: CoinDefId[]; count: number; preserve?: boolean }
   | { kind: 'nextTurnDraw'; count: number }
+  | { kind: 'preserveChosenCoin'; count: number }
+  | { kind: 'increasePreserveCapacity'; count: number }
   // P7 D1 — 쿨다운 감소: 해결 중인 자기 슬롯 제외, 대기 중인 다른 슬롯만
   | { kind: 'reduceCooldown'; amount: number }
   // P7 D5 — 과열 진입 (비중첩, no-op 재진입)
@@ -144,6 +157,8 @@ export type EffectAtom =
   | { kind: 'addTurnTrigger'; trigger: TurnTriggerDef }
   // P6 D5 — 화상 수치 참조 폭발 (스택 비소비, 격투가 화상 빌드 마무리)
   | { kind: 'damagePerTargetBurn'; amountPerStack: number }
+  | { kind: 'damageByConsumed'; base: number; perCoin: number; frostbittenBonusPerCoin?: number }
+  | { kind: 'damageByTargetFrostbite'; base: number; multiplier: number; cap: number }
   // P6 D6 — 마력 갑주: 현재 방어 참조 피해 (방어 비소모)
   | { kind: 'damagePerBlock'; amountPerBlock: number }
   | { kind: 'blockFromCurrent'; cap: number }
@@ -189,7 +204,7 @@ export interface CharacterDef {
     name: string;
     hook: 'combatStart' | 'turnStart';
     effects: EffectAtom[];
-    mechanic?: 'remise';
+    mechanic?: 'remise' | 'preserveHand';
   };
 }
 
@@ -293,9 +308,6 @@ const validateCooldowns = (skills: readonly SkillDef[]): string[] => {
       if (!Number.isInteger(skill.cooldown) || skill.cooldown < 0 || skill.cooldown > 4) {
         errors.push(`skill ${String(skill.id)}: cooldown must be an integer from 0 to 4`);
       }
-      if (skill.oncePerCombat === true && skill.cooldown >= 1) {
-        errors.push(`skill ${String(skill.id)}: oncePerCombat and cooldown >= 1 cannot be combined`);
-      }
     }
     if (skill.type === 'flip' && skill.elementFaces !== undefined) {
       for (const bonus of skill.elementFaces) {
@@ -312,7 +324,7 @@ const validateAtomAmounts = (db: Omit<ContentDb, 'validate'>): string[] => {
   const errors: string[] = [];
   const checkAtoms = (atoms: readonly EffectAtom[], owner: string): void => {
     for (const atom of atoms) {
-      if ((atom.kind === 'draw' || atom.kind === 'nextTurnDraw') && (!Number.isInteger(atom.count) || atom.count <= 0)) {
+      if ((atom.kind === 'draw' || atom.kind === 'drawSpecific' || atom.kind === 'nextTurnDraw' || atom.kind === 'preserveChosenCoin' || atom.kind === 'increasePreserveCapacity') && (!Number.isInteger(atom.count) || atom.count <= 0)) {
         errors.push(`${owner}: ${atom.kind} count must be a positive integer`);
       }
       if ((atom.kind === 'heal' || atom.kind === 'reduceCooldown') && (!Number.isInteger(atom.amount) || atom.amount <= 0)) {
@@ -332,6 +344,7 @@ const validateAtomAmounts = (db: Omit<ContentDb, 'validate'>): string[] => {
       for (const bonus of skill.elementFaces ?? []) checkAtoms(bonus.effects, owner);
     }
     checkAtoms(skill.overheatBonus ?? [], owner);
+    checkAtoms(skill.preservedBonus ?? [], owner);
   }
   return errors;
 };
@@ -369,6 +382,9 @@ const validateSkillCosts = (skills: readonly SkillDef[]): string[] => {
     if (skill.type === 'consume') {
       if (!Number.isInteger(skill.consume.count) || skill.consume.count < 1 || skill.consume.count > 3) {
         errors.push(`skill ${String(skill.id)}: consume count must be an integer from 1 to 3`);
+      }
+      if (skill.consume.mode !== undefined && !['exact', 'upTo', 'all'].includes(skill.consume.mode)) {
+        errors.push(`skill ${String(skill.id)}: unknown consume mode ${String(skill.consume.mode)}`);
       }
       continue;
     }
@@ -544,7 +560,13 @@ const validateSkillUpgrades = (skills: readonly SkillDef[]): string[] => {
     if (upgrade === undefined) continue;
     const owner = `skill ${String(skill.id)} upgrade`;
     const patch = upgrade.patch;
-    if (patch.kind === 'baseAmount') {
+    if (patch.kind === 'multi') {
+      if (patch.patches.length < 2) errors.push(`${owner}: multi requires at least two patches`);
+      for (const child of patch.patches) {
+        const nested = { ...skill, upgrade: { ...upgrade, patch: child } } as SkillDef;
+        errors.push(...validateSkillUpgrades([nested]));
+      }
+    } else if (patch.kind === 'baseAmount') {
       const atoms = skill.type === 'flip' ? skill.base : skill.effects;
       const atom = atoms[patch.index];
       if (atom === undefined || !('amount' in atom) || typeof atom.amount !== 'number')
@@ -574,7 +596,7 @@ const validateSkillUpgrades = (skills: readonly SkillDef[]): string[] => {
     } else if (patch.kind === 'costDelta') {
       if (skill.type === 'flip') {
         const cost = skill.cost + patch.delta;
-        if (cost < 1 || cost > 5) errors.push(`${owner}: costDelta leaves cost out of range`);
+        if (cost < 0 || cost > 5) errors.push(`${owner}: costDelta leaves cost out of range`);
       } else {
         const count = skill.consume.count + patch.delta;
         if (count < 1 || count > 3) errors.push(`${owner}: costDelta leaves consume count out of range`);

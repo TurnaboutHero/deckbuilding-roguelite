@@ -3,7 +3,6 @@ import type {
   CoinDefId,
   CoinUid,
   CharacterId,
-  EffectAtom,
   EnemyDefId,
   Face,
   RunState,
@@ -33,6 +32,7 @@ import {
   createRun,
   leaveShop,
   legalCommands,
+  MAX_PRESERVED_COINS,
   previewFlip,
   resolveCoinRemoval,
   resumeAbandonedCombat,
@@ -57,7 +57,7 @@ import { AtlasSprite } from "./AtlasSprite";
 import { REJECTION_TEXT, rejectionReason } from "./action-feedback";
 import { TutorialStrip } from "./tutorial";
 import { isMuted, playSfx, setMuted } from "./audio";
-import { CardEffectRows } from "./card-effects";
+import { CardEffectRows, skillSummaryText } from "./card-effects";
 import { CharacterSelect } from "./character-select";
 import { RunMenu } from "./run-menu";
 import { TitleScreen } from "./title-screen";
@@ -73,13 +73,20 @@ import type { CoinChoiceSelection } from "./coin-choice";
 import {
   autoSuggestFuel,
   fuelCommand,
+  fuelRequirement,
   requiresFuelSelection,
   toggleFuel,
 } from "./fuel-selection";
 import type { FuelSelection } from "./fuel-selection";
 import {
+  PRESERVE_SELECTION_INSTRUCTIONS,
+  beginPreserveSelection,
+  preserveSelectionCommand,
+  togglePreservedCoin,
+} from "./preserve-selection";
+import type { PreserveSelection } from "./preserve-selection";
+import {
   EmberIcon,
-  FlameIcon,
   HeartIcon,
   ShieldIcon,
   SkullIcon,
@@ -154,7 +161,6 @@ import cardFrostSlash from "./assets/card-frost-slash.webp";
 import cardGlacialWall from "./assets/card-glacial-wall.webp";
 import cardChillingField from "./assets/card-chilling-field.webp";
 import cardGlacierStrike from "./assets/card-glacier-strike.webp";
-import cardWintersGrasp from "./assets/card-winters-grasp.webp";
 import cardAegisSurge from "./assets/card-aegis-surge.webp";
 import goblinAtlas from "./assets/generated/sprites/goblin/sprite-sheet-alpha.png";
 import goblinManifestJson from "./assets/generated/sprites/goblin/manifest.json";
@@ -222,6 +228,11 @@ import type {
 } from "./telemetry";
 import { TurnBuffBar } from "./turn-buff";
 
+const isInteractiveKeyTarget = (target: EventTarget | null): boolean =>
+  target instanceof Element &&
+  target.closest("button, [role='button'], input, select, textarea, a[href]") !==
+    null;
+
 // 생성 에셋 (docs/ui/combat-ui-v2.png 앵커 스타일 — image_gen 산출, 후처리: 크로마 키·리사이즈)
 const CARD_ART: Record<string, string> = {
   "jab": cardJab,
@@ -269,11 +280,18 @@ const CARD_ART: Record<string, string> = {
   "static-field": cardStaticField,
   "volt-lash": cardVoltLash,
   overload: cardOverload,
-  "frost-slash": cardFrostSlash,
-  "glacial-wall": cardGlacialWall,
-  "chilling-field": cardChillingField,
-  "glacier-strike": cardGlacierStrike,
-  "winters-grasp": cardWintersGrasp,
+  "ice-claw": cardFrostSlash,
+  "ice-sleight": cardChillingField,
+  "frost-mark": cardChillingField,
+  "frost-fur-cloak": cardGlacialWall,
+  "freezing-incision": cardGlacierStrike,
+  "emergency-ice-pouch": cardGlacialWall,
+  "freeze-dry": cardGlacierStrike,
+  "preserved-pickpocket": cardFrostSlash,
+  "hidden-inner-pocket": cardGlacialWall,
+  "trackless-raid": cardFrostSlash,
+  "loot-swap": cardChillingField,
+  "subzero-perfect-crime": cardGlacierStrike,
   "aegis-surge": cardAegisSurge,
 };
 
@@ -480,40 +498,7 @@ const IntentBadge = ({ enemy }: { enemy: CombatState["enemies"][number] }) => (
 
 const effectText = (skillId: string): string => {
   const skill = contentDb.skills[skillId];
-  const atomText = (atom: EffectAtom): string => {
-    if (atom.kind === "damage") return `피해 ${atom.amount}`;
-    if (atom.kind === "block") return `방어 ${atom.amount}`;
-    if (atom.kind === "applyStatus" && atom.status === "burn")
-      return `화상 ${atom.stacks}`;
-    if (atom.kind === "addCoin")
-      return `임시 ${elementKo(String(atom.coin))} +${atom.count}`;
-    if (atom.kind === "selfDamage") return `자신 피해 ${atom.amount}`;
-    if (atom.kind === "grantElement")
-      return `기본 코인 ${elementKo(atom.element)} 취급`;
-    return "특수";
-  };
-  if (skill?.type === "consume") return skill.effects.map(atomText).join(" / ");
-  if (skill?.type !== "flip") return "";
-  const parts = skill.base.map(atomText);
-  if (skill.heads !== undefined) {
-    parts.push(
-      ...skill.heads.effects.map((atom) =>
-        atom.kind === "damage"
-          ? `앞면 +${atom.amount}`
-          : `앞면 ${atomText(atom)}`,
-      ),
-    );
-  }
-  if (skill.tails !== undefined) {
-    parts.push(
-      ...skill.tails.effects.map((atom) =>
-        atom.kind === "block"
-          ? `뒷면 +${atom.amount}`
-          : `뒷면 ${atomText(atom)}`,
-      ),
-    );
-  }
-  return parts.join(" / ");
+  return skill === undefined ? "" : skillSummaryText(skill);
 };
 
 const ELEMENT_KO: Record<string, string> = {
@@ -533,11 +518,12 @@ const coinLabel = (state: CombatState, coin: CoinUid): string => {
       : contentDb.coins[String(instance.defId)];
   const granted =
     instance?.grants.includes("fire") === true && def?.element !== "fire";
-  return granted
+  const base = granted
     ? "기본+화염"
     : def?.element !== null && def?.element !== undefined
       ? elementKo(def.element)
       : "기본";
+  return instance?.preserved === true ? `${base}·보존` : base;
 };
 
 const coinVisualClasses = (state: CombatState, coin: CoinUid): string => {
@@ -555,6 +541,7 @@ const coinVisualClasses = (state: CombatState, coin: CoinUid): string => {
       ? "granted-fire"
       : "",
     instance?.permanent === false ? "temporary" : "",
+    instance?.preserved === true ? "preserved" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -2237,6 +2224,8 @@ const CombatBoard = ({
   const [coinChoice, setCoinChoice] = useState<CoinChoiceSelection | null>(
     null,
   );
+  const [preserveSelection, setPreserveSelection] =
+    useState<PreserveSelection | null>(null);
   const [queue, setQueue] = useState<CombatEvent[]>([]);
   const [locked, setLocked] = useState(false);
   const [coinFaces, setCoinFaces] = useState<CoinFaces>({});
@@ -2495,6 +2484,27 @@ const CombatBoard = ({
     return true;
   };
 
+  const beginOrConfirmPreserve = (): boolean => {
+    if (preserveSelection === null) {
+      const selection = beginPreserveSelection(state, contentDb);
+      if (selection === null) return runCommand({ type: "endTurn" }, true);
+      selectCoin(null);
+      setFuelSelection(null);
+      setCoinChoice(null);
+      setTargeting(null);
+      setSummonTargeting(null);
+      setOpenPile(null);
+      setPreserveSelection(selection);
+      return true;
+    }
+    const committed = runSelectedFuel(
+      preserveSelectionCommand(preserveSelection),
+      true,
+    );
+    if (committed) setPreserveSelection(null);
+    return committed;
+  };
+
   const runSequence = (
     commands: readonly Command[],
     showFeedback = false,
@@ -2526,6 +2536,7 @@ const CombatBoard = ({
   const useSkill = (cmd: Command, showFeedback = true) => {
     setFuelSelection(null);
     setCoinChoice(null);
+    setPreserveSelection(null);
     setTargeting(null);
     setSummonTargeting(null);
     if (cmd.type === "useFlipSkill") {
@@ -2552,6 +2563,7 @@ const CombatBoard = ({
     selectCoin(null);
     setFuelSelection(null);
     setCoinChoice(null);
+    setPreserveSelection(null);
     setTargeting(null);
     setSummonTargeting({ ...command, chosenSummon: undefined });
     return true;
@@ -2594,6 +2606,7 @@ const CombatBoard = ({
     selectCoin(null);
     setFuelSelection(null);
     setCoinChoice(null);
+    setPreserveSelection(null);
     setTargeting({ command, legalTargets, selected });
     return true;
   };
@@ -2648,7 +2661,8 @@ const CombatBoard = ({
     }
     if (fuelSelection?.slot !== slotId) {
       const coins = autoSuggestFuel(state, slotId, contentDb);
-      if (coins.length < skill.consume.count) {
+      const requirement = fuelRequirement(state, slotId, contentDb);
+      if (requirement === null || requirement.available < requirement.min) {
         const reason = rejectionReason(
           state,
           {
@@ -2665,6 +2679,7 @@ const CombatBoard = ({
       selectCoin(null);
       setCoinChoice(null);
       setTargeting(null);
+      setPreserveSelection(null);
       setFuelSelection({ slot: slotId, coins });
       return;
     }
@@ -2711,6 +2726,7 @@ const CombatBoard = ({
       selectCoin(null);
       setFuelSelection(null);
       setTargeting(null);
+      setPreserveSelection(null);
       setCoinChoice({
         slot: slotId,
         coins: autoSuggestCoinChoice(state, slotId, contentDb),
@@ -2761,6 +2777,17 @@ const CombatBoard = ({
     }
     selectCoin(null);
     setCoinChoice(next);
+    return true;
+  };
+
+  const onPreserveCoinClick = (coin: CoinUid): boolean => {
+    if (preserveSelection === null) return false;
+    const next = togglePreservedCoin(preserveSelection, coin);
+    if (next === preserveSelection && !preserveSelection.locked.includes(coin)) {
+      showRejection("더 이상 보존할 수 없다");
+    }
+    selectCoin(null);
+    setPreserveSelection(next);
     return true;
   };
 
@@ -2995,6 +3022,7 @@ const CombatBoard = ({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setFuelSelection(null);
       if (event.key === "Enter") {
+        if (isInteractiveKeyTarget(event.target)) return;
         event.preventDefault();
         const slotState = state.slots[Number(fuelSelection.slot)];
         const skill =
@@ -3017,6 +3045,7 @@ const CombatBoard = ({
         return;
       }
       if (event.key !== "Enter") return;
+      if (isInteractiveKeyTarget(event.target)) return;
       event.preventDefault();
       const slotState = state.slots[Number(coinChoice.slot)];
       const skill =
@@ -3029,6 +3058,22 @@ const CombatBoard = ({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [coinChoice]);
+
+  useEffect(() => {
+    if (preserveSelection === null) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPreserveSelection(null);
+        return;
+      }
+      if (event.key !== "Enter") return;
+      if (isInteractiveKeyTarget(event.target)) return;
+      event.preventDefault();
+      beginOrConfirmPreserve();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [preserveSelection]);
 
   useEffect(() => {
     if (targeting === null && summonTargeting === null) return undefined;
@@ -3330,9 +3375,13 @@ const CombatBoard = ({
             use !== undefined
               ? previewFlip(state, slot(index), contentDb)
               : null;
+          const consumeRequirement =
+            skill?.type === "consume"
+              ? fuelRequirement(state, slot(index), contentDb)
+              : null;
           const consumeReady =
             skill?.type === "consume" &&
-            (skill.consume.count === 1
+            (!requiresFuelSelection(state, slot(index), contentDb)
               ? consumeUse !== undefined
               : fuelSelection?.slot === slot(index) &&
                 fuelCommand(fuelSelection, state, contentDb) !== null);
@@ -3522,15 +3571,31 @@ const CombatBoard = ({
               </div>
               {skill?.type === "consume" ? (
                 <div
-                  aria-label={`화염 코인 ${skill.consume.count}개 소비`}
+                  aria-label={`${elementKo(skill.consume.element)} 코인 ${
+                    skill.consume.mode === "upTo"
+                      ? `1개 이상 최대 ${skill.consume.count}개 소비`
+                      : skill.consume.mode === "all"
+                        ? `최소 ${skill.consume.count}개가 있으면 손의 ${elementKo(skill.consume.element)} 동전 전부 소비`
+                        : `${skill.consume.count}개 소비`
+                  }`}
                   className={`consume-condition ${consumeReady ? "met" : ""} ${selectingFuel ? "selecting" : ""}`}
                 >
-                  <FlameIcon scale={1.6} />
+                  <strong aria-hidden="true">
+                    {elementKo(skill.consume.element)}
+                  </strong>
                   <span>
                     ×
                     {selectingFuel
-                      ? `${fuelSelection.coins.length}/${skill.consume.count}`
-                      : skill.consume.count}{" "}
+                      ? skill.consume.mode === "upTo"
+                        ? `${fuelSelection.coins.length}/최대 ${skill.consume.count}`
+                        : skill.consume.mode === "all"
+                          ? `${fuelSelection.coins.length}/${consumeRequirement?.available ?? 0} 전부`
+                          : `${fuelSelection.coins.length}/${skill.consume.count}`
+                      : skill.consume.mode === "upTo"
+                        ? `1~${skill.consume.count}`
+                        : skill.consume.mode === "all"
+                          ? `최소 ${skill.consume.count}·전부`
+                          : skill.consume.count}{" "}
                     <Keyword term="consume">소비</Keyword>
                   </span>
                 </div>
@@ -3624,6 +3689,46 @@ const CombatBoard = ({
       </section>
 
       <section className="bottom-hud">
+        {preserveSelection !== null ? (
+          <div
+            aria-label="턴 종료 동전 보존 선택"
+            className="preserve-picker"
+            role="group"
+          >
+            <strong>
+              보존 선택 {preserveSelection.coins.length - preserveSelection.locked.length}/
+              {Math.min(
+                preserveSelection.newCapacity,
+                MAX_PRESERVED_COINS - preserveSelection.locked.length,
+              )}
+            </strong>
+            <span>{PRESERVE_SELECTION_INSTRUCTIONS}</span>
+            {preserveSelection.candidates.some(
+              (coin) => !state.zones.hand.includes(coin),
+            ) ? (
+              <div aria-label="장전된 동전 보존 후보" className="preserve-placed">
+                {preserveSelection.candidates
+                  .filter((coin) => !state.zones.hand.includes(coin))
+                  .map((coin) => {
+                    const preserveLocked = preserveSelection.locked.includes(coin);
+                    return (
+                      <button
+                        aria-disabled={preserveLocked}
+                        aria-label={`${coinLabel(state, coin)} 장전 동전 ${preserveLocked ? "보존됨 잠금" : "보존 선택"}`}
+                        aria-pressed={preserveSelection.coins.includes(coin)}
+                        className={`preserve-placed-coin ${preserveSelection.coins.includes(coin) ? "selected" : ""}`}
+                        key={coin}
+                        type="button"
+                        onClick={() => onPreserveCoinClick(coin)}
+                      >
+                        {coinLabel(state, coin)}{preserveLocked ? " · 잠금" : ""}
+                      </button>
+                    );
+                  })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="pouch" ref={pouchRef}>
           <button
             aria-controls="draw-pile-pop"
@@ -3649,6 +3754,10 @@ const CombatBoard = ({
           {state.zones.hand.map((coin) => {
             const fuelSelected = fuelSelection?.coins.includes(coin) === true;
             const choiceSelected = coinChoice?.coins.includes(coin) === true;
+            const preserveSelected =
+              preserveSelection?.coins.includes(coin) === true;
+            const preserveLocked =
+              preserveSelection?.locked.includes(coin) === true;
             const emptyFuelSelection =
               fuelSelection === null
                 ? null
@@ -3663,12 +3772,19 @@ const CombatBoard = ({
               coinChoiceCandidates(state, coinChoice.slot, contentDb).includes(
                 coin,
               );
-            const selectingCoin = fuelSelection !== null || coinChoice !== null;
-            const selectedForMode = fuelSelected || choiceSelected;
-            const validForMode = fuelValid || choiceValid;
+            const preserveValid =
+              preserveSelection?.candidates.includes(coin) === true;
+            const selectingCoin =
+              fuelSelection !== null ||
+              coinChoice !== null ||
+              preserveSelection !== null;
+            const selectedForMode =
+              fuelSelected || choiceSelected || preserveSelected;
+            const validForMode = fuelValid || choiceValid || preserveValid;
             return (
               <button
-                aria-label={`${coinLabel(state, coin)} 동전 선택`}
+                aria-disabled={preserveLocked || undefined}
+                aria-label={`${coinLabel(state, coin)} 동전 ${preserveLocked ? "보존됨 잠금" : "선택"}`}
                 aria-pressed={
                   selectingCoin ? selectedForMode : selectedCoin === coin
                 }
@@ -3693,12 +3809,17 @@ const CombatBoard = ({
                 type="button"
                 onClick={() => {
                   if (clickGuard()) return;
+                  if (onPreserveCoinClick(coin)) return;
                   if (onFuelCoinClick(coin)) return;
                   if (onCoinChoiceClick(coin)) return;
                   selectCoin(selectedCoin === coin ? null : coin);
                 }}
                 onPointerDown={(event) => {
-                  if (fuelSelection === null && coinChoice === null)
+                  if (
+                    fuelSelection === null &&
+                    coinChoice === null &&
+                    preserveSelection === null
+                  )
                     beginDrag(event, coin, { kind: "hand" });
                 }}
                 onPointerMove={moveDrag}
@@ -3754,13 +3875,13 @@ const CombatBoard = ({
           ) : null}
         </div>
         <button
-          aria-label="턴 종료"
+          aria-label={preserveSelection === null ? "턴 종료" : "보존 선택 확정 후 턴 종료"}
           className="end-turn"
           disabled={locked || findLegal({ type: "endTurn" }) === undefined}
           type="button"
-          onClick={() => runCommand({ type: "endTurn" }, true)}
+          onClick={beginOrConfirmPreserve}
         >
-          턴 종료
+          {preserveSelection === null ? "턴 종료" : "보존 확정"}
         </button>
       </section>
 

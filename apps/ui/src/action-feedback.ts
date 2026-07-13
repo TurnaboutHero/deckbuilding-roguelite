@@ -1,6 +1,7 @@
 import type { CombatState, Command, ContentDb } from "@game/core";
-import { effectiveElements, legalCommands } from "@game/core";
+import { legalCommands } from "@game/core";
 import { sameCommand } from "./interaction";
+import { fuelRequirement } from "./fuel-selection";
 
 export const REJECTION_TEXT = {
   generic: "지금은 할 수 없다",
@@ -40,14 +41,9 @@ const slotReason = (
   }
 
   if (skill.type !== "consume") return null;
-  const fuelCount = state.zones.hand.filter((coin) => {
-    const instance = state.coins[Number(coin)];
-    return (
-      instance !== undefined &&
-      effectiveElements(instance, db).includes(skill.consume.element)
-    );
-  }).length;
-  if (fuelCount < skill.consume.count) return REJECTION_TEXT.noFuel;
+  const requirement = fuelRequirement(state, command.slot, db);
+  if (requirement === null || requirement.available < requirement.min)
+    return REJECTION_TEXT.noFuel;
   return null;
 };
 

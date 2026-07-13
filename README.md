@@ -6,11 +6,11 @@
 
 ## 현재 기준
 
-> P10 · PRD v1.3 · 콘텐츠 `1.4.0-p10` · 런 저장 v7
+> P11 · PRD v1.3 · 콘텐츠 `1.5.0-p11` · 런 저장 v7
 > 공학 상태: engineering-safe · 밸런스: balance-provisional · 경험: experience-unverified
 
 - **플레이**: https://turnabouthero.github.io/deckbuilding-roguelite/
-- **캐릭터**: 화염 격투가, 수호자, 술사, 냉기 기사, 마도기사
+- **캐릭터**: 화염 격투가, 수호자, 번개 결투사, 냉기 도적, 마도기사
 - **코인**: 기본 + 화염·마나·냉기·전기·혈액. 모든 속성 코인은 앞·뒷면 양쪽에 고유 효과
 - **전투**: 장착 8슬롯, 시작 4스킬, 전역 사용 횟수 캡 없이 스킬별 쿨다운, 소비형 스킬, 과열, 패시브, 소환 장비
 - **런**: 3막 × 막당 10방문. 전투·엘리트·상점·이벤트·보물·휴식·보스와 골드 경제
@@ -26,6 +26,7 @@
 | [`docs/README.md`](docs/README.md) | 문서 우선순위, 현재 문서와 역사 문서 구분 |
 | [`docs/PRD.md`](docs/PRD.md) | 제품 요구사항과 게임 규칙 정본. v1.3 변경 이력이 본문 충돌보다 우선 |
 | [`PRD/P10_CHARACTER_DESIGN_SYNC.md`](PRD/P10_CHARACTER_DESIGN_SYNC.md) | 화염 전사·마도기사 최신 통합 기획과 구현 결정 |
+| [`PRD/P11_COLD_ROGUE_DESIGN_SYNC.md`](PRD/P11_COLD_ROGUE_DESIGN_SYNC.md) | 냉기 도적 최신 기획과 혈액 캐릭터 보류 사항 |
 | [`PRD/P7_NEW_DESIGN_DECISIONS.md`](PRD/P7_NEW_DESIGN_DECISIONS.md) | 쿨다운·8슬롯·양면 속성 코인·과열 등 최신 오버라이드 |
 | [`docs/current-implementation.md`](docs/current-implementation.md) | 현재 코드를 기준으로 한 아키텍처·전투·런·저장·CI 안내 |
 | [`docs/content-design-guide.md`](docs/content-design-guide.md) | 신규 코인·스킬·캐릭터·몬스터 작성 기준 |

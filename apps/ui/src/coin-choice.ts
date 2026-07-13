@@ -1,7 +1,7 @@
 import type { CoinUid, CombatState, Command, ContentDb, SlotId } from "@game/core";
 import {
-  chooseBasicCandidates,
   legalCommands,
+  skillCoinChoiceCandidates,
   skillRequiresCoinChoice,
   step,
 } from "@game/core";
@@ -29,7 +29,11 @@ export function coinChoiceCandidates(
   db: ContentDb,
 ): CoinUid[] {
   if (!slotNeedsChoice(state, slot, db)) return [];
-  return chooseBasicCandidates(state, db);
+  const slotState = state.slots[Number(slot)];
+  const skill = slotState?.skillId === null || slotState === undefined
+    ? undefined
+    : db.skills[String(slotState.skillId)];
+  return skill?.type === "flip" ? skillCoinChoiceCandidates(state, db, skill) : [];
 }
 
 export function autoSuggestCoinChoice(
@@ -80,6 +84,7 @@ export function coinChoiceCommand(
     type: "useFlipSkill",
     slot: selection.slot,
     chosen: selection.coins,
+    desiredCoin: legal.desiredCoin,
     target: legal.target,
   };
   return step(state, command, db).ok ? command : null;

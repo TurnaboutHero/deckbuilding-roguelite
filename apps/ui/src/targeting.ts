@@ -18,11 +18,7 @@ const sameTargetingBase = (
 ): boolean =>
   left.type === right.type &&
   left.slot === right.slot &&
-  left.chosenSummon === right.chosenSummon &&
-  (left.type !== "useConsumeSkill" ||
-    right.type !== "useConsumeSkill" ||
-    (left.coins.length === right.coins.length &&
-      left.coins.every((coin, index) => coin === right.coins[index])));
+  left.chosenSummon === right.chosenSummon;
 
 export const legalTargetsForCommand = (
   commands: readonly Command[],

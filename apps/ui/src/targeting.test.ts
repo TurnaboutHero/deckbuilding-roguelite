@@ -26,7 +26,7 @@ describe("targeting", () => {
     expect(cycleTarget(targets, 0, "left")).toBe(2);
   });
 
-  it("filters the legal target set by matching command type, slot, and fuel coins", () => {
+  it("matches targetable skills by type and slot without replacing manual fuel", () => {
     const commands: Command[] = [
       { type: "useFlipSkill", slot: slot(0), target: 0 },
       { type: "useFlipSkill", slot: slot(0), target: 2 },
@@ -56,10 +56,10 @@ describe("targeting", () => {
       legalTargetsForCommand(commands, {
         type: "useConsumeSkill",
         slot: slot(2),
-        coins: [coin(7), coin(8)],
+        coins: [coin(9)],
         target: 0,
       }),
-    ).toEqual([2]);
+    ).toEqual([2, 0]);
   });
 
   it("falls back when the last attacked target is dead or illegal", () => {

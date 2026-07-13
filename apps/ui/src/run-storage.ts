@@ -107,6 +107,39 @@ const isKnownCoin = (value: string, context: RunValidationContext): boolean =>
 const isKnownSkill = (value: string, context: RunValidationContext): boolean =>
   context.skills[value] !== undefined;
 
+// P11 냉기 도적 리워크: P10까지 저장된 냉기 기사 스킬 ID를 새 역할에 가장 가까운
+// 확정 스킬로 승격한다. 현 콘텐츠 버전의 알 수 없는 ID는 계속 손상으로 거부한다.
+const RETIRED_COLD_SKILL_REPLACEMENTS: Readonly<Record<string, string>> = {
+  "frost-slash": "ice-claw",
+  "glacial-wall": "ice-sleight",
+  "chilling-field": "frost-mark",
+  "glacier-strike": "freezing-incision",
+  "winters-grasp": "frost-fur-cloak",
+};
+
+const migrateRetiredColdSkills = (
+  value: Record<string, unknown>,
+): Record<string, unknown> => {
+  const mapSkill = (candidate: unknown): unknown =>
+    typeof candidate === "string"
+      ? (RETIRED_COLD_SKILL_REPLACEMENTS[candidate] ?? candidate)
+      : candidate;
+  const mapSkills = (candidate: unknown): unknown =>
+    Array.isArray(candidate) ? candidate.map(mapSkill) : candidate;
+  const pendingRewards = isRecord(value.pendingRewards)
+    ? { ...value.pendingRewards, skillOptions: mapSkills(value.pendingRewards.skillOptions) }
+    : value.pendingRewards;
+  const pendingShop = isRecord(value.pendingShop)
+    ? { ...value.pendingShop, skillOptions: mapSkills(value.pendingShop.skillOptions) }
+    : value.pendingShop;
+  return {
+    ...value,
+    equippedSkills: mapSkills(value.equippedSkills),
+    pendingRewards,
+    pendingShop,
+  };
+};
+
 const legacyGraphForSave = (): RunSave["graph"] => ({
   layers: RUN_ENCOUNTERS.map((encounter, index) => [
     {
@@ -522,13 +555,14 @@ const normalizeRunSave = (
   // 미지의 미래 버전은 거부한다 — 증거 계약 §2.
   const migrated = migratedLegacySave(rawValue);
   if (migrated === null || migrated.version !== RUN_SAVE_VERSION) return null;
-  const value = migrated;
-  if (!isNonEmptyString(value.contentVersion)) return null;
+  if (!isNonEmptyString(migrated.contentVersion)) return null;
+  const isLegacyContent = LEGACY_CONTENT_VERSIONS.includes(migrated.contentVersion);
+  const value = isLegacyContent ? migrateRetiredColdSkills(migrated) : migrated;
   // 레거시 콘텐츠 버전(m5)은 현 콘텐츠의 부분집합·수치 불변이라 안전 마이그레이션 —
   // 반환 저장의 contentVersion은 현 버전으로 정규화되어 다음 저장부터 새 표기를 쓴다.
   const contentVersionAccepted =
     value.contentVersion === expectedContentVersion ||
-    LEGACY_CONTENT_VERSIONS.includes(value.contentVersion);
+    isLegacyContent;
   if (!contentVersionAccepted) return null;
   if (!isNonEmptyString(value.runSeed) || !isNonEmptyString(value.character))
     return null;

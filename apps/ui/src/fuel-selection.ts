@@ -6,6 +6,13 @@ export interface FuelSelection {
   coins: CoinUid[];
 }
 
+export interface FuelRequirement {
+  mode: "exact" | "upTo" | "all";
+  min: number;
+  max: number;
+  available: number;
+}
+
 const consumeSkill = (state: CombatState, slot: SlotId, db: ContentDb) => {
   const slotState = state.slots[Number(slot)];
   if (slotState === undefined) return null;
@@ -27,13 +34,46 @@ const isFuelCoin = (
 ): boolean => {
   const skill = consumeSkill(state, slot, db);
   const instance = state.coins[Number(coin)];
+  const definition =
+    instance === undefined ? undefined : db.coins[String(instance.defId)];
   return (
     skill !== null &&
     state.zones.hand.includes(coin) &&
     instance !== undefined &&
-    effectiveElements(instance, db).includes(skill.consume.element)
+    (skill.consume.element === "frost"
+      ? definition?.element === "frost"
+      : effectiveElements(instance, db).includes(skill.consume.element))
   );
 };
+
+const fuelCoins = (
+  state: CombatState,
+  slot: SlotId,
+  db: ContentDb,
+): CoinUid[] =>
+  state.zones.hand.filter((coin) => isFuelCoin(state, coin, slot, db));
+
+export function fuelRequirement(
+  state: CombatState,
+  slot: SlotId,
+  db: ContentDb,
+): FuelRequirement | null {
+  const skill = consumeSkill(state, slot, db);
+  if (skill === null) return null;
+  const available = fuelCoins(state, slot, db).length;
+  if (skill.consume.mode === "upTo") {
+    return { mode: "upTo", min: 1, max: skill.consume.count, available };
+  }
+  if (skill.consume.mode === "all") {
+    return { mode: "all", min: skill.consume.count, max: available, available };
+  }
+  return {
+    mode: "exact",
+    min: skill.consume.count,
+    max: skill.consume.count,
+    available,
+  };
+}
 
 export function autoSuggestFuel(
   state: CombatState,
@@ -42,9 +82,9 @@ export function autoSuggestFuel(
 ): CoinUid[] {
   const skill = consumeSkill(state, slot, db);
   if (skill === null) return [];
-  return state.zones.hand
-    .filter((coin) => isFuelCoin(state, coin, slot, db))
+  const candidates = fuelCoins(state, slot, db)
     .sort((left, right) => {
+      if (skill.consume.element === "frost") return 0;
       const leftGranted =
         state.coins[Number(left)]?.grants.includes(skill.consume.element) ===
         true;
@@ -53,8 +93,10 @@ export function autoSuggestFuel(
         true;
       if (leftGranted === rightGranted) return 0;
       return leftGranted ? -1 : 1;
-    })
-    .slice(0, skill.consume.count);
+    });
+  return skill.consume.mode === "all"
+    ? candidates
+    : candidates.slice(0, skill.consume.count);
 }
 
 export function requiresFuelSelection(
@@ -63,7 +105,14 @@ export function requiresFuelSelection(
   db: ContentDb,
 ): boolean {
   const skill = consumeSkill(state, slot, db);
-  return skill !== null && skill.consume.count >= 2;
+  const requirement = fuelRequirement(state, slot, db);
+  return (
+    skill !== null &&
+    requirement !== null &&
+    (skill.consume.mode !== undefined ||
+      skill.consume.count >= 2 ||
+      (skill.preservedBonus?.length ?? 0) > 0)
+  );
 }
 
 export function toggleFuel(
@@ -73,6 +122,7 @@ export function toggleFuel(
   db: ContentDb,
 ): FuelSelection {
   const skill = consumeSkill(state, selection.slot, db);
+  const requirement = fuelRequirement(state, selection.slot, db);
   if (skill === null || !isFuelCoin(state, coin, selection.slot, db))
     return selection;
   if (selection.coins.includes(coin)) {
@@ -81,7 +131,8 @@ export function toggleFuel(
       coins: selection.coins.filter((selected) => selected !== coin),
     };
   }
-  if (selection.coins.length >= skill.consume.count) return selection;
+  if (requirement === null || selection.coins.length >= requirement.max)
+    return selection;
   return {
     ...selection,
     coins: handOrder(state, [...selection.coins, coin]),
@@ -94,25 +145,31 @@ export function fuelCommand(
   db: ContentDb,
 ): Extract<Command, { type: "useConsumeSkill" }> | null {
   const skill = consumeSkill(state, selection.slot, db);
-  if (skill === null || selection.coins.length !== skill.consume.count)
-    return null;
+  const requirement = fuelRequirement(state, selection.slot, db);
+  if (skill === null || requirement === null) return null;
+  if (
+    selection.coins.length < requirement.min ||
+    selection.coins.length > requirement.max ||
+    (requirement.mode === "all" &&
+      selection.coins.length !== requirement.available)
+  ) return null;
   const coins = handOrder(state, selection.coins);
   if (
     coins.some((coin, index) => coins.indexOf(coin) !== index) ||
     coins.some((coin) => !isFuelCoin(state, coin, selection.slot, db))
   )
     return null;
-  const command: Extract<Command, { type: "useConsumeSkill" }> = {
+  const legalConsume = legalCommands(state, db).find(
+    (candidate) =>
+      candidate.type === "useConsumeSkill" &&
+      candidate.slot === selection.slot,
+  );
+  if (legalConsume?.type !== "useConsumeSkill") return null;
+  return {
     type: "useConsumeSkill",
     slot: selection.slot,
     coins,
-    target: skill.targetType === "single-enemy" ? 0 : undefined,
+    target: legalConsume.target,
+    desiredCoin: legalConsume.desiredCoin,
   };
-  const hasLegalConsumeSlot = legalCommands(state, db).some(
-    (candidate) =>
-      candidate.type === "useConsumeSkill" &&
-      candidate.slot === command.slot &&
-      candidate.target === command.target,
-  );
-  return hasLegalConsumeSlot ? command : null;
 }

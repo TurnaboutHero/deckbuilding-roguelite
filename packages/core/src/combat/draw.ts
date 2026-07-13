@@ -1,6 +1,7 @@
-import type { CoinUid } from '../ids';
+import type { CoinDefId, CoinUid } from '../ids';
 import { rngFrom } from '../rng';
 import type { CombatEvent } from './events';
+import { MAX_PRESERVED_COINS } from './state';
 import type { CombatState } from './state';
 
 // 손 상한 — addCoin(zone hand)과 드로우가 공유하는 단일 한계 (P7 감사 보정)
@@ -37,4 +38,52 @@ export const drawCards = (input: CombatState, count: number): { state: CombatSta
     zones: { ...state.zones, draw, discard, hand: [...state.zones.hand, ...drawn] }
   };
   return { state, events };
+};
+
+/** P11 — 더미를 섞거나 순서를 바꾸지 않고 요청한 실제 동전 정의만 찾는다. */
+export const drawSpecificCoin = (
+  input: CombatState,
+  defId: CoinDefId,
+  count: number,
+  preserve = false
+): { state: CombatState; events: CombatEvent[]; drawn: CoinUid[] } => {
+  const available = Math.max(0, HAND_LIMIT - input.zones.hand.length);
+  if (available === 0 || count <= 0) return { state: input, events: [], drawn: [] };
+  const draw = [...input.zones.draw];
+  const drawn: CoinUid[] = [];
+  for (let index = 0; index < draw.length && drawn.length < Math.min(count, available);) {
+    const candidate = draw[index]!;
+    if (String(input.coins[Number(candidate)]?.defId) !== String(defId)) {
+      index += 1;
+      continue;
+    }
+    drawn.push(candidate);
+    draw.splice(index, 1);
+  }
+  if (drawn.length === 0) return { state: input, events: [], drawn };
+  const preservedBefore = Object.values(input.coins).filter((coin) => coin.preserved === true).length;
+  const newlyPreserved = preserve
+    ? drawn.filter((coin) => input.coins[Number(coin)]?.preserved !== true)
+      .slice(0, Math.max(0, MAX_PRESERVED_COINS - preservedBefore))
+    : [];
+  const preservedSet = new Set(newlyPreserved);
+  return {
+    state: {
+      ...input,
+      coins: preserve
+        ? Object.fromEntries(Object.entries(input.coins).map(([key, coin]) => [
+            key,
+            preservedSet.has(coin.uid) ? { ...coin, preserved: true } : coin
+          ]))
+        : input.coins,
+      zones: { ...input.zones, draw, hand: [...input.zones.hand, ...drawn] }
+    },
+    events: [
+      { type: 'coinsDrawn', coins: drawn },
+      ...(newlyPreserved.length > 0
+        ? [{ type: 'coinsPreserved' as const, coins: newlyPreserved }]
+        : [])
+    ],
+    drawn
+  };
 };

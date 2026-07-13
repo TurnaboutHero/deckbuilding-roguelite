@@ -1001,7 +1001,7 @@ const rewardSelectionAuditRows = (
       characterId: "frost-knight" as const,
       buildPolicyId: "frost-build" as const,
       optionType: "skill" as const,
-      optionId: "frost-slash",
+      optionId: "freeze-dry",
     },
   ];
   return required

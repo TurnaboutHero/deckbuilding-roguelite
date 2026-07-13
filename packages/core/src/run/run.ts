@@ -319,6 +319,12 @@ export const deriveUpgradedSkill = (def: SkillDef): SkillDef => {
   const upgrade = def.upgrade;
   if (upgrade === undefined) return def;
   const patch = upgrade.patch;
+  if (patch.kind === "multi") {
+    return patch.patches.reduce<SkillDef>(
+      (current, child) => deriveUpgradedSkill({ ...current, upgrade: { ...upgrade, patch: child } }),
+      { ...def, upgrade: undefined }
+    );
+  }
   if (patch.kind === "removeOncePerCombat") {
     const costDelta = patch.costDelta ?? 0;
     if (def.type === "flip")

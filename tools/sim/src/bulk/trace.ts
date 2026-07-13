@@ -97,9 +97,12 @@ export const combatInvariantViolations = (
   return violations;
 };
 
-const newTurnTrace = (turn: number): MutableTurnTrace => ({
+const newTurnTrace = (turn: number, availableAtTurnStart: readonly CoinUid[] = []): MutableTurnTrace => ({
   turn,
-  drawnCoinUids: new Set<number>(),
+  // P11 보존 동전은 새 draw 이벤트 없이 다음 턴 손패에 남는다. 기존
+  // M6 필드명은 저장 호환을 위해 유지하되, 분모에는 그 턴 실제로 쓸 수
+  // 있었던 이월 동전도 포함해 미사용 수가 가용 수를 넘지 않게 한다.
+  drawnCoinUids: new Set<number>(availableAtTurnStart.map(Number)),
   elementalCoinUidsSeen: new Set<number>(),
   elementalCoinUidsFlippedHeads: new Set<number>(),
   elementalCoinsConsumed: 0,
@@ -305,7 +308,8 @@ export const playPolicyCombat = (
   const turns: M6TurnTrace[] = [];
   const opportunities: M6OpportunitySnapshot[] = [];
   const commandEvents: M6CommandEventTrace[] = [];
-  let activeTurn = newTurnTrace(state.turn);
+  let activeTurn = newTurnTrace(state.turn, state.zones.hand);
+  for (const coin of state.zones.hand) observeCoin(activeTurn, state, coin);
   applyEventsToTurn(activeTurn, state.events, state);
   let crash: { code: string } | null =
     invariantViolations.length > 0 ? { code: "INVARIANT_VIOLATION" } : null;
@@ -413,7 +417,8 @@ export const playPolicyCombat = (
     if (advancedTurn || state.phase !== "player") {
       turns.push(finalizeTurn(activeTurn));
       if (advancedTurn && state.phase === "player") {
-        activeTurn = newTurnTrace(state.turn);
+        activeTurn = newTurnTrace(state.turn, state.zones.hand);
+        for (const coin of state.zones.hand) observeCoin(activeTurn, state, coin);
         applyEventsToTurn(
           activeTurn,
           result.events.filter((event) => event.type === "coinsDrawn"),

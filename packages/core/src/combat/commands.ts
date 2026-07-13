@@ -1,14 +1,15 @@
 import type { ContentDb, EffectAtom, FlipSkillDef, SkillDef } from '../content-types';
 import { effectiveElements } from '../content-types';
-import type { CoinUid, EquipmentDefId, SlotId } from '../ids';
+import type { CoinDefId, CoinUid, EquipmentDefId, SlotId } from '../ids';
+import { MAX_PRESERVED_COINS } from './state';
 import type { CombatState } from './state';
 
 export type Command =
   | { type: 'placeCoin'; coin: CoinUid; slot: SlotId }
   | { type: 'unplaceCoin'; coin: CoinUid }
-  | { type: 'useFlipSkill'; slot: SlotId; target?: number; chosen?: CoinUid[]; chosenEquipment?: EquipmentDefId; chosenSummon?: number }
-  | { type: 'useConsumeSkill'; slot: SlotId; coins: CoinUid[]; target?: number; chosenSummon?: number }
-  | { type: 'endTurn' };
+  | { type: 'useFlipSkill'; slot: SlotId; target?: number; chosen?: CoinUid[]; desiredCoin?: CoinDefId; chosenEquipment?: EquipmentDefId; chosenSummon?: number }
+  | { type: 'useConsumeSkill'; slot: SlotId; coins: CoinUid[]; target?: number; desiredCoin?: CoinDefId; chosenSummon?: number }
+  | { type: 'endTurn'; preserve?: CoinUid[] };
 
 const livingEnemyTargets = (state: CombatState): number[] =>
   state.enemies.flatMap((enemy, index) => (enemy.hp > 0 ? [index] : []));
@@ -18,6 +19,8 @@ const HOSTILE_STATUSES = new Set(['burn', 'frostbite', 'shock']);
 const isHostileProc = (atom: EffectAtom): boolean =>
   atom.kind === 'damage' ||
   atom.kind === 'damagePerTargetBurn' ||
+  atom.kind === 'damageByConsumed' ||
+  atom.kind === 'damageByTargetFrostbite' ||
   atom.kind === 'damagePerBlock' ||
   (atom.kind === 'applyStatus' && atom.to === 'target' && HOSTILE_STATUSES.has(atom.status));
 
@@ -103,13 +106,25 @@ export const skillRequiresSummonChoice = (skill: SkillDef): boolean =>
 export const skillCommandsSummon = (skill: FlipSkillDef): boolean =>
   skillRequiresSummonChoice(skill);
 
+const allSkillEffects = (skill: SkillDef): readonly EffectAtom[] => skill.type === 'flip'
+  ? [...skill.base, ...(skill.heads?.effects ?? []), ...(skill.tails?.effects ?? []), ...(skill.preservedBonus ?? [])]
+  : [...skill.effects, ...(skill.preservedBonus ?? [])];
+
 const hasChooseBasicInHand = (skill: FlipSkillDef): boolean =>
-  [...skill.base, ...(skill.heads?.effects ?? []), ...(skill.tails?.effects ?? [])].some(
+  allSkillEffects(skill).some(
     (effect) => effect.kind === 'grantElement' && effect.scope === 'chooseBasicInHand'
   );
 
-const suggestedChosen = (state: CombatState, db: ContentDb): CoinUid[] | undefined => {
-  const coin = state.zones.hand.find((candidate) => isBasicCoinInHand(state, db, candidate));
+const hasPreserveChoice = (skill: FlipSkillDef): boolean =>
+  allSkillEffects(skill).some((effect) => effect.kind === 'preserveChosenCoin');
+
+const desiredCoinOptions = (skill: SkillDef): CoinDefId[] =>
+  allSkillEffects(skill).flatMap((effect) => effect.kind === 'drawSpecific' ? effect.coins : []);
+
+const suggestedChosen = (state: CombatState, db: ContentDb, skill: FlipSkillDef): CoinUid[] | undefined => {
+  const coin = hasChooseBasicInHand(skill)
+    ? state.zones.hand.find((candidate) => isBasicCoinInHand(state, db, candidate))
+    : state.zones.hand[0];
   return coin === undefined ? undefined : [coin];
 };
 
@@ -117,11 +132,31 @@ const suggestedChosen = (state: CombatState, db: ContentDb): CoinUid[] | undefin
 export const chooseBasicCandidates = (state: CombatState, db: ContentDb): CoinUid[] =>
   state.zones.hand.filter((candidate) => isBasicCoinInHand(state, db, candidate));
 
-export const skillRequiresCoinChoice = (skill: FlipSkillDef): boolean => hasChooseBasicInHand(skill);
+export const skillCoinChoiceCandidates = (state: CombatState, db: ContentDb, skill: FlipSkillDef): CoinUid[] =>
+  hasChooseBasicInHand(skill) ? chooseBasicCandidates(state, db) : hasPreserveChoice(skill) ? [...state.zones.hand] : [];
+
+export const skillRequiresCoinChoice = (skill: FlipSkillDef): boolean => hasChooseBasicInHand(skill) || hasPreserveChoice(skill);
 
 export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
   if (state.phase !== 'player') return [];
-  const commands: Command[] = [{ type: 'endTurn' }];
+  const basePreserve = db.characters[String(state.characterId)]?.trait.mechanic === 'preserveHand' ? 1 : 0;
+  const newPreserveCapacity = basePreserve + Math.min(2, state.player.additionalPreserveThisTurn);
+  // 턴 종료 시 장전 동전도 먼저 손으로 돌아온다. 합법 명령 제안과 reducer가
+  // 같은 후보 집합을 보도록 해야, 장전된 기존 보존 동전이 있는 상태에서
+  // 자동 보존이 용량을 초과하지 않는다.
+  const endTurnHand = [...state.zones.hand, ...Object.values(state.zones.placed).flat()];
+  const alreadyPreserved = endTurnHand.filter((coin) => state.coins[Number(coin)]?.preserved === true);
+  const autoPreserve = [
+    ...alreadyPreserved,
+    ...endTurnHand.filter((coin) => !alreadyPreserved.includes(coin)).slice(
+      0,
+      Math.min(
+        newPreserveCapacity,
+        Math.max(0, MAX_PRESERVED_COINS - alreadyPreserved.length)
+      )
+    )
+  ];
+  const commands: Command[] = [{ type: 'endTurn', ...(autoPreserve.length > 0 ? { preserve: autoPreserve } : {}) }];
 
   for (let i = 0; i < state.slots.length; i += 1) {
     const slot = i as SlotId;
@@ -135,7 +170,8 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
       if ((state.zones.placed[slot]?.length ?? 0) === skill.cost) {
         // P6 D6 — 명령 스킬은 소환이 있어야 합법 (없으면 낭비 사용 제안 안 함)
         if (skillRequiresSummonChoice(skill) && state.summons.length === 0) continue;
-        const chosen = hasChooseBasicInHand(skill) ? suggestedChosen(state, db) : undefined;
+        const chosen = skillRequiresCoinChoice(skill) ? suggestedChosen(state, db, skill) : undefined;
+        const desiredCoin = desiredCoinOptions(skill).find((defId) => state.zones.draw.some((uid) => String(state.coins[Number(uid)]?.defId) === String(defId))) ?? desiredCoinOptions(skill)[0];
         const chosenEquipment = skillRequiresEquipmentChoice(skill)
           ? (Object.keys(db.equipment ?? {}).sort()[0] as EquipmentDefId | undefined)
           : undefined;
@@ -146,6 +182,7 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
           for (const chosenSummon of summonChoices) {
             const command: Command = { type: 'useFlipSkill', slot, target };
             if (chosen !== undefined) command.chosen = chosen;
+            if (desiredCoin !== undefined) command.desiredCoin = desiredCoin;
             if (chosenEquipment !== undefined) command.chosenEquipment = chosenEquipment;
             if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
             commands.push(command);
@@ -161,7 +198,10 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
       const usable = state.zones.hand
         .filter((coin) => {
           const instance = state.coins[Number(coin)];
-          return instance !== undefined && effectiveElements(instance, db).includes(skill.consume.element);
+          const def = instance === undefined ? undefined : db.coins[String(instance.defId)];
+          return instance !== undefined && (skill.consume.element === 'frost'
+            ? def?.element === 'frost'
+            : effectiveElements(instance, db).includes(skill.consume.element));
         })
         .sort((left, right) => {
           const leftGranted = state.coins[Number(left)]?.grants.includes(skill.consume.element) === true;
@@ -169,15 +209,19 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
           if (leftGranted === rightGranted) return 0;
           return leftGranted ? -1 : 1;
         })
-        .slice(0, skill.consume.count);
-      if (usable.length === skill.consume.count) {
+        .slice(0, skill.consume.mode === 'all' ? undefined : skill.consume.count);
+      const required = skill.consume.mode === 'upTo' ? Math.min(skill.consume.count, usable.length) : skill.consume.mode === 'all' ? usable.length : skill.consume.count;
+      if (skill.consume.mode === 'all' && usable.length < skill.consume.count) continue;
+      if (required > 0 && usable.length >= required) {
         if (skillRequiresSummonChoice(skill) && state.summons.length === 0) continue;
         const summonChoices = skillRequiresSummonChoice(skill)
           ? state.summons.map((summon) => summon.uid)
           : [undefined];
         for (const target of targetsForSkill(state, skill, slot, db)) {
           for (const chosenSummon of summonChoices) {
-            const command: Command = { type: 'useConsumeSkill', slot, coins: usable, target };
+            const desiredCoin = desiredCoinOptions(skill).find((defId) => state.zones.draw.some((uid) => String(state.coins[Number(uid)]?.defId) === String(defId))) ?? desiredCoinOptions(skill)[0];
+            const command: Command = { type: 'useConsumeSkill', slot, coins: usable.slice(0, required), target };
+            if (desiredCoin !== undefined) command.desiredCoin = desiredCoin;
             if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
             commands.push(command);
           }

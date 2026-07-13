@@ -6,7 +6,7 @@ import type { KeywordTerm } from "./keywords";
 import "./card-effects.css";
 
 export interface EffectRowModel {
-  kind: "base" | "heads" | "tails" | "mixed" | "cost" | "effect" | "element-face" | "overheat";
+  kind: "base" | "heads" | "tails" | "mixed" | "cost" | "effect" | "element-face" | "overheat" | "preserved" | "rule";
   badge: string;
   modeNote?: string;
   segments: Array<{ text: string; term?: KeywordTerm }>;
@@ -21,6 +21,7 @@ const ELEMENT_KO: Record<string, string> = {
 };
 
 const elementKo = (value: string): string => ELEMENT_KO[value] ?? value;
+const coinKo = (value: string): string => value === "basic" ? "기본" : elementKo(value);
 
 // any 모드는 기본 읽기("하나라도 나오면")라 표기 생략 — per만 "동전마다"로 구분한다.
 // 좁은 카드에서 값이 접미 라벨에 밀려 줄바꿈·클리핑되는 것을 막는 표기 결정 (UX_FEEDBACK_DECISIONS).
@@ -78,6 +79,16 @@ const atomSegment = (atom: EffectAtom): { text: string; term?: KeywordTerm } => 
   if (atom.kind === "nextTurnDraw") {
     return { text: `다음 턴 뽑기 +${atom.count}` };
   }
+  if (atom.kind === "drawSpecific") {
+    const preserved = atom.preserve === true ? " 후 보존" : "";
+    return { text: `${atom.coins.map(String).map(coinKo).join("/")} 중 ${atom.count}개 지정 뽑기${preserved}` };
+  }
+  if (atom.kind === "preserveChosenCoin") {
+    return { text: `동전 ${atom.count}개를 보존` };
+  }
+  if (atom.kind === "increasePreserveCapacity") {
+    return { text: `이번 턴 추가 보존 +${atom.count}` };
+  }
   if (atom.kind === "reduceCooldown") {
     return { text: `다른 스킬 쿨다운 -${atom.amount}` };
   }
@@ -86,6 +97,18 @@ const atomSegment = (atom: EffectAtom): { text: string; term?: KeywordTerm } => 
   }
   if (atom.kind === "damagePerBlock") {
     return { text: `현재 방어 1당 피해 ${atom.amountPerBlock}`, term: "block" };
+  }
+  if (atom.kind === "damageByConsumed") {
+    return {
+      text: `피해 ${atom.base} + 소비당 ${atom.perCoin}${atom.frostbittenBonusPerCoin === undefined ? "" : ` (동상 대상이면 소비당 +${atom.frostbittenBonusPerCoin})`}`,
+      term: atom.frostbittenBonusPerCoin === undefined ? undefined : "frostbite",
+    };
+  }
+  if (atom.kind === "damageByTargetFrostbite") {
+    return {
+      text: `피해 ${atom.base} + 동상 ×${atom.multiplier} (최대 ${atom.cap})`,
+      term: "frostbite",
+    };
   }
   if (atom.kind === "blockFromCurrent") {
     return { text: `현재 방어만큼 방어 (최대 ${atom.cap})`, term: "block" };
@@ -158,13 +181,18 @@ const bonusSegments = (
 
 export function skillEffectRows(skill: SkillDef): EffectRowModel[] {
   if (skill.type === "consume") {
+    const costText = skill.consume.mode === "upTo"
+      ? `${elementKo(skill.consume.element)} 1~${skill.consume.count}개 소비`
+      : skill.consume.mode === "all"
+        ? `${elementKo(skill.consume.element)} 최소 ${skill.consume.count}개·손의 전부 소비`
+        : `${elementKo(skill.consume.element)} ×${skill.consume.count} 소비`;
     const rows: EffectRowModel[] = [
       {
         kind: "cost",
         badge: "비용",
         segments: [
           {
-            text: `${elementKo(skill.consume.element)} ×${skill.consume.count} 소비`,
+            text: costText,
             term: "consume",
           },
         ],
@@ -184,6 +212,20 @@ export function skillEffectRows(skill: SkillDef): EffectRowModel[] {
           ...segment,
           term: segment.term ?? "overheat",
         })),
+      });
+    }
+    if (skill.preservedBonus !== undefined && skill.preservedBonus.length > 0) {
+      rows.push({
+        kind: "preserved",
+        badge: "보존",
+        segments: bonusSegments(skill.preservedBonus),
+      });
+    }
+    if (skill.treatPreservedBasicAsElement !== undefined) {
+      rows.push({
+        kind: "rule",
+        badge: "보존 규칙",
+        segments: [{ text: `보존 기본 코인을 ${elementKo(skill.treatPreservedBasicAsElement)} 코인으로 취급` }],
       });
     }
     return rows;
@@ -246,9 +288,28 @@ export function skillEffectRows(skill: SkillDef): EffectRowModel[] {
       })),
     });
   }
+  if (skill.preservedBonus !== undefined && skill.preservedBonus.length > 0) {
+    rows.push({
+      kind: "preserved",
+      badge: "보존",
+      segments: bonusSegments(skill.preservedBonus),
+    });
+  }
+  if (skill.treatPreservedBasicAsElement !== undefined) {
+    rows.push({
+      kind: "rule",
+      badge: "보존 규칙",
+      segments: [{ text: `보존 기본 코인을 ${elementKo(skill.treatPreservedBasicAsElement)} 코인으로 취급` }],
+    });
+  }
 
   return rows;
 }
+
+export const skillSummaryText = (skill: SkillDef): string =>
+  skillEffectRows(skill)
+    .map((row) => `${row.badge}: ${row.segments.map((segment) => segment.text).join(" / ")}`)
+    .join(" · ");
 
 export function CardEffectRows(props: { skill: SkillDef }): JSX.Element {
   return (

@@ -3,13 +3,13 @@ import type { CharacterId, CoinDefId, CoinUid, EnemyDefId, PassiveId, SkillId, S
 import { derive, rngFrom, seedFromString } from '../rng';
 import { coinSatisfiesFlipRequirement, flipSkillRequiresEnemyTarget, skillRequiresSummonChoice } from './commands';
 import type { Command } from './commands';
-import { drawCards } from './draw';
+import { drawCards, drawSpecificCoin } from './draw';
 import { initialIntent, runEnemyPhase } from './enemy';
 import { runSummonPhase } from './summons';
 import type { CombatEvent } from './events';
 import { resolveConsume } from './resolve/consume';
 import { applyBlock, applyDamage, applyEffectAtom, checkCombatEnd, resolveFlip } from './resolve/flip';
-import { cloneState, MAX_SKILL_SLOTS, statusStacks } from './state';
+import { cloneState, MAX_PRESERVED_COINS, MAX_SKILL_SLOTS, statusStacks } from './state';
 import type { CombatState, CombatZones } from './state';
 
 export { MAX_SKILL_SLOTS } from './state';
@@ -65,6 +65,16 @@ const runHook = (
     if (passive === undefined || passive.hook !== hook) continue;
     events.push({ type: 'passiveTriggered', passive: String(passiveId) });
     apply(passive.effects);
+    if (passive.mechanic === 'coinAppraiser') {
+      const frost = Object.values(db.coins).find((coin) => coin.element === 'frost')?.id;
+      const basic = Object.values(db.coins).find((coin) => coin.element === null)?.id;
+      const preferred = [frost, basic].find((defId) => defId !== undefined && state.zones.draw.some((uid) => String(state.coins[Number(uid)]?.defId) === String(defId)));
+      if (preferred !== undefined) {
+        const drawn = drawSpecificCoin(state, preferred, 1);
+        state = drawn.state;
+        events.push(...drawn.events);
+      }
+    }
   }
   return { state, events };
 };
@@ -88,6 +98,16 @@ const startPlayerTurn = (
       lastMoveUsed: false,
       residualChargeUsed: false,
       overcurrentUsed: false,
+      additionalPreserveThisTurn: 0,
+      smallChangeInsuranceUsed: false,
+      headsSeenThisTurn: false,
+      tailsSeenThisTurn: false,
+      doubleEntryUsedThisTurn: false,
+      maturedHandUsedThisTurn: false,
+      profitSettlementUsedThisTurn: false,
+      coldHandsUsedThisTurn: false,
+      frostCompoundUsedThisTurn: false,
+      refrozenLootUsedThisTurn: false,
       firstDamageReducedThisTurn: false,
       firstBurnBoostUsedThisTurn: false,
       burnAppliedThisTurn: false,
@@ -208,7 +228,11 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
       blueCircuitUsedThisTurn: false, manaConsumedForResonance: 0,
       remiseCharges: character.trait.mechanic === 'remise' ? 1 : 0,
       continuousMotionUsed: false, retrievalHabitUsed: false, balanceSenseUsed: false,
-      lastMoveUsed: false, residualChargeUsed: false, overcurrentUsed: false
+      lastMoveUsed: false, residualChargeUsed: false, overcurrentUsed: false,
+      additionalPreserveThisTurn: 0, smallChangeInsuranceUsed: false,
+      headsSeenThisTurn: false, tailsSeenThisTurn: false, doubleEntryUsedThisTurn: false,
+      maturedHandUsedThisTurn: false, profitSettlementUsedThisTurn: false,
+      coldHandsUsedThisTurn: false, frostCompoundUsedThisTurn: false, refrozenLootUsedThisTurn: false
     },
     enemies,
     coins,
@@ -248,9 +272,13 @@ const validateSingleEnemyTarget = (input: CombatState, target: number | undefine
 };
 
 const hasChooseBasicInHand = (skill: FlipSkillDef): boolean =>
-  [...skill.base, ...(skill.heads?.effects ?? []), ...(skill.tails?.effects ?? [])].some(
+  [...skill.base, ...(skill.heads?.effects ?? []), ...(skill.tails?.effects ?? []), ...(skill.preservedBonus ?? [])].some(
     (effect) => effect.kind === 'grantElement' && effect.scope === 'chooseBasicInHand'
   );
+
+const hasPreserveChoice = (skill: FlipSkillDef): boolean =>
+  [...skill.base, ...(skill.heads?.effects ?? []), ...(skill.tails?.effects ?? []), ...(skill.preservedBonus ?? [])]
+    .some((effect) => effect.kind === 'preserveChosenCoin');
 
 const isBasicCoinInHand = (input: CombatState, coin: CoinUid, db: ContentDb): boolean => {
   const instance = input.coins[Number(coin)];
@@ -264,7 +292,16 @@ const validateChosenBasicInHand = (
   chosen: readonly CoinUid[] | undefined,
   db: ContentDb
 ): StepResult | undefined => {
-  if (!hasChooseBasicInHand(skill)) return undefined;
+  if (!hasChooseBasicInHand(skill) && !hasPreserveChoice(skill)) return undefined;
+  if (hasPreserveChoice(skill)) {
+    if (input.zones.hand.length === 0) {
+      return chosen === undefined || chosen.length === 0 ? undefined : { ok: false, error: 'chosen coin is not in hand' };
+    }
+    if (chosen === undefined || chosen.length !== 1 || !input.zones.hand.includes(chosen[0]!)) {
+      return { ok: false, error: 'preserveChosenCoin requires exactly one chosen coin in hand' };
+    }
+    return undefined;
+  }
   const basicInHand = input.zones.hand.filter((coin) => isBasicCoinInHand(input, coin, db));
   if (basicInHand.length === 0) {
     return chosen === undefined || chosen.length === 0 ? undefined : { ok: false, error: 'chosen coin is not a basic coin in hand' };
@@ -338,7 +375,7 @@ const unplaceCoin = (input: CombatState, coin: CoinUid): StepResult => {
   };
 };
 
-const endTurn = (input: CombatState, db: ContentDb): StepResult => {
+const endTurn = (input: CombatState, db: ContentDb, preserveChoice?: readonly CoinUid[]): StepResult => {
   const events: CombatEvent[] = [];
   let state = input;
   const returned = Object.values(state.zones.placed).flat();
@@ -379,13 +416,37 @@ const endTurn = (input: CombatState, db: ContentDb): StepResult => {
   const clearedCoins = Object.fromEntries(
     Object.entries(state.coins).map(([key, coin]) => [key, { ...coin, grants: [] }])
   );
-  const discarded = [...state.zones.hand];
+  const baseCapacity = db.characters[String(state.characterId)]?.trait.mechanic === 'preserveHand' ? 1 : 0;
+  const newCapacity = baseCapacity + Math.min(2, state.player.additionalPreserveThisTurn);
+  const alreadyPreserved = state.zones.hand.filter((coin) => state.coins[Number(coin)]?.preserved === true);
+  const requested = preserveChoice ?? [];
+  if (new Set(requested).size !== requested.length || requested.some((coin) => !state.zones.hand.includes(coin))) {
+    return { ok: false, error: 'preserved coin must be a unique coin in hand' };
+  }
+  const requestedNew = requested.filter((coin) => !alreadyPreserved.includes(coin));
+  if (
+    requestedNew.length > newCapacity ||
+    new Set([...alreadyPreserved, ...requested]).size > MAX_PRESERVED_COINS
+  ) {
+    return { ok: false, error: 'preserved coin count exceeds capacity' };
+  }
+  const combined = [...alreadyPreserved, ...requestedNew].slice(0, MAX_PRESERVED_COINS);
+  const preserveSet = new Set(combined);
+  const nextCoins = Object.fromEntries(
+    Object.entries(clearedCoins).map(([key, coin]) => [key, {
+      ...coin,
+      preserved: preserveSet.has(coin.uid)
+    }])
+  );
+  const discarded = state.zones.hand.filter((coin) => !preserveSet.has(coin));
+  const preserved = state.zones.hand.filter((coin) => preserveSet.has(coin));
   state = {
     ...state,
-    coins: clearedCoins,
-    zones: { ...state.zones, discard: [...state.zones.discard, ...discarded], hand: [] }
+    coins: nextCoins,
+    zones: { ...state.zones, discard: [...state.zones.discard, ...discarded], hand: preserved }
   };
   if (discarded.length > 0) events.push({ type: 'coinsDiscarded', coins: discarded, reason: 'turnEnd' });
+  if (preserved.length > 0) events.push({ type: 'coinsPreserved', coins: preserved });
 
   // P6 D6 — 소환 장비 자동 행동 (플레이어 턴 종료, 적 페이즈 전)
   if (state.summons.length > 0) {
@@ -424,7 +485,7 @@ export const step = (state: CombatState, cmd: Command, db: ContentDb): StepResul
     const input = cloneState(state);
     if (cmd.type === 'placeCoin') return placeCoin(input, cmd.coin, cmd.slot, db);
     if (cmd.type === 'unplaceCoin') return unplaceCoin(input, cmd.coin);
-    if (cmd.type === 'endTurn') return endTurn(input, db);
+    if (cmd.type === 'endTurn') return endTurn(input, db, cmd.preserve);
     if (cmd.type === 'useFlipSkill') {
       const slotState = input.slots[Number(cmd.slot)];
       if (slotState === undefined) return { ok: false, error: 'slot does not exist' };
@@ -446,6 +507,7 @@ export const step = (state: CombatState, cmd: Command, db: ContentDb): StepResul
       return {
         ok: true,
         ...resolveFlip(targetedInput, cmd.slot, skill, cmd.target, db, cmd.chosen, {
+          desiredCoin: cmd.desiredCoin,
           chosenEquipment: cmd.chosenEquipment,
           chosenSummon: cmd.chosenSummon
         })
@@ -463,7 +525,7 @@ export const step = (state: CombatState, cmd: Command, db: ContentDb): StepResul
       if (skillRequiresSummonChoice(skill) && !input.summons.some((summon) => summon.uid === cmd.chosenSummon))
         return { ok: false, error: 'a valid summon choice is required' };
       const targetedInput = cmd.target === undefined ? input : { ...input, lastTargetedEnemy: cmd.target };
-      return { ok: true, ...resolveConsume(targetedInput, cmd.slot, skill, cmd.coins, cmd.target, db, cmd.chosenSummon) };
+      return { ok: true, ...resolveConsume(targetedInput, cmd.slot, skill, cmd.coins, cmd.target, db, cmd.chosenSummon, cmd.desiredCoin) };
     }
     return { ok: false, error: 'unknown command' };
   } catch (error) {

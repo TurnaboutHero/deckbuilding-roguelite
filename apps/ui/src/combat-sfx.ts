@@ -65,6 +65,7 @@ export const sfxCuesFor = (event: CombatEvent): SfxKind[] => {
               : ["blood"];
     case "coinsDrawn":
     case "coinsDiscarded":
+    case "coinsPreserved":
     case "blockCleared":
     case "statusTicked":
     case "traitTriggered":

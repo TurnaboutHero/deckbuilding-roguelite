@@ -28,7 +28,7 @@ describe('M5 full-run simulator', () => {
   });
 
   it('completes the deterministic generated-graph run with boundary state intact', () => {
-    // P10 재고정 (1.4.0-p10 결속): 화염 전사 최신 시작 스킬·패시브를 포함한 결정론 런 골든.
+    // P11 재고정 (1.5.0-p11 결속): 냉기 도적 최신 스킬·보존 규칙을 포함한 결정론 런 골든.
     // warrior 시작 셋 = jab·fist-guard·burning-fist·inner-passion + 빈 슬롯 4(null).
     // seed 42 fight-first는 10번째 전투 후 패배한다 — balance-provisional 관측치
     // (baseline 정책 우선순위가 신규 격투 스킬 ID를 모른다는 한계 포함, 백로그 보고).

@@ -23,6 +23,7 @@ import {
 
 const CONTENT_VERSION = CURRENT_CONTENT_VERSION;
 const LEGACY_CONTENT_VERSION = "0.5.0-m5";
+const P10_CONTENT_VERSION = "1.4.0-p10";
 const STARTING_BAG = [...(contentDb.characters.warrior?.startingBag ?? [])];
 const STARTING_SKILLS = [
   ...(contentDb.characters.warrior?.startingSkills ?? []),
@@ -326,6 +327,26 @@ describe("run save serialization boundary", () => {
     expect(legacy).toEqual(readySave());
     expect(legacy?.contentVersion).toBe(CURRENT_CONTENT_VERSION);
     expect(parse(rawWith({ contentVersion: "9.9.9-unknown" }))).toBeNull();
+  });
+
+  it("migrates retired P10 cold skill IDs without accepting them in current saves", () => {
+    const frost = contentDb.characters["frost-knight"]!;
+    const p10 = {
+      ...freshSave(),
+      contentVersion: P10_CONTENT_VERSION,
+      character: "frost-knight",
+      maxHp: frost.maxHp,
+      currentHp: frost.maxHp,
+      bag: frost.startingBag.map(String),
+      equippedSkills: padSkills(["slash", "guard", "frost-slash", "glacial-wall"]),
+    };
+    const migrated = parse(JSON.stringify(p10));
+    expect(migrated).toMatchObject({
+      contentVersion: CONTENT_VERSION,
+      character: "frost-knight",
+      equippedSkills: padSkills(["slash", "guard", "ice-claw", "ice-sleight"]),
+    });
+    expect(parse(JSON.stringify({ ...p10, contentVersion: CONTENT_VERSION }))).toBeNull();
   });
 
   it("migrates v3, v2, and v1 saves explicitly to v7 and rejects unknown versions", () => {

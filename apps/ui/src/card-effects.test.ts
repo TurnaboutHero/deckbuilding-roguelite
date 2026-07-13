@@ -1,7 +1,7 @@
 import { contentDb } from "@game/content";
 import { describe, expect, it } from "vitest";
 
-import { skillEffectRows } from "./card-effects";
+import { skillEffectRows, skillSummaryText } from "./card-effects";
 
 const skill = (id: string) => {
   const found = contentDb.skills[id];
@@ -108,5 +108,49 @@ describe("skillEffectRows", () => {
         .flatMap((row) => row.segments)
         .filter((segment) => segment.text.startsWith("화상")),
     ).toEqual([{ text: "화상 2", term: "burn" }]);
+  });
+
+  it("renders cold status, specified draw, and preservation rules without generic copy", () => {
+    const claw = skillEffectRows(skill("ice-claw"));
+    expect(claw[0]?.segments.map((segment) => segment.text)).toEqual([
+      "피해 8",
+      "동상 2",
+    ]);
+
+    const pickpocket = skillEffectRows(skill("preserved-pickpocket"));
+    expect(pickpocket.find((row) => row.kind === "preserved")?.segments[0]?.text)
+      .toBe("기본/냉기 중 1개 지정 뽑기");
+    expect(pickpocket.find((row) => row.kind === "rule")?.segments[0]?.text)
+      .toBe("보존 기본 코인을 냉기 코인으로 취급");
+
+    const loot = skillEffectRows(skill("loot-swap"));
+    expect(loot.find((row) => row.kind === "effect")?.segments[1]?.text)
+      .toBe("기본/냉기 중 1개 지정 뽑기 후 보존");
+    expect(loot.find((row) => row.kind === "preserved")?.segments[0]?.text)
+      .toBe("방어 +3");
+
+    const pocket = skillEffectRows(skill("hidden-inner-pocket"));
+    expect(pocket.find((row) => row.kind === "base")?.segments[1]?.text)
+      .toBe("동전 1개를 보존");
+
+    const raid = skillEffectRows(skill("trackless-raid"));
+    expect(raid.find((row) => row.kind === "preserved")?.segments.map((segment) => segment.text))
+      .toEqual(["피해 +4", "동상 +1"]);
+  });
+
+  it("renders variable/all consume costs and complete dynamic damage formulae", () => {
+    const incision = skillEffectRows(skill("freezing-incision"));
+    expect(incision[0]?.segments[0]?.text).toBe("냉기 1~3개 소비");
+    expect(incision[1]?.segments[0]?.text).toBe("피해 5 + 소비당 5");
+
+    const freezeDry = skillEffectRows(skill("freeze-dry"));
+    expect(freezeDry[0]?.segments[0]?.text).toBe("냉기 최소 3개·손의 전부 소비");
+    expect(freezeDry[1]?.segments[0]?.text).toBe(
+      "피해 0 + 소비당 8 (동상 대상이면 소비당 +2)",
+    );
+
+    const perfectCrime = skillSummaryText(skill("subzero-perfect-crime"));
+    expect(perfectCrime).toContain("피해 6 + 동상 ×3 (최대 24)");
+    expect(perfectCrime).toContain("보존: 기본/냉기 중 1개 지정 뽑기 후 보존");
   });
 });

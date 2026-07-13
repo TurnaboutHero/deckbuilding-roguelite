@@ -1,9 +1,17 @@
 import type { ConsumeSkillDef, ContentDb, TargetRef } from '../../content-types';
 import { effectiveElements, skillCooldown } from '../../content-types';
-import type { CoinUid, SlotId } from '../../ids';
+import type { CoinDefId, CoinUid, SlotId } from '../../ids';
 import type { CombatEvent } from '../events';
 import type { CombatState } from '../state';
-import { applyEffectAtom, checkCombatEnd, fireTurnTriggers, targetsForSkillEffect } from './flip';
+import {
+  applyEffectAtom,
+  applyMaturedHandBonus,
+  applyPrimaryDamageBonus,
+  checkCombatEnd,
+  currentEnemyTargetForPassive,
+  fireTurnTriggers,
+  targetsForSkillEffect
+} from './flip';
 
 export interface ResolveConsumeResult {
   state: CombatState;
@@ -43,19 +51,29 @@ export const resolveConsume = (
   coins: readonly CoinUid[],
   target: number | undefined,
   db: ContentDb,
-  chosenSummon?: number
+  chosenSummon?: number,
+  desiredCoin?: CoinDefId
 ): ResolveConsumeResult => {
   const slotState = input.slots[Number(slot)];
   if (slotState === undefined) throw new Error('slot does not exist');
   if (slotState.cooldownRemaining > 0) throw new Error('skill is cooling down');
   if (skill.oncePerCombat === true && slotState.usedThisCombat) throw new Error('skill already used this combat');
-  if (coins.length !== skill.consume.count) throw new Error('consumed coin count must equal skill cost');
+  if (skill.consume.mode === 'all') {
+    const all = input.zones.hand.filter((coin) => db.coins[String(input.coins[Number(coin)]?.defId)]?.element === skill.consume.element);
+    if (coins.length < skill.consume.count || coins.length !== all.length || all.some((coin) => !coins.includes(coin))) throw new Error('all matching coins must be consumed after meeting minimum cost');
+  } else if (skill.consume.mode === 'upTo') {
+    if (coins.length < 1 || coins.length > skill.consume.count) throw new Error('consumed coin count exceeds skill limit');
+  } else if (coins.length !== skill.consume.count) throw new Error('consumed coin count must equal skill cost');
   if (new Set(coins).size !== coins.length) throw new Error('consumed coins must be unique');
 
   for (const coin of coins) {
     if (!input.zones.hand.includes(coin)) throw new Error('consumed coin is not in hand');
     const instance = input.coins[Number(coin)];
-    if (instance === undefined || !effectiveElements(instance, db).includes(skill.consume.element)) {
+    const def = instance === undefined ? undefined : db.coins[String(instance.defId)];
+    const satisfies = skill.consume.element === 'frost'
+      ? def?.element === 'frost'
+      : instance !== undefined && effectiveElements(instance, db).includes(skill.consume.element);
+    if (!satisfies) {
       throw new Error('consumed coin does not satisfy required element');
     }
   }
@@ -63,6 +81,11 @@ export const resolveConsume = (
   const skillTarget = targetForSkill(input, skill, target);
   const turnTriggerScope = input.turnTriggers;
   const consumed = new Set<CoinUid>(coins);
+  const consumedPreserved = coins.some((coin) => input.coins[Number(coin)]?.preserved === true);
+  const consumedPreservedCold = coins.some((coin) => {
+    const instance = input.coins[Number(coin)];
+    return instance?.preserved === true && db.coins[String(instance.defId)]?.element === 'frost';
+  });
   const events: CombatEvent[] = [
     { type: 'skillUsed', slot, skill: skill.id, kind: 'consume' },
     { type: 'coinsConsumed', coins: [...coins] }
@@ -93,7 +116,11 @@ export const resolveConsume = (
       ...input.zones,
       hand: removeCoins(input.zones.hand, consumed),
       exhausted: [...input.zones.exhausted, ...coins]
-    }
+    },
+    coins: Object.fromEntries(Object.entries(input.coins).map(([key, coin]) => [
+      key,
+      consumed.has(coin.uid) ? { ...coin, preserved: false } : coin
+    ]))
   };
   const passiveMechanics = new Set(
     input.passives.flatMap((id) => {
@@ -124,9 +151,35 @@ export const resolveConsume = (
     }
   }
 
+  if (!state.player.profitSettlementUsedThisTurn && passiveMechanics.has('profitSettlement')) {
+    state = { ...state, player: { ...state.player, nextDrawBonus: state.player.nextDrawBonus + 1, profitSettlementUsedThisTurn: true } };
+  }
+  if (skill.consume.element === 'frost' && coins.length >= 2 && !state.player.refrozenLootUsedThisTurn && passiveMechanics.has('refrozenLoot')) {
+    const frost = Object.values(db.coins).find((coin) => coin.element === 'frost')?.id;
+    if (frost !== undefined) state = applyEffectAtom(state, { kind: 'addCoin', coin: frost, zone: 'hand', count: 1 }, { type: 'player' }, db, events);
+    state = { ...state, player: { ...state.player, refrozenLootUsedThisTurn: true } };
+  }
+
   // 피해 전용 과열 보너스는 기본 피해와 같은 타격으로 합산 (flip과 동일 규칙)
   const overheatBonus = input.player.overheat ? (skill.overheatBonus ?? []) : [];
-  let effects = [...skill.effects];
+  let effects = [...skill.effects, ...(consumedPreserved ? (skill.preservedBonus ?? []) : [])];
+  if (consumedPreserved && !state.player.maturedHandUsedThisTurn && passiveMechanics.has('maturedHand')) {
+    effects = applyMaturedHandBonus(effects);
+    state = { ...state, player: { ...state.player, maturedHandUsedThisTurn: true } };
+  }
+  if (consumedPreservedCold && !state.player.coldHandsUsedThisTurn && passiveMechanics.has('coldHands')) {
+    const coldTarget = currentEnemyTargetForPassive(state, skillTarget);
+    if (coldTarget !== undefined) {
+      state = applyEffectAtom(state, { kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }, coldTarget, db, events);
+    }
+    state = { ...state, player: { ...state.player, coldHandsUsedThisTurn: true } };
+  }
+  if (skill.tags.includes('attack') && skillTarget.type === 'enemy' &&
+    (state.enemies[skillTarget.index]?.statuses.frostbite?.kind === 'duration') &&
+    !state.player.frostCompoundUsedThisTurn && passiveMechanics.has('frostCompound')) {
+    effects = applyPrimaryDamageBonus(effects, 3);
+    state = { ...state, player: { ...state.player, frostCompoundUsedThisTurn: true } };
+  }
   if (skill.tags.includes('attack') && state.player.nextAttackDamageBonus > 0) {
     const primaryDamageIndex = effects.findIndex((atom) =>
       atom.kind === 'damage' || atom.kind === 'damagePlusBlock'
@@ -164,7 +217,9 @@ export const resolveConsume = (
   }
   for (const atom of effects) {
     for (const effectTarget of targetsForSkillEffect(state, atom, skill, skillTarget)) {
-      state = applyEffectAtom(state, atom, effectTarget, db, events, undefined, { turnTriggerScope, sourceSlot: slot, chosenSummon });
+      state = applyEffectAtom(state, atom, effectTarget, db, events, undefined, {
+        turnTriggerScope, sourceSlot: slot, chosenSummon, desiredCoin, consumedCount: coins.length
+      });
       if (state.phase === 'victory' || state.phase === 'defeat') return finish(state);
     }
   }

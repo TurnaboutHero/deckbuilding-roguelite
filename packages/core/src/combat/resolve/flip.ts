@@ -9,9 +9,9 @@ import type {
 import { effectiveElements, skillCooldown } from '../../content-types';
 import type { Element, EquipmentDefId, CoinUid, Face, SlotId } from '../../ids';
 import { rngFrom } from '../../rng';
-import { drawCards, HAND_LIMIT } from '../draw';
+import { drawCards, drawSpecificCoin, HAND_LIMIT } from '../draw';
 import type { CombatEvent } from '../events';
-import { statusStacks, statusTurns } from '../state';
+import { MAX_PRESERVED_COINS, statusStacks, statusTurns } from '../state';
 import type { CombatState, StatusState, TurnTriggerInstance } from '../state';
 import { actSummon, addSummon, defaultEquipmentId, tickSummonDuration } from '../summons';
 
@@ -31,6 +31,8 @@ interface ApplyEffectOptions {
   turnTriggerScope?: readonly TurnTriggerInstance[];
   // P7 D1 — reduceCooldown이 해결 중인 자기 슬롯을 제외하기 위한 출처 슬롯
   sourceSlot?: SlotId;
+  desiredCoin?: import('../../ids').CoinDefId;
+  consumedCount?: number;
 }
 
 const isAliveEnemy = (state: CombatState, index: number): boolean => {
@@ -255,8 +257,33 @@ export const applyEffectAtom = (
       events.push(...drawn.events);
       return drawn.state;
     }
+    case 'drawSpecific': {
+      const requested = options?.desiredCoin;
+      const defId = requested !== undefined && atom.coins.some((coin) => String(coin) === String(requested))
+        ? requested
+        : atom.coins[0];
+      if (defId === undefined) return state;
+      const drawn = drawSpecificCoin(state, defId, atom.count, atom.preserve === true);
+      events.push(...drawn.events);
+      return drawn.state;
+    }
     case 'nextTurnDraw':
       return { ...state, player: { ...state.player, nextDrawBonus: state.player.nextDrawBonus + atom.count } };
+    case 'preserveChosenCoin': {
+      const coin = chosen?.find((candidate) => state.zones.hand.includes(candidate));
+      if (coin === undefined) return state;
+      if (state.coins[Number(coin)]?.preserved === true) return state;
+      if (Object.values(state.coins).filter((candidate) => candidate.preserved === true).length >= MAX_PRESERVED_COINS) {
+        return state;
+      }
+      events.push({ type: 'coinsPreserved', coins: [coin] });
+      return {
+        ...state,
+        coins: { ...state.coins, [Number(coin)]: { ...state.coins[Number(coin)]!, preserved: true } }
+      };
+    }
+    case 'increasePreserveCapacity':
+      return { ...state, player: { ...state.player, additionalPreserveThisTurn: Math.min(2, state.player.additionalPreserveThisTurn + atom.count) } };
     // P7 D1 — 쿨다운 감소: 자기 슬롯 제외, 대기 중인 슬롯만.
     // 반복(쿨0)은 대기 상태가 없어 구조적으로 제외되고, 전투당 1회는 명시 제외한다.
     case 'reduceCooldown': {
@@ -333,6 +360,31 @@ export const applyEffectAtom = (
       const stacks = statusStacks(state.enemies[target.index]?.statuses ?? {}, 'burn');
       if (stacks <= 0) return state;
       const damaged = applyDamage(state, target, stacks * atom.amountPerStack, 'skill', events, { type: 'player' });
+      return options?.suppressTurnTriggers !== true
+        ? fireTurnTriggers(damaged, 'onDamageDealt', target, db, events, options?.turnTriggerScope)
+        : damaged;
+    }
+    case 'damageByConsumed': {
+      if (target.type !== 'enemy' || !isAliveEnemy(state, target.index)) return state;
+      const count = options?.consumedCount ?? 0;
+      const frozen = statusTurns(state.enemies[target.index]?.statuses ?? {}, 'frostbite') > 0;
+      const amount = atom.base + count * (atom.perCoin + (frozen ? (atom.frostbittenBonusPerCoin ?? 0) : 0));
+      const damaged = applyDamage(state, target, amount, 'skill', events, { type: 'player' });
+      return options?.suppressTurnTriggers !== true
+        ? fireTurnTriggers(damaged, 'onDamageDealt', target, db, events, options?.turnTriggerScope)
+        : damaged;
+    }
+    case 'damageByTargetFrostbite': {
+      if (target.type !== 'enemy' || !isAliveEnemy(state, target.index)) return state;
+      const turns = statusTurns(state.enemies[target.index]?.statuses ?? {}, 'frostbite');
+      const damaged = applyDamage(
+        state,
+        target,
+        Math.min(atom.cap, atom.base + turns * atom.multiplier),
+        'skill',
+        events,
+        { type: 'player' }
+      );
       return options?.suppressTurnTriggers !== true
         ? fireTurnTriggers(damaged, 'onDamageDealt', target, db, events, options?.turnTriggerScope)
         : damaged;
@@ -504,6 +556,8 @@ const targetsForElementProc = (
   const hostile =
     atom.kind === 'damage' ||
     atom.kind === 'damagePerTargetBurn' ||
+    atom.kind === 'damageByConsumed' ||
+    atom.kind === 'damageByTargetFrostbite' ||
     (atom.kind === 'applyStatus' && atom.to === 'target' && HOSTILE_STATUSES.has(atom.status));
   if (!hostile) return [{ type: 'player' }];
   if (skill.targetType === 'all-enemies') {
@@ -519,6 +573,8 @@ const targetsForElementProc = (
 const isTargetEffect = (atom: EffectAtom): boolean =>
   atom.kind === 'damage' ||
   atom.kind === 'damagePerTargetBurn' ||
+  atom.kind === 'damageByConsumed' ||
+  atom.kind === 'damageByTargetFrostbite' ||
   atom.kind === 'damagePerBlock' ||
   atom.kind === 'damagePlusBlock' ||
   (atom.kind === 'applyStatus' && atom.to === 'target');
@@ -536,6 +592,56 @@ export const targetsForSkillEffect = (
   return skill.targetType === 'all-enemies' && isTargetEffect(atom)
     ? state.enemies.flatMap((enemy, index) => (enemy.hp > 0 ? [{ type: 'enemy' as const, index }] : []))
     : [fallback];
+};
+
+/** 첫 기존 피해 축에 고정 피해를 합산한다. 별도 타격을 만들지 않는다. */
+export const applyPrimaryDamageBonus = (input: readonly EffectAtom[], bonus: number): EffectAtom[] => {
+  let damageBoosted = false;
+  return input.map((atom): EffectAtom => {
+    if (!damageBoosted) {
+      if (atom.kind === 'damage' || atom.kind === 'damageIfTargetShocked' || atom.kind === 'damageIfReused') {
+        damageBoosted = true;
+        return { ...atom, amount: atom.amount + bonus };
+      }
+      if (atom.kind === 'damageByConsumed' || atom.kind === 'damageByTargetFrostbite' || atom.kind === 'damagePlusBlock') {
+        damageBoosted = true;
+        return { ...atom, base: atom.base + bonus };
+      }
+    }
+    return atom;
+  });
+};
+
+/** P11 숙성된 패: 피해 축과 방어 축을 각각 한 번만 +2 한다. */
+export const applyMaturedHandBonus = (input: readonly EffectAtom[]): EffectAtom[] => {
+  let blockBoosted = false;
+  const effects = applyPrimaryDamageBonus(input, 2).map((atom): EffectAtom => {
+    if (!blockBoosted) {
+      if (atom.kind === 'block') {
+        blockBoosted = true;
+        return { ...atom, amount: atom.amount + 2 };
+      }
+      if (atom.kind === 'blockPerTargetShock') {
+        blockBoosted = true;
+        return { ...atom, base: atom.base + 2 };
+      }
+    }
+    return atom;
+  });
+  return effects;
+};
+
+/** 자기 대상 스킬도 현재 지정한 생존 적에게 차가운 손버릇을 적용한다. */
+export const currentEnemyTargetForPassive = (
+  state: CombatState,
+  skillTarget: TargetRef
+): TargetRef | undefined => {
+  if (skillTarget.type === 'enemy' && isAliveEnemy(state, skillTarget.index)) return skillTarget;
+  if (state.lastTargetedEnemy !== null && isAliveEnemy(state, state.lastTargetedEnemy)) {
+    return { type: 'enemy', index: state.lastTargetedEnemy };
+  }
+  const index = firstAliveEnemy(state);
+  return index === undefined ? undefined : { type: 'enemy', index };
 };
 
 const targetForSkill = (state: CombatState, skill: FlipSkillDef, target?: number): TargetRef => {
@@ -617,7 +723,7 @@ export const resolveFlip = (
   target: number | undefined,
   db: ContentDb,
   chosen?: readonly CoinUid[],
-  summonChoice?: { chosenEquipment?: EquipmentDefId; chosenSummon?: number }
+  summonChoice?: { chosenEquipment?: EquipmentDefId; chosenSummon?: number; desiredCoin?: import('../../ids').CoinDefId }
 ): ResolveResult => {
   const slotState = input.slots[Number(slot)];
   if (slotState === undefined) throw new Error('slot does not exist');
@@ -635,6 +741,7 @@ export const resolveFlip = (
       return mechanic === undefined ? [] : [mechanic];
     })
   );
+  const usedPreserved = placed.some((coin) => input.coins[Number(coin)]?.preserved === true);
   let returnFirstCoinToHand = false;
   let retrievalCoin: CoinUid | undefined;
   const residualCoin = !input.player.residualChargeUsed && passiveMechanics.has('residualCharge')
@@ -659,6 +766,10 @@ export const resolveFlip = (
     events.push({ type: 'coinsDiscarded', coins: [...discarded], reason: 'skillCost' });
     let state = {
       ...finishedState,
+      coins: Object.fromEntries(Object.entries(finishedState.coins).map(([key, coin]) => [
+        key,
+        placed.includes(coin.uid) ? { ...coin, preserved: false } : coin
+      ])),
       player: {
         ...finishedState.player,
         retrievalHabitUsed: finishedState.player.retrievalHabitUsed || retrievalCoin !== undefined,
@@ -703,8 +814,16 @@ export const resolveFlip = (
 
   const coinElements = placed.map((coin) => {
     const instance = state.coins[Number(coin)];
-    return instance === undefined ? [] : effectiveElements(instance, db);
+    if (instance === undefined) return [];
+    const elements = effectiveElements(instance, db);
+    const def = db.coins[String(instance.defId)];
+    return skill.treatPreservedBasicAsElement !== undefined && instance.preserved === true && def?.element === null
+      ? [...new Set([...elements, skill.treatPreservedBasicAsElement])]
+      : elements;
   });
+  const usedPreservedCold = placed.some((coin, index) =>
+    state.coins[Number(coin)]?.preserved === true && coinElements[index]?.includes('frost') === true
+  );
   const applyResolution = (
     resolutionFaces: Face[],
     resolutionElements: readonly (readonly Element[])[],
@@ -716,7 +835,37 @@ export const resolveFlip = (
     const tailsCount = resolutionFaces.filter((face) => face === 'tails').length;
     const headsCount = resolutionFaces.length - tailsCount;
     const resolutionSkill = includeBase ? effectSkill : { ...effectSkill, base: [] };
-    const effects = collectEffects(resolutionSkill, resolutionFaces, resolutionElements, includeBase && input.player.overheat);
+    let effects = collectEffects(resolutionSkill, resolutionFaces, resolutionElements, includeBase && input.player.overheat);
+    if (includeBase && usedPreserved) effects.push(...(skill.preservedBonus ?? []));
+    if (includeBase && usedPreserved && !state.player.maturedHandUsedThisTurn && passiveMechanics.has('maturedHand')) {
+      effects = applyMaturedHandBonus(effects);
+      state = { ...state, player: { ...state.player, maturedHandUsedThisTurn: true } };
+    }
+    if (includeBase && usedPreservedCold && !state.player.coldHandsUsedThisTurn && passiveMechanics.has('coldHands')) {
+      const coldTarget = currentEnemyTargetForPassive(state, skillTarget);
+      if (coldTarget !== undefined) {
+        state = applyEffectAtom(state, { kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }, coldTarget, db, events);
+      }
+      state = { ...state, player: { ...state.player, coldHandsUsedThisTurn: true } };
+    }
+    if (includeBase && skill.tags.includes('attack') && skillTarget.type === 'enemy' &&
+      statusTurns(state.enemies[skillTarget.index]?.statuses ?? {}, 'frostbite') > 0 &&
+      !state.player.frostCompoundUsedThisTurn && passiveMechanics.has('frostCompound')) {
+      effects = applyPrimaryDamageBonus(effects, 3);
+      state = { ...state, player: { ...state.player, frostCompoundUsedThisTurn: true } };
+    }
+    const sawHeads = state.player.headsSeenThisTurn || resolutionFaces.includes('heads');
+    const sawTails = state.player.tailsSeenThisTurn || resolutionFaces.includes('tails');
+    if (includeBase && resolutionFaces.includes('tails') && !state.player.smallChangeInsuranceUsed && passiveMechanics.has('smallChangeInsurance')) {
+      effects.push({ kind: 'block', amount: 2 });
+      state = { ...state, player: { ...state.player, smallChangeInsuranceUsed: true } };
+    }
+    if (includeBase && sawHeads && sawTails && !state.player.doubleEntryUsedThisTurn && passiveMechanics.has('doubleEntry')) {
+      const basic = Object.values(db.coins).find((coin) => coin.element === null)?.id;
+      if (basic !== undefined) effects.push({ kind: 'drawSpecific', coins: [basic], count: 1 });
+      state = { ...state, player: { ...state.player, doubleEntryUsedThisTurn: true } };
+    }
+    if (includeBase) state = { ...state, player: { ...state.player, headsSeenThisTurn: sawHeads, tailsSeenThisTurn: sawTails } };
     if (includeBase && skill.tags.includes('attack') && state.player.nextAttackDamageBonus > 0) {
       const primaryDamage = effects.find((atom) => atom.kind === 'damage');
       if (primaryDamage !== undefined && primaryDamage.kind === 'damage') {
@@ -772,6 +921,7 @@ export const resolveFlip = (
           turnTriggerScope, tailsCount, headsCount, isReuse,
           chosenEquipment: summonChoice?.chosenEquipment,
           chosenSummon: summonChoice?.chosenSummon,
+          desiredCoin: summonChoice?.desiredCoin,
           sourceSlot: slot
         });
         if (state.phase === 'victory' || state.phase === 'defeat') return false;

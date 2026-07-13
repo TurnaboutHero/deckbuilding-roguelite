@@ -273,6 +273,281 @@ const useConsumeAt = (
 const combat = (seed: string, character = 'warrior'): CombatState =>
   createCombat({ character: character as never, enemies: ['raider' as never] }, contentDb, seed);
 
+describe('P11 Cold Rogue design sync', () => {
+  const coldCombat = (seed: string, equippedSkills?: string[], passiveIds: string[] = []) =>
+    createCombat({
+      character: 'frost-knight' as never,
+      enemies: ['raider' as never],
+      equippedSkills: equippedSkills?.map(skillId),
+      passives: passiveIds as never[]
+    }, contentDb, seed);
+
+  it('ships 냉기 도적 starters, preservation trait, all skills, passives, and upgrades', () => {
+    expect(characters['frost-knight']).toMatchObject({
+      name: '냉기 도적', maxHp: 70,
+      trait: { name: '이중 주머니', mechanic: 'preserveHand' }
+    });
+    expect(characters['frost-knight'].startingSkills.map(String)).toEqual(['slash', 'guard', 'ice-claw', 'ice-sleight']);
+    expect(Object.values(skills).filter((entry) => String((entry as SkillDef).exclusiveTo) === 'frost-knight')).toHaveLength(12);
+    expect(Object.values(passives).filter((entry) => String(entry.exclusiveTo) === 'frost-knight')).toHaveLength(8);
+    const claw = deriveUpgradedSkill(skills['ice-claw']!) as FlipSkillDef;
+    expect(claw.cost).toBe(1);
+    expect(claw.heads?.effects).toEqual([{ kind: 'damage', amount: 5 }]);
+    const pouch = deriveUpgradedSkill(skills['emergency-ice-pouch']!) as FlipSkillDef;
+    expect(skills['emergency-ice-pouch']).toMatchObject({ oncePerCombat: true, cooldown: 3 });
+    expect(pouch).toMatchObject({ cost: 2, cooldown: 3, oncePerCombat: undefined });
+    expect((deriveUpgradedSkill(skills['hidden-inner-pocket']!) as FlipSkillDef).cost).toBe(0);
+    expect((deriveUpgradedSkill(skills['freeze-dry']!) as ConsumeSkillDef).consume.count).toBe(2);
+  });
+
+  it('preserves one selected coin across cleanup and clears the flag after use', () => {
+    let state = coldCombat('p11-preserve', ['slash']);
+    const kept = state.zones.hand[2]!;
+    const ended = step(state, { type: 'endTurn', preserve: [kept] }, contentDb);
+    if (!ended.ok) throw new Error(ended.error);
+    expect(ended.state.zones.hand).toContain(kept);
+    expect(ended.state.coins[Number(kept)]?.preserved).toBe(true);
+    state = withFaces(ended.state, ['heads']);
+    const used = useFlip(state, [kept], 0);
+    expect(used.state.coins[Number(kept)]?.preserved).toBe(false);
+    expect(used.state.zones.discard).toContain(kept);
+  });
+
+  it('keeps a previously preserved placed coin within the end-turn capacity', () => {
+    let state = coldCombat('p11-preserved-placed', ['slash']);
+    const kept = state.zones.hand[0]!;
+    state = {
+      ...state,
+      player: { ...state.player, additionalPreserveThisTurn: 2 },
+      coins: { ...state.coins, [Number(kept)]: { ...state.coins[Number(kept)]!, preserved: true } }
+    };
+    const placed = step(state, { type: 'placeCoin', coin: kept, slot: slotId(0) }, contentDb);
+    if (!placed.ok) throw new Error(placed.error);
+    const command = legalCommands(placed.state, contentDb).find((candidate) => candidate.type === 'endTurn');
+    expect(command).toMatchObject({ type: 'endTurn' });
+    if (command?.type !== 'endTurn') throw new Error('missing end-turn command');
+    expect(command.preserve).toContain(kept);
+    expect(command.preserve).toHaveLength(3);
+    const ended = step(placed.state, command, contentDb);
+    expect(ended.ok).toBe(true);
+  });
+
+  it('draws only the desired available type and no-ops when unavailable', () => {
+    let state = withEquippedSkill(coldCombat('p11-desired'), 'frost-mark');
+    const fuel = state.zones.hand[0]!;
+    const frostInDraw = state.zones.draw.find((uid) => String(state.coins[Number(uid)]?.defId) === 'frost')!;
+    let placed = step(state, { type: 'placeCoin', coin: fuel, slot: slotId(0) }, contentDb);
+    if (!placed.ok) throw new Error(placed.error);
+    let used = step(withFaces(placed.state, ['tails']), { type: 'useFlipSkill', slot: slotId(0), target: 0, desiredCoin: coinId('frost') }, contentDb);
+    if (!used.ok) throw new Error(used.error);
+    expect(used.state.zones.hand).toContain(frostInDraw);
+
+    state = withEquippedSkill(coldCombat('p11-desired-none'), 'frost-mark');
+    state = { ...state, zones: { ...state.zones, draw: state.zones.draw.filter((uid) => String(state.coins[Number(uid)]?.defId) !== 'frost') } };
+    placed = step(state, { type: 'placeCoin', coin: state.zones.hand[0]!, slot: slotId(0) }, contentDb);
+    if (!placed.ok) throw new Error(placed.error);
+    const handBefore = placed.state.zones.hand.length;
+    used = step(withFaces(placed.state, ['tails']), { type: 'useFlipSkill', slot: slotId(0), target: 0, desiredCoin: coinId('frost') }, contentDb);
+    if (!used.ok) throw new Error(used.error);
+    expect(used.state.zones.hand).toHaveLength(handBefore);
+  });
+
+  it('auto-preserves a drawn loot coin without granting another preserve slot', () => {
+    let state = withEquippedSkill(coldCombat('p11-preserved-loot', ['loot-swap']), 'loot-swap');
+    state = withHandDefs(state, ['frost']);
+    const beforeHand = new Set(state.zones.hand);
+    const swapped = useConsumeAt(state, 0, [state.zones.hand[0]!]);
+    const drawn = swapped.state.zones.hand.find((coin) => !beforeHand.has(coin));
+    expect(drawn).toBeDefined();
+    if (drawn === undefined) throw new Error('missing auto-preserved drawn coin');
+    expect(swapped.state.coins[Number(drawn)]?.preserved).toBe(true);
+    expect(swapped.state.player.additionalPreserveThisTurn).toBe(0);
+
+    const endTurn = legalCommands(swapped.state, contentDb).find((command) => command.type === 'endTurn');
+    expect(endTurn).toMatchObject({ type: 'endTurn' });
+    if (endTurn?.type !== 'endTurn') throw new Error('missing end-turn command');
+    expect(endTurn.preserve).toContain(drawn);
+    expect(endTurn.preserve).toHaveLength(2); // 자동 보존 장물 + 이중 주머니의 새 선택 1개
+  });
+
+  it('preserves a chosen inner-pocket coin without granting another preserve slot', () => {
+    const state = withEquippedSkill(coldCombat('p11-hidden-pocket', ['hidden-inner-pocket']), 'hidden-inner-pocket');
+    const fuel = state.zones.hand[0]!;
+    const chosen = state.zones.hand[1]!;
+    const hidden = useFlip(withFaces(state, ['tails']), [fuel], 0, [chosen]);
+    expect(hidden.state.coins[Number(chosen)]?.preserved).toBe(true);
+    expect(hidden.state.player.additionalPreserveThisTurn).toBe(0);
+    const endTurn = legalCommands(hidden.state, contentDb).find((command) => command.type === 'endTurn');
+    expect(endTurn).toMatchObject({ type: 'endTurn' });
+    if (endTurn?.type !== 'endTurn') throw new Error('missing end-turn command');
+    expect(endTurn.preserve).toContain(chosen);
+    expect(endTurn.preserve).toHaveLength(2); // 안주머니 보존 + 이중 주머니의 새 선택 1개
+  });
+
+  it('keeps direct and drawn preservation at the global three-coin cap', () => {
+    let pocket = withEquippedSkill(
+      coldCombat('p11-hidden-pocket-full', ['hidden-inner-pocket']),
+      'hidden-inner-pocket'
+    );
+    pocket = withHandDefs(pocket, ['basic', 'basic', 'basic', 'basic', 'basic']);
+    const locked = pocket.zones.hand.slice(0, 3);
+    pocket = {
+      ...pocket,
+      coins: Object.fromEntries(Object.entries(pocket.coins).map(([key, value]) => [
+        key,
+        locked.includes(value.uid) ? { ...value, preserved: true } : value
+      ]))
+    };
+    const pocketCost = pocket.zones.hand[3]!;
+    const pocketChoice = pocket.zones.hand[4]!;
+    const hidden = useFlip(withFaces(pocket, ['tails']), [pocketCost], 0, [pocketChoice]);
+    expect(Object.values(hidden.state.coins).filter((coin) => coin.preserved === true)).toHaveLength(3);
+    expect(hidden.state.coins[Number(pocketChoice)]?.preserved).not.toBe(true);
+
+    let swap = withEquippedSkill(coldCombat('p11-loot-swap-full', ['loot-swap']), 'loot-swap');
+    swap = withHandDefs(swap, ['frost', 'frost', 'frost', 'frost']);
+    const swapLocked = swap.zones.hand.slice(0, 3);
+    swap = {
+      ...swap,
+      coins: Object.fromEntries(Object.entries(swap.coins).map(([key, value]) => [
+        key,
+        swapLocked.includes(value.uid) ? { ...value, preserved: true } : value
+      ]))
+    };
+    const beforeHand = new Set(swap.zones.hand);
+    const swapped = useConsumeAt(swap, 0, [swap.zones.hand[3]!]);
+    const drawn = swapped.state.zones.hand.find((coin) => !beforeHand.has(coin));
+    expect(drawn).toBeDefined();
+    expect(Object.values(swapped.state.coins).filter((coin) => coin.preserved === true)).toHaveLength(3);
+    if (drawn !== undefined)
+      expect(swapped.state.coins[Number(drawn)]?.preserved).not.toBe(true);
+  });
+
+  it('uses actual cold coins for variable/all consume and rejects granted basics as payment', () => {
+    let state = withEquippedSkills(coldCombat('p11-consume', ['freezing-incision', 'freeze-dry']), ['freezing-incision', 'freeze-dry']);
+    state = withHandDefs(state, ['frost', 'frost', 'frost', 'frost', 'basic']);
+    const grantedBasic = state.zones.hand[4]!;
+    state = { ...state, coins: { ...state.coins, [Number(grantedBasic)]: { ...state.coins[Number(grantedBasic)]!, grants: ['frost'] } } };
+    const incision = useConsumeAt(state, 0, state.zones.hand.slice(0, 3), 0);
+    expect(incision.state.enemies[0]?.hp).toBe(55); // 5 + 3×5
+    expect(step(incision.state, { type: 'useConsumeSkill', slot: slotId(1), coins: [grantedBasic], target: 0 }, contentDb).ok).toBe(false);
+
+    state = withEquippedSkill(coldCombat('p11-all', ['freeze-dry']), 'freeze-dry');
+    state = withHandDefs(state, ['frost', 'frost', 'frost', 'frost', 'basic']);
+    state = { ...state, enemies: state.enemies.map((enemy) => ({ ...enemy, statuses: { frostbite: { kind: 'duration', turns: 2 } } })) };
+    const all = useConsumeAt(state, 0, state.zones.hand.slice(0, 4), 0);
+    expect(all.state.enemies[0]?.hp).toBe(35); // 4×(8+2)
+  });
+
+  it('caps additional preservation at two and total preserved coins at three', () => {
+    const state = { ...coldCombat('p11-cap'), player: { ...coldCombat('p11-cap').player, additionalPreserveThisTurn: 2 } };
+    const three = state.zones.hand.slice(0, 3);
+    expect(step(state, { type: 'endTurn', preserve: three }, contentDb).ok).toBe(true);
+    expect(step(state, { type: 'endTurn', preserve: state.zones.hand.slice(0, 4) }, contentDb)).toMatchObject({ ok: false, error: 'preserved coin count exceeds capacity' });
+  });
+
+  it('applies Matured Hand once per damage/block axis instead of once per atom', () => {
+    let attack = withEquippedSkill(coldCombat('p11-matured-attack', ['preserved-pickpocket'], ['matured-hand']), 'preserved-pickpocket');
+    const attackCoin = attack.zones.hand[0]!;
+    attack = {
+      ...attack,
+      coins: { ...attack.coins, [Number(attackCoin)]: { ...attack.coins[Number(attackCoin)]!, preserved: true } }
+    };
+    const hpBefore = attack.enemies[0]!.hp;
+    const attacked = useFlip(withFaces(attack, ['heads']), [attackCoin], 0);
+    expect(hpBefore - attacked.state.enemies[0]!.hp).toBe(8); // 4 + 앞면 2 + 숙성된 패 2
+
+    let defense = withEquippedSkill(coldCombat('p11-matured-defense', ['loot-swap'], ['matured-hand']), 'loot-swap');
+    defense = withHandDefs(defense, ['frost']);
+    const defenseCoin = defense.zones.hand[0]!;
+    defense = {
+      ...defense,
+      coins: { ...defense.coins, [Number(defenseCoin)]: { ...defense.coins[Number(defenseCoin)]!, preserved: true } }
+    };
+    const defended = useConsumeAt(defense, 0, [defenseCoin]);
+    expect(defended.state.player.block).toBe(10); // 5 + 보존 보너스 3 + 숙성된 패 2
+  });
+
+  it('routes Cold Hands from self-target flip and consume skills to the current enemy', () => {
+    let flip = withEquippedSkill(coldCombat('p11-cold-hands-flip', ['emergency-ice-pouch'], ['cold-hands']), 'emergency-ice-pouch');
+    flip = withHandDefs(flip, ['frost']);
+    const flipCoin = flip.zones.hand[0]!;
+    flip = {
+      ...flip,
+      lastTargetedEnemy: 0,
+      coins: { ...flip.coins, [Number(flipCoin)]: { ...flip.coins[Number(flipCoin)]!, preserved: true } }
+    };
+    const flipped = useFlip(withFaces(flip, ['tails']), [flipCoin], 0);
+    expect(statusTurns(flipped.state.enemies[0]!.statuses, 'frostbite')).toBe(1);
+    expect(statusTurns(flipped.state.player.statuses, 'frostbite')).toBe(0);
+
+    let consume = withEquippedSkill(coldCombat('p11-cold-hands-consume', ['loot-swap'], ['cold-hands']), 'loot-swap');
+    consume = withHandDefs(consume, ['frost']);
+    const consumeCoin = consume.zones.hand[0]!;
+    consume = {
+      ...consume,
+      lastTargetedEnemy: 0,
+      coins: { ...consume.coins, [Number(consumeCoin)]: { ...consume.coins[Number(consumeCoin)]!, preserved: true } }
+    };
+    const consumed = useConsumeAt(consume, 0, [consumeCoin]);
+    expect(statusTurns(consumed.state.enemies[0]!.statuses, 'frostbite')).toBe(1);
+    expect(statusTurns(consumed.state.player.statuses, 'frostbite')).toBe(0);
+  });
+
+  it('treats a preserved basic as cold for flip passives and applies Cold Hands before Frost Compound', () => {
+    let flip = withEquippedSkill(
+      coldCombat('p11-preserved-basic-cold', ['preserved-pickpocket'], ['cold-hands', 'frost-compound']),
+      'preserved-pickpocket'
+    );
+    flip = withHandDefs(flip, ['basic']);
+    const basic = flip.zones.hand[0]!;
+    flip = {
+      ...flip,
+      coins: { ...flip.coins, [Number(basic)]: { ...flip.coins[Number(basic)]!, preserved: true } }
+    };
+    const hpBefore = flip.enemies[0]!.hp;
+    const flipped = useFlip(withFaces(flip, ['tails']), [basic], 0);
+    expect(statusTurns(flipped.state.enemies[0]!.statuses, 'frostbite')).toBe(1);
+    expect(hpBefore - flipped.state.enemies[0]!.hp).toBe(7); // 기본 4 + 차가운 손버릇이 먼저 만든 동상으로 서리 복리 +3
+
+    let consume = withEquippedSkill(
+      coldCombat('p11-consume-passive-order', ['freezing-incision'], ['cold-hands', 'frost-compound']),
+      'freezing-incision'
+    );
+    consume = withHandDefs(consume, ['frost']);
+    const frost = consume.zones.hand[0]!;
+    consume = {
+      ...consume,
+      coins: { ...consume.coins, [Number(frost)]: { ...consume.coins[Number(frost)]!, preserved: true } }
+    };
+    const consumeHpBefore = consume.enemies[0]!.hp;
+    const consumed = useConsumeAt(consume, 0, [frost], 0);
+    expect(statusTurns(consumed.state.enemies[0]!.statuses, 'frostbite')).toBe(1);
+    expect(consumeHpBefore - consumed.state.enemies[0]!.hp).toBe(13); // 기본 5 + 소비 5 + 서리 복리 3
+  });
+
+  it('adds Frost Compound to the primary attack hit instead of creating another hit', () => {
+    let flip = withEquippedSkill(coldCombat('p11-compound-flip', ['ice-claw'], ['frost-compound']), 'ice-claw');
+    flip = {
+      ...flip,
+      enemies: flip.enemies.map((enemy) => ({ ...enemy, statuses: { frostbite: { kind: 'duration', turns: 1 } } }))
+    };
+    const flipped = useFlip(withFaces(flip, ['heads', 'tails']), flip.zones.hand.slice(0, 2), 0);
+    const flipDamage = flipped.events.filter((event) => event.type === 'damageDealt');
+    expect(flipDamage.map((event) => event.amount)).toEqual([11, 2]); // 기본 8+복리 3, 기존 앞면 타격 2
+
+    let consume = withEquippedSkill(coldCombat('p11-compound-consume', ['freezing-incision'], ['frost-compound']), 'freezing-incision');
+    consume = withHandDefs(consume, ['frost', 'frost', 'frost']);
+    consume = {
+      ...consume,
+      enemies: consume.enemies.map((enemy) => ({ ...enemy, statuses: { frostbite: { kind: 'duration', turns: 1 } } }))
+    };
+    const consumed = useConsumeAt(consume, 0, consume.zones.hand.slice(0, 3), 0);
+    const consumeDamage = consumed.events.filter((event) => event.type === 'damageDealt');
+    expect(consumeDamage.map((event) => event.amount)).toEqual([23]); // 5+냉기 3×5+복리 3
+  });
+});
+
 describe('P10 Fire Warrior and Arcanist design sync', () => {
   const combatWith = (seed: string, character: string, equippedSkills: string[], passiveIds: string[]) =>
     createCombat(
@@ -697,8 +972,8 @@ describe('P3.3 heart-of-flame interaction regressions', () => {
 describe('P3.4 shipped content goldens', () => {
   it('ships the p7 version with legacy allowlist', () => {
     // P7: 쿨다운 행동 모델·8슬롯·양면 코인·과열 출하에 결속된 버전 승격, 직전 p6는 레거시로
-    expect(CONTENT_VERSION).toBe('1.4.0-p10');
-    expect(LEGACY_CONTENT_VERSIONS[0]).toBe('1.3.0-p9');
+    expect(CONTENT_VERSION).toBe('1.5.0-p11');
+    expect(LEGACY_CONTENT_VERSIONS[0]).toBe('1.4.0-p10');
     expect(LEGACY_CONTENT_VERSIONS).toContain('1.0.0-rc.1');
     expect(LEGACY_CONTENT_VERSIONS).toContain('0.9.0-p4');
     expect(LEGACY_CONTENT_VERSIONS).toContain('0.8.0-p3.4');
@@ -742,13 +1017,17 @@ describe('P3.4 shipped content goldens', () => {
     expect(frostKnight.maxHp).toBe(70);
     expect(frostKnight.startingBag.filter((coin) => String(coin) === 'frost')).toHaveLength(2);
     expect(frostKnight.startingSkills.map(String)).toEqual([
-      'slash', 'guard', 'frost-slash', 'glacial-wall'
+      'slash', 'guard', 'ice-claw', 'ice-sleight'
     ]);
   });
 
   it('keeps every new skill exclusive to its character and lint-clean', () => {
     const sorcererSkills = ['spark-strike', 'chain-surge', 'static-field', 'volt-lash'];
-    const frostSkills = ['frost-slash', 'glacial-wall', 'chilling-field', 'glacier-strike'];
+    const frostSkills = [
+      'ice-claw', 'ice-sleight', 'frost-mark', 'frost-fur-cloak', 'freezing-incision',
+      'emergency-ice-pouch', 'freeze-dry', 'preserved-pickpocket', 'hidden-inner-pocket',
+      'trackless-raid', 'loot-swap', 'subzero-perfect-crime'
+    ];
     for (const skill of sorcererSkills) {
       expect(String(contentDb.skills[skill]?.exclusiveTo)).toBe('sorcerer');
     }
@@ -783,7 +1062,7 @@ describe('P4.2 provisional enemy content goldens', () => {
   // D2 조우 대역 산술: goblin+ghoul=70(2마리 65~85), thief+goblin=58(감전 압박 예외),
   // ghoul+goblin+slime=86(3마리 75~95). 수치 전부 balance-provisional.
   it('pins the six enemy definitions — P10에서도 적 6종 정의는 불변이어야 한다', () => {
-    expect(CONTENT_VERSION).toBe('1.4.0-p10');
+    expect(CONTENT_VERSION).toBe('1.5.0-p11');
     expect(enemies.goblin).toEqual({
       id: 'goblin',
       name: '고블린',
@@ -924,7 +1203,7 @@ describe('P3.4 exclusive reward reachability (dead-option gate)', () => {
   // 지배/사장 감사가 공회전한다 — 캐릭터마다 비시작 전용 보상 스킬 ≥1을 보장
   it.each([
     ['sorcerer', 'overload'],
-    ['frost-knight', 'winters-grasp'],
+    ['frost-knight', 'frost-mark'],
     ['guardian', 'aegis-surge']
   ])('offers %s at least one non-starting exclusive skill (%s)', (character, expected) => {
     const def = contentDb.characters[character];
@@ -951,13 +1230,13 @@ describe('P3.4 reward-skill definitions and resolution goldens', () => {
       ],
       heads: { mode: 'any', effects: [{ kind: 'damage', amount: 4 }] }
     });
-    expect(skills['winters-grasp']).toMatchObject({
-      name: '동장군',
+    expect(skills['frost-mark']).toMatchObject({
+      name: '서리 표식',
       exclusiveTo: 'frost-knight',
       cost: 1,
       base: [
-        { kind: 'damage', amount: 4 },
-        { kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }
+        { kind: 'damage', amount: 3 },
+        { kind: 'drawSpecific', coins: ['basic', 'frost'], count: 1 }
       ]
     });
     expect(skills['aegis-surge']).toMatchObject({
@@ -1023,7 +1302,7 @@ describe('P3.4 hostile coin proc rerouting regressions', () => {
 
 describe('M5 shipped content', () => {
   it('ships the M5 version, mana coin, skills, and fixed enemy definitions', () => {
-    expect(CONTENT_VERSION).toBe('1.4.0-p10');
+    expect(CONTENT_VERSION).toBe('1.5.0-p11');
     // P7 D4 — mana 앞면 2→1 하향 + 뒷면 2 신설 (v1.3 표 우선)
     expect(coins.mana).toEqual({
       id: coinId('mana'),
@@ -1451,7 +1730,7 @@ describe('P6 shipped content goldens (1.1.0-p6)', () => {
       expect(passive.description.length).toBeGreaterThan(0);
       expect(passive.price).toBeGreaterThan(0);
       expect(['combatStart', 'turnStart']).toContain(passive.hook);
-      expect(['warrior', 'arcanist', 'sorcerer']).toContain(String(passive.exclusiveTo));
+      expect(['warrior', 'arcanist', 'sorcerer', 'frost-knight']).toContain(String(passive.exclusiveTo));
     }
   });
 

@@ -1217,10 +1217,6 @@ const winCurrentCombat = async (page) => {
   const main = () => page.locator("main");
   const bag = async () =>
     (await main().getAttribute("data-bag"))?.split(",").filter(Boolean) ?? [];
-  const equipped = async () =>
-    (await main().getAttribute("data-equipped-skills"))
-      ?.split(",")
-      .filter(Boolean) ?? [];
   const waitForOpaqueSkillCards = async () => {
     const cardsAreStable = () => {
       const row = document.querySelector(".skill-row");
@@ -1532,7 +1528,7 @@ const winCurrentCombat = async (page) => {
   // 경제 보존: 골드 105 = 완료 노드(전투 35 + 엘리트 70) 총수입과 일치.
   const injectBase = {
     version: 7,
-    contentVersion: "1.4.0-p10",
+    contentVersion: "1.5.0-p11",
     runSeed: "S12-INJECT",
     character: "warrior",
     currentHp: 63,
@@ -2575,6 +2571,7 @@ const winCurrentCombat = async (page) => {
         (await page.locator(".rejection-chip").count()) === 1,
       JSON.stringify(await handCoinReport(page)),
     );
+    await page.locator(".skill-card").first().locator(".card-title").focus();
     await page.keyboard.press("Enter");
     await waitForCombatOrBoundary(page);
     const afterGrant = await handCoinReport(page);
@@ -2640,7 +2637,7 @@ const winCurrentCombat = async (page) => {
   });
   // P6 D6: 마도기사(arcanist) 추가로 5종 — 데이터 주도 노출의 의도 변경
   check(
-    "S21 선택 화면 캐릭터 카드 5종 (화염 격투가·수호자·술사·냉기 기사·마도기사)",
+    "S21 선택 화면 캐릭터 카드 5종 (화염 격투가·수호자·술사·냉기 도적·마도기사)",
     (await page.locator(".character-card").count()) === 5 &&
       (await page.locator('[data-testid="character-select-sorcerer"]').count()) === 1 &&
       (await page.locator('[data-testid="character-select-frost-knight"]').count()) === 1 &&
@@ -2984,10 +2981,10 @@ const winCurrentCombat = async (page) => {
 
 // ---------- 시나리오 24: P3.4 신규 캐릭터 부팅·전용 스킬 스모크 ----------
 {
-  for (const [character, skillId, skillName, coinClass, statusName, chipSelector] of [
-    // 정전기장·한파: base가 상태를 확정 부여 — 면 결과 무관한 결정론 검증
-    ["sorcerer", "static-field", "정전기장", "lightning", "감전", ".shock-chip"],
-    ["frost-knight", "chilling-field", "한파", "frost", "동상", ".frost-chip"],
+  for (const [character, skillId, skillName, skillCost, coinClass, statusName, chipSelector] of [
+    // 정전기장·얼음 발톱: base가 상태를 확정 부여 — 면 결과 무관한 결정론 검증
+    ["sorcerer", "static-field", "정전기장", 1, "lightning", "감전", ".shock-chip"],
+    ["frost-knight", "ice-claw", "얼음 발톱", 2, "frost", "동상", ".frost-chip"],
   ]) {
     const { page, errors } = await boot(undefined, {
       url: urlWith({ character, skills: `${skillId},slash,guard` }),
@@ -3021,9 +3018,11 @@ const winCurrentCombat = async (page) => {
       (await page.locator(".pouch-pop").count()) === 0,
     );
     // 전용 공격 스킬 사용 → 상태 부여 확인 (앞면이면 상태, 뒷면이어도 크래시 0)
-    await page.locator(".hand-tray .coin").first().click();
     const card = page.locator(".skill-card", { hasText: skillName }).first();
-    await card.locator(".socket").first().click();
+    for (let socketIndex = 0; socketIndex < skillCost; socketIndex += 1) {
+      await page.locator(".hand-tray .coin").first().click();
+      await card.locator(".socket").nth(socketIndex).click();
+    }
     await card.locator(".card-title").click();
     await page.waitForFunction(
       () => document.querySelector(".end-turn:not(:disabled)") !== null,
@@ -3058,6 +3057,45 @@ const winCurrentCombat = async (page) => {
       ticket.includes(statusName),
       ticket.replace(/\n/g, " | ").slice(0, 100),
     );
+    if (character === "frost-knight") {
+      await page.locator(".end-turn").click();
+      check(
+        "S24 냉기 도적 턴 종료 1차 클릭 → 보존 선택 모드",
+        (await page.locator('[role="group"][aria-label="턴 종료 동전 보존 선택"]').count()) === 1 &&
+          (await page.locator(".end-turn").innerText()).includes("보존 확정"),
+      );
+      const candidate = page.locator(".hand-tray .coin").last();
+      await candidate.focus();
+      await page.keyboard.press("Enter");
+      check(
+        "S24 보존 후보 키보드 토글은 확정하지 않음",
+        (await candidate.getAttribute("aria-pressed")) === "true" &&
+          (await page.locator(".preserve-picker").count()) === 1,
+      );
+      await page.keyboard.press("Enter");
+      check(
+        "S24 보존 후보 키보드 재토글",
+        (await candidate.getAttribute("aria-pressed")) === "false" &&
+          (await page.locator(".preserve-picker").count()) === 1,
+      );
+      await candidate.click();
+      await page.keyboard.press("Escape");
+      check(
+        "S24 Escape 보존 선택 취소",
+        (await page.locator(".preserve-picker").count()) === 0 &&
+          (await page.locator(".end-turn").innerText()).includes("턴 종료"),
+      );
+      await page.locator(".end-turn").click();
+      await page.locator(".hand-tray .coin").last().click();
+      await page.locator(".end-turn").focus();
+      await page.keyboard.press("Enter");
+      await waitForCombatOrBoundary(page, 30000);
+      check(
+        "S24 Enter 보존 확정·다음 턴 표식 유지",
+        (await page.locator(".preserve-picker").count()) === 0 &&
+          (await page.locator(".hand-tray .coin.preserved").count()) === 1,
+      );
+    }
     check(`S24 ${character} 에러 0`, errors.length === 0, errors.join(" | "));
     await page.close();
   }
@@ -3068,7 +3106,7 @@ const winCurrentCombat = async (page) => {
 // 정식 콘텐츠 무접촉). 가격·경계 진실은 코어/저장 검증기가 소유 — 여기선 DOM 반영만 확인.
 // P6: 상점 패시브 1슬롯 진열·구매 커버리지 추가.
 {
-  const CONTENT_VERSION_PIN = "1.4.0-p10"; // 버전 승격 시 골든처럼 함께 재고정
+  const CONTENT_VERSION_PIN = "1.5.0-p11"; // 버전 승격 시 골든처럼 함께 재고정
   const WARRIOR_SKILLS = [
     "jab",
     "fist-guard",
@@ -3310,6 +3348,152 @@ const winCurrentCombat = async (page) => {
     check("S25 갈림길 에러 0", errors.length === 0, errors.join(" | "));
     await context.close();
   }
+
+  // C. 냉기 가변 소비 — 수동 저장 주입 대신 정식 시작 주머니와 스킬로
+  // 실제 냉기 4개를 만든다. COLD-UI-6은 시작 손패에 냉기 2개가 있는 결정론 seed다.
+  const coldFuelUrl = urlWith({
+    seed: "COLD-UI-6",
+    character: "frost-knight",
+    encounter: "raider",
+    skills:
+      "emergency-ice-pouch,freezing-incision,freeze-dry,loot-swap,hidden-inner-pocket,slash,guard,ice-claw",
+  });
+  {
+    const { page, errors } = await boot(
+      { width: 1280, height: 800 },
+      { url: coldFuelUrl, fast: true },
+    );
+    const icePouch = page
+      .locator(".skill-card", { hasText: "비상용 얼음주머니" })
+      .first();
+    await page
+      .locator(
+        ".hand-tray .coin:not(.fire):not(.mana):not(.frost):not(.lightning):not(.granted-fire)",
+      )
+      .first()
+      .click();
+    await icePouch.locator(".socket").first().click();
+    await icePouch.locator(".card-title").click();
+    await resolveSkillAnimation(page);
+    const actualFrost = await page.locator(".hand-tray .coin.frost").count();
+    check(
+      "S25 정식 냉기 주머니로 실제 냉기 4개 확보",
+      actualFrost === 4,
+      `actualFrost=${actualFrost}`,
+    );
+
+    const incision = page.locator(".skill-card", { hasText: "빙점 절개" }).first();
+    await incision.locator(".card-title").click();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".hand-tray .coin.fuel-selected").length === 3,
+    );
+    const incisionCandidate = page
+      .locator(".hand-tray .coin.fuel-selected")
+      .first();
+    await incisionCandidate.focus();
+    await page.keyboard.press("Enter");
+    check(
+      "S25 연료 후보 Enter는 확정 대신 선택 해제",
+      (await page.locator(".hand-tray .coin.fuel-selected").count()) === 2 &&
+        (await incision.locator(".consume-condition.selecting").count()) === 1,
+    );
+    await page.keyboard.press("Enter");
+    check(
+      "S25 연료 후보 Enter 재입력은 선택 복원",
+      (await page.locator(".hand-tray .coin.fuel-selected").count()) === 3,
+    );
+    let condition = (await incision.locator(".consume-condition").innerText()).replace(/\s+/g, " ");
+    check(
+      "S25 냉기 일부 소비 자동 제안 3·속성명 표시",
+      condition.includes("냉기") && condition.includes("3/최대 3"),
+      condition,
+    );
+    await page.locator(".hand-tray .coin.fuel-selected").first().click();
+    await page.locator(".hand-tray .coin.fuel-selected").first().click();
+    condition = (await incision.locator(".consume-condition").innerText()).replace(/\s+/g, " ");
+    check(
+      "S25 냉기 일부 소비 1개만 선택해도 사용 가능",
+      condition.includes("1/최대 3") &&
+        (await incision.locator(".consume-condition.met").count()) === 1,
+      condition,
+    );
+    await page.keyboard.press("Escape");
+
+    const freezeDry = page.locator(".skill-card", { hasText: "동결 건조" }).first();
+    await freezeDry.locator(".card-title").click();
+    await page.waitForFunction(
+      (expected) =>
+        document.querySelectorAll(".hand-tray .coin.fuel-selected").length ===
+        expected,
+      actualFrost,
+    );
+    condition = (await freezeDry.locator(".consume-condition").innerText()).replace(/\s+/g, " ");
+    check(
+      "S25 냉기 전부 소비는 손의 실제 냉기 전부 선택",
+      condition.includes("냉기") &&
+        condition.includes(`${actualFrost}/${actualFrost} 전부`),
+      condition,
+    );
+    await page.screenshot({ path: `${outDir}/p11-cold-fuel-modes.png` });
+    await page.keyboard.press("Escape");
+
+    const lootSwap = page.locator(".skill-card", { hasText: "장물 바꿔치기" }).first();
+    await lootSwap.locator(".card-title").click();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".hand-tray .coin.fuel-selected").length === 1,
+    );
+    condition = (await lootSwap.locator(".consume-condition").innerText()).replace(/\s+/g, " ");
+    check(
+      "S25 보존 보너스가 있는 1개 소비도 연료 선택 모드",
+      condition.includes("냉기") && condition.includes("1/1") &&
+        (await lootSwap.locator(".consume-condition.selecting").count()) === 1,
+      condition,
+    );
+    const exactCandidate = page
+      .locator(".hand-tray .coin.fuel-selected")
+      .first();
+    await exactCandidate.focus();
+    await page.keyboard.press("Enter");
+    check(
+      "S25 1개 연료 후보 Enter도 확정하지 않음",
+      (await page.locator(".hand-tray .coin.fuel-selected").count()) === 0 &&
+        (await lootSwap.locator(".consume-condition.selecting").count()) === 1,
+    );
+    await page.keyboard.press("Enter");
+    check(
+      "S25 1개 연료 후보 Enter 재입력은 선택 복원",
+      (await page.locator(".hand-tray .coin.fuel-selected").count()) === 1,
+    );
+    await page.keyboard.press("Escape");
+
+    const hiddenPocket = page
+      .locator(".skill-card", { hasText: "숨은 안주머니" })
+      .first();
+    await page.locator(".hand-tray .coin").first().click();
+    await hiddenPocket.locator(".socket").first().click();
+    await hiddenPocket.locator(".card-title").click();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".hand-tray .coin.fuel-selected").length === 1,
+    );
+    const choiceCandidate = page
+      .locator(".hand-tray .coin.fuel-selected")
+      .first();
+    await choiceCandidate.focus();
+    await page.keyboard.press("Enter");
+    check(
+      "S25 지정 보존 후보 Enter는 확정 대신 선택 해제",
+      (await page.locator(".hand-tray .coin.fuel-selected").count()) === 0 &&
+        (await page.locator(".hand-tray .coin.fuel-valid").count()) >= 1,
+    );
+    await page.keyboard.press("Enter");
+    check(
+      "S25 지정 보존 후보 Enter 재입력은 선택 복원",
+      (await page.locator(".hand-tray .coin.fuel-selected").count()) === 1,
+    );
+    await page.keyboard.press("Escape");
+    check("S25 냉기 가변 소비 에러 0", errors.length === 0, errors.join(" | "));
+    await page.context().close();
+  }
 }
 
 // ---------- 시나리오 26: P4.4 이벤트 4종 — 저장 주입 결정론 검증 ----------
@@ -3325,7 +3509,7 @@ const winCurrentCombat = async (page) => {
     ];
     const save = {
       version: 7,
-      contentVersion: "1.4.0-p10",
+      contentVersion: "1.5.0-p11",
       runSeed: "S26-EVENT",
       character: "warrior",
       currentHp: 63,
@@ -3534,7 +3718,7 @@ const winCurrentCombat = async (page) => {
     }));
   const mobileSave = (phase, extra = {}) => ({
     version: 7,
-    contentVersion: "1.4.0-p10",
+    contentVersion: "1.5.0-p11",
     runSeed: "S28",
     character: "warrior",
     currentHp: 63,
@@ -3744,7 +3928,7 @@ const winCurrentCombat = async (page) => {
   };
   const kbSave = (phase, extra = {}) => ({
     version: 7,
-    contentVersion: "1.4.0-p10",
+    contentVersion: "1.5.0-p11",
     runSeed: "S29",
     character: "warrior",
     currentHp: 63,
@@ -3964,7 +4148,7 @@ const winCurrentCombat = async (page) => {
 {
   const phaseSave = (phase, extra = {}) => ({
     version: 7,
-    contentVersion: "1.4.0-p10",
+    contentVersion: "1.5.0-p11",
     runSeed: "S31",
     character: "warrior",
     currentHp: 63,
@@ -4261,7 +4445,7 @@ const V7_WARRIOR_SKILLS = [
 ];
 const v6Save = (overrides = {}) => ({
   version: 7,
-  contentVersion: "1.4.0-p10",
+  contentVersion: "1.5.0-p11",
   runSeed: "S33-P6",
   character: "warrior",
   currentHp: 63,

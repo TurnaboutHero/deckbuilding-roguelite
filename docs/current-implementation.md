@@ -1,8 +1,8 @@
 # 현재 구현 스냅샷
 
-> 마지막 동기화: 2026-07-13 · 기준: P10 / PRD v1.3 · 콘텐츠 `1.4.0-p10` · 런 저장 v7
+> 마지막 동기화: 2026-07-13 · 기준: P11 / PRD v1.3 · 콘텐츠 `1.5.0-p11` · 런 저장 v7
 
-이 문서는 **현재 코드가 실제로 수행하는 동작**을 설명한다. 제품 의도와 게임 규칙의 정본은 [`PRD.md`](./PRD.md)와 최신 [`../PRD/P10_CHARACTER_DESIGN_SYNC.md`](../PRD/P10_CHARACTER_DESIGN_SYNC.md)이며, 기반 전투 규칙은 P7·P9 결정 로그에 남긴다. 이 문서는 구현을 읽기 위한 기술 안내다.
+이 문서는 **현재 코드가 실제로 수행하는 동작**을 설명한다. 제품 의도와 게임 규칙의 정본은 [`PRD.md`](./PRD.md)와 최신 [`../PRD/P11_COLD_ROGUE_DESIGN_SYNC.md`](../PRD/P11_COLD_ROGUE_DESIGN_SYNC.md)이며, 기반 전투 규칙은 P7·P9·P10 결정 로그에 남긴다. 이 문서는 구현을 읽기 위한 기술 안내다.
 
 문서 우선순위와 역사 문서 구분은 [`docs/README.md`](./README.md)를 먼저 본다.
 
@@ -10,8 +10,8 @@
 
 | 항목 | 현재 기준 | 코드 정본 |
 |---|---|---|
-| 제품 규칙 | PRD v1.3 + P10 캐릭터 오버라이드 | `docs/PRD.md`, `PRD/P10_CHARACTER_DESIGN_SYNC.md` |
-| 콘텐츠 | `1.4.0-p10` | `packages/content/src/index.ts` |
+| 제품 규칙 | PRD v1.3 + P10/P11 캐릭터 오버라이드 | `docs/PRD.md`, `PRD/P10_CHARACTER_DESIGN_SYNC.md`, `PRD/P11_COLD_ROGUE_DESIGN_SYNC.md` |
+| 콘텐츠 | `1.5.0-p11` | `packages/content/src/index.ts` |
 | 런 저장 | v7 | `packages/core/src/run/types.ts`, `apps/ui/src/run-storage.ts` |
 | 장착 슬롯 | 8칸, 빈 슬롯 `null`, 시작 스킬 4개 | `packages/core/src/combat/state.ts` |
 | 행동 제한 | 전역 사용 횟수 캡 없음, 스킬별 쿨다운 | `packages/core/src/content-types.ts`, `combat/commands.ts` |
@@ -84,7 +84,7 @@ sim     → core + content
 | 3 | 다음 두 턴 동안 봉인된 뒤 가용 |
 | 4 | 다음 세 턴 동안 봉인된 뒤 가용 |
 
-`oncePerCombat`은 별도의 전투당 1회 잠금이다. 콘텐츠에서는 `oncePerCombat`과 `cooldown >= 1`을 함께 선언할 수 없다.
+`oncePerCombat`은 별도의 전투당 1회 잠금이며 활성화 중에는 쿨타임보다 우선한다. 쿨타임을 함께 선언한 스킬은 일회성 제거 후 그 재사용 주기로 복귀한다.
 
 ### 4.4 턴 종료
 
@@ -169,6 +169,19 @@ sim     → core + content
 - 병기 출력은 0~5이며 마나 검 피해와 마나 방패 방어에 공통으로 더한다.
 - 마력 갑주 스킬이 현재 방어를 참조해도 방어는 감소하지 않는다.
 
+## 7.2 P11 냉기 도적 전투 상태
+
+- 고유 특성 `이중 주머니`는 턴 종료 시 손패에서 동전 1개를 골라 보존한다. 보존 동전은 버리지 않으며 실제 사용·소비 시 표식이 해제된다.
+- 스킬로 얻는 추가 보존은 턴당 최대 2개, 동시에 유지할 수 있는 보존 동전은 최대 3개다.
+- 냉기 도적의 턴 종료 버튼은 보존 선택 모드를 먼저 열며, 손패/장전 동전을 클릭하고 버튼 재클릭 또는 Enter로 확정한다. Escape는 선택을 취소한다.
+- 지정 뽑기는 기본·냉기 후보 중 선택한 실제 동전 정의를 뽑을 더미에서 찾는다. 해당 동전이 없으면 더미를 섞거나 대체 동전을 뽑지 않는다.
+- 스킬이 선택하거나 지정 뽑기한 동전 자체를 보존해도 추가 보존 용량은 늘지 않는다. 자동 보존 동전과 `이중 주머니`의 신규 선택 1개는 서로 독립한다.
+- 냉기로 취급되는 보존 기본 동전은 해당 스킬의 플립·속성 상호작용에만 냉기로 계산한다. 냉기 소비 비용은 실제 냉기 동전만 지불할 수 있다.
+- `일부 소비`, `최소 수량 이상 전부 소비`와 소비량·대상 동상 비례 피해는 소비 커맨드가 확정한 실제 냉기 동전 수를 기준으로 계산한다.
+- `차가운 손버릇`의 동상 부여를 먼저 처리한 뒤 `서리 복리`의 첫 공격 피해 +3을 판정한다. 플립과 소비 스킬은 같은 순서를 사용한다.
+- 소비 선택 UI는 일부 소비의 `1~최대`, 전부 소비의 `최소 조건·실제 냉기 전부`를 구분하고 속성명을 직접 표시한다. 보존 보너스가 있는 1개 소비도 연료 선택을 열어 보존/일반 냉기를 고를 수 있다.
+- 현재 UI는 턴 종료 보존을 직접 선택한다. 지정 뽑기만 별도 선택 화면이 없어 선언 후보 순서의 결정론 제안을 사용한다.
+
 ## 8. 콘텐츠 데이터와 검증
 
 콘텐츠는 함수가 아니라 TypeScript 리터럴과 `EffectAtom[]`으로 작성한다. 대표 원자는 다음과 같다.
@@ -183,6 +196,9 @@ sim     → core + content
 { kind: 'enterOverheat' }
 { kind: 'applyStatus', status: 'burn', stacks: 2, to: 'target' }
 { kind: 'addCoin', coin: 'fire', zone: 'draw', count: 1 }
+{ kind: 'drawSpecific', coins: ['basic', 'frost'], count: 1 }
+{ kind: 'preserveChosenCoin', count: 1 }
+{ kind: 'damageByConsumed', base: 5, perCoin: 5 }
 ```
 
 `validateContentDb()`가 중복 ID, 코스트, 쿨다운, 양면 코인 효과, 공격 스킬 대상, 트리거 재귀, 패시브·장비 안전 원자, 강화 패치 정합성을 검사한다. 신규 콘텐츠 작성 기준은 [`content-design-guide.md`](./content-design-guide.md)를 따른다.

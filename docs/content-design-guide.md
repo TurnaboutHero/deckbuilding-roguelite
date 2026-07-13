@@ -1,8 +1,8 @@
-# 콘텐츠 기획 가이드 v2.2 — P10 현재 규칙
+# 콘텐츠 기획 가이드 v2.3 — P11 현재 규칙
 
-> 마지막 동기화: 2026-07-13 · PRD v1.3 · 콘텐츠 `1.4.0-p10`
+> 마지막 동기화: 2026-07-13 · PRD v1.3 · 콘텐츠 `1.5.0-p11`
 >
-> 신규 코인·스킬·캐릭터·몬스터·패시브를 작성할 때 사용하는 **활성 가이드**다. 제품 규칙은 [`PRD.md`](./PRD.md)와 최신 [`../PRD/P10_CHARACTER_DESIGN_SYNC.md`](../PRD/P10_CHARACTER_DESIGN_SYNC.md)가 정본이며, 기반 전투 규칙은 P7·P9 결정 로그에 남긴다. 실제 스키마와 검증은 `packages/core/src/content-types.ts`, 현재 수치는 `packages/content/src/index.ts`가 정본이다.
+> 신규 코인·스킬·캐릭터·몬스터·패시브를 작성할 때 사용하는 **활성 가이드**다. 제품 규칙은 [`PRD.md`](./PRD.md)와 최신 [`../PRD/P11_COLD_ROGUE_DESIGN_SYNC.md`](../PRD/P11_COLD_ROGUE_DESIGN_SYNC.md)가 정본이며, 기반 전투 규칙은 P7·P9·P10 결정 로그에 남긴다. 실제 스키마와 검증은 `packages/core/src/content-types.ts`, 현재 수치는 `packages/content/src/index.ts`가 정본이다.
 
 과거 가이드의 **턴당 스킬 3회**, **스킬별 턴당 1회**, **6슬롯**, **단면 속성 코인**, **전사 4스킬 구구성**은 폐기됐다. 역사적 근거가 필요하면 [`implementation-plan.md`](./implementation-plan.md)를 보되 신규 콘텐츠 규칙으로 사용하지 않는다.
 
@@ -31,7 +31,7 @@
 | 3 | 두 턴 쉬고 재사용 | 빌드 전환, 강한 셋업, 고효율 지원 |
 | 4 | 세 턴 쉬고 재사용 | 강화로 일회성이 제거된 희귀 엔진 |
 
-`oncePerCombat: true`는 전투당 1회 메커니즘이다. 전투당 1회 스킬에는 `cooldown >= 1`을 함께 선언하지 않는다. 강화로 전투당 1회가 제거되면 기본 쿨다운 1이 적용된다.
+`oncePerCombat: true`는 전투당 1회 메커니즘이다. 이 잠금이 활성화된 동안에는 쿨타임보다 우선한다. `cooldown`을 함께 선언하면 일회성 제거 후 복귀할 재사용 주기를 명시하며, 선언하지 않으면 강화 후 기본 쿨다운 1이 적용된다.
 
 ### 1.2 반복 스킬 가드레일
 
@@ -291,7 +291,7 @@ interface ConsumeSkillDef extends SkillDefBase {
 - 특성 훅: `combatStart` 또는 `turnStart`
 - 특성 효과는 자동 발동했을 때 대상 선택이 필요 없는 안전한 효과로 구성한다.
 
-현재 캐릭터는 화염 격투가, 수호자, 술사, 냉기 기사, 마도기사다. 캐릭터 전용 스킬은 `exclusiveTo`로 공용 보상 풀과 경계를 명시한다.
+현재 캐릭터는 화염 격투가, 수호자, 번개 결투사, 냉기 도적, 마도기사다. 캐릭터 전용 스킬은 `exclusiveTo`로 공용 보상 풀과 경계를 명시한다.
 
 ### 5.2 캐릭터 템플릿
 

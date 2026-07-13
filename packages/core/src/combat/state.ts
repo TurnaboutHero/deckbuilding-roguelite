@@ -5,6 +5,8 @@ import type { CombatEvent } from './events';
 
 // P7 D2 — 기본 최대 장착 슬롯 (단일 정본 — reducer/run/types/저장 검증이 모두 이 상수를 쓴다)
 export const MAX_SKILL_SLOTS = 8;
+// P11 — 자동/직접/턴 종료 보존이 모두 공유하는 전투 중 절대 상한.
+export const MAX_PRESERVED_COINS = 3;
 
 export type StatusState =
   | { kind: 'stack'; stacks: number }
@@ -55,6 +57,16 @@ export interface PlayerState extends UnitState {
   lastMoveUsed: boolean;
   residualChargeUsed: boolean;
   overcurrentUsed: boolean;
+  additionalPreserveThisTurn: number;
+  smallChangeInsuranceUsed: boolean;
+  headsSeenThisTurn: boolean;
+  tailsSeenThisTurn: boolean;
+  doubleEntryUsedThisTurn: boolean;
+  maturedHandUsedThisTurn: boolean;
+  profitSettlementUsedThisTurn: boolean;
+  coldHandsUsedThisTurn: boolean;
+  frostCompoundUsedThisTurn: boolean;
+  refrozenLootUsedThisTurn: boolean;
 }
 
 export interface EnemyState extends UnitState {

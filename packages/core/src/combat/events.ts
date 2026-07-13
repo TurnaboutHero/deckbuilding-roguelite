@@ -41,6 +41,7 @@ export type CombatEvent =
   | { type: 'turnTriggersExpired'; count: number }
   | { type: 'coinsDiscarded'; coins: CoinUid[]; reason: 'skillCost' | 'turnEnd' }
   | { type: 'coinsConsumed'; coins: CoinUid[] }
+  | { type: 'coinsPreserved'; coins: CoinUid[] }
   | { type: 'pileShuffled'; count: number }
   | { type: 'elementGranted'; coins: CoinUid[]; element: Element }
   | { type: 'witherApplied'; enemy: number; amount: number; nextDrawPenalty: number }

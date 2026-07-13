@@ -78,6 +78,9 @@ export const characterTraitDescription = (
   if (character.trait.mechanic === "remise") {
     return "매 턴 첫 플립 스킬의 첫 동전이 앞면이면 재플립합니다. 다시 앞면이면 같은 스킬을 비용 없이 한 번 재사용합니다.";
   }
+  if (character.trait.mechanic === "preserveHand") {
+    return "턴 종료 시 손의 동전 1개를 다음 턴까지 보존합니다.";
+  }
   return character.trait.effects.length === 0
     ? "효과 없음"
     : timing +

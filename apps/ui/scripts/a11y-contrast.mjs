@@ -168,7 +168,7 @@ await shopPage.addInitScript(([k, v]) => window.localStorage.setItem(k, v), [
   // 골드 135 ≤ 엘리트 2승 140, rest/treasure 레이어 없음 = 카운터 0)
   JSON.stringify({
     version: 7,
-    contentVersion: "1.4.0-p10",
+    contentVersion: "1.5.0-p11",
     runSeed: "A11Y-SHOP",
     character: "warrior",
     currentHp: 63,

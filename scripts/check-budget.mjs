@@ -6,13 +6,15 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "apps/ui/dist");
-// P10: 화염 전사·마도기사의 스킬/패시브와 전투 상태 해결 규칙을 추가했다.
-// 이미지·CSS 자산 증가는 없으며 P9 예산에서 총 12KiB, JS 12KiB만 추가로
-// 허용한다. 단일 파일·LCP·CLS 게이트는 유지한다.
+// P11: 냉기 도적의 보존·지정 뽑기·가변 소비와 스킬/패시브 데이터를 추가했다.
+// 신규 이미지 자산은 없으며 P10 예산에서 총 20KiB, JS 20KiB를 허용한다.
+// 실제 냉기 가변 소비 선택과 정본 카드 설명의 모드별 문구에 JS 1KiB를 추가 배정한다.
+// 명시적 보존 선택 패널의 상태·접근성 스타일에는 CSS 1KiB를 배정한다.
+// 단일 파일·LCP·CLS 게이트는 유지한다.
 const BUDGETS = {
-  total: 2779545,
-  js: 427008, // 417 KiB
-  css: 71744, // 70 KiB + 64 B
+  total: 2800025,
+  js: 448512, // 438 KiB
+  css: 72704, // 71 KiB
   maxFile: 716800, // 700 KiB
 };
 

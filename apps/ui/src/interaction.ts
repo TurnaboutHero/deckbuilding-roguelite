@@ -177,6 +177,7 @@ export const sameCommand = (left: Command, right: Command): boolean => {
       left.target === right.target &&
       left.chosenSummon === right.chosenSummon &&
       left.chosenEquipment === right.chosenEquipment &&
+      left.desiredCoin === right.desiredCoin &&
       JSON.stringify(left.chosen ?? []) === JSON.stringify(right.chosen ?? [])
     );
   if (left.type === "endTurn" && right.type === "endTurn") return true;
@@ -185,6 +186,7 @@ export const sameCommand = (left: Command, right: Command): boolean => {
       left.slot === right.slot &&
       left.target === right.target &&
       left.chosenSummon === right.chosenSummon &&
+      left.desiredCoin === right.desiredCoin &&
       left.coins.length === right.coins.length &&
       left.coins.every((coin, index) => coin === right.coins[index])
     );

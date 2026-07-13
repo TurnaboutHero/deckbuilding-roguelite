@@ -72,6 +72,7 @@ export const feedbackCuesFor = (event: CombatEvent): FeedbackCue[] => {
     case "summonExpired":
     case "coinsDrawn":
     case "coinsDiscarded":
+    case "coinsPreserved":
     case "pileShuffled":
     case "elementGranted":
     case "enemyPassiveTriggered":

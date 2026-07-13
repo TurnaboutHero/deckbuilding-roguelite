@@ -4,8 +4,8 @@ import type { CharacterDef, CoinDef, ContentDb, EnemyDef, EquipmentDef, EventDef
 
 // P3.2 승격: 수호자·마나 스킬·exclusiveTo 시대. m5 콘텐츠는 현 버전의 부분집합이고
 // 기존 수치가 불변이므로 m5 저장은 안전하게 로드(마이그레이션)할 수 있다.
-export const CONTENT_VERSION = '1.4.0-p10';
-export const LEGACY_CONTENT_VERSIONS: readonly string[] = ['1.3.0-p9', '1.2.0-p7', '1.1.0-p6', '1.0.0-rc.1', '0.10.0-p4.4', '0.9.0-p4', '0.8.0-p3.4', '0.7.0-p3.3', '0.6.0-p3.2', '0.5.0-m5'];
+export const CONTENT_VERSION = '1.5.0-p11';
+export const LEGACY_CONTENT_VERSIONS: readonly string[] = ['1.4.0-p10', '1.3.0-p9', '1.2.0-p7', '1.1.0-p6', '1.0.0-rc.1', '0.10.0-p4.4', '0.9.0-p4', '0.8.0-p3.4', '0.7.0-p3.3', '0.6.0-p3.2', '0.5.0-m5'];
 // p4→p4.4 호환 근거: 이벤트 4종 가산·기존 플레이어/전투 콘텐츠 수치 불변.
 // p3.4→p4 호환 근거: 몬스터 6종 가산뿐(플레이어 콘텐츠·기존 수치 불변)이라 기존 저장의
 // 모든 참조가 유효하다. 신규 적은 신규 조우(P4.2+ 그래프)에서만 등장한다.
@@ -349,56 +349,95 @@ export const skills = {
       { kind: 'applyStatus', status: 'shock', stacks: 1, to: 'target' }
     ]
   },
-  // ---- P3.4 냉기 기사 전용 (약화·지연·방어 운영) — balance-provisional ----
-  'frost-slash': {
-    id: skill('frost-slash'),
-    name: '서리 베기',
-    exclusiveTo: character('frost-knight'),
-    type: 'flip',
-    rarity: 'common',
-    tags: ['attack'],
-    targetType: 'single-enemy',
-    cost: 1,
-    base: [{ kind: 'damage', amount: 5 }],
-    heads: { mode: 'any', effects: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }] }
+  // ── P11 냉기 도적: 보존 동전과 냉기 밀수 빌드 ──
+  'ice-claw': {
+    id: skill('ice-claw'), name: '얼음 발톱', exclusiveTo: character('frost-knight'),
+    type: 'flip', rarity: 'common', tags: ['attack'], targetType: 'single-enemy', cooldown: 1, cost: 2,
+    base: [{ kind: 'damage', amount: 8 }, { kind: 'applyStatus', status: 'frostbite', stacks: 2, to: 'target' }],
+    heads: { mode: 'any', effects: [{ kind: 'damage', amount: 2 }] },
+    upgrade: { name: '빙점 발톱', description: '코스트 1, 앞면 피해 +5', patch: { kind: 'multi', patches: [
+      { kind: 'costDelta', delta: -1 },
+      { kind: 'replaceEffect', section: 'heads', index: 0, effect: { kind: 'damage', amount: 5 } }
+    ] } }
   },
-  'glacial-wall': {
-    id: skill('glacial-wall'),
-    name: '빙벽',
-    exclusiveTo: character('frost-knight'),
-    type: 'flip',
-    rarity: 'common',
-    tags: ['defense'],
-    targetType: 'self',
-    cost: 2,
-    base: [{ kind: 'block', amount: 9 }],
-    tails: { mode: 'per', effects: [{ kind: 'block', amount: 3 }] }
+  'ice-sleight': {
+    id: skill('ice-sleight'), name: '얼음 밑장빼기', exclusiveTo: character('frost-knight'),
+    type: 'flip', rarity: 'common', tags: ['utility'], targetType: 'self', cooldown: 2, cost: 2,
+    base: [{ kind: 'nextTurnDraw', count: 1 }],
+    heads: { mode: 'any', effects: [{ kind: 'addCoin', coin: coin('frost'), zone: 'draw', count: 1 }] },
+    upgrade: { name: '깊은 밑장', description: '다음 턴 뽑기 +2', patch: { kind: 'replaceEffect', section: 'base', index: 0, effect: { kind: 'nextTurnDraw', count: 2 } } }
   },
-  'chilling-field': {
-    id: skill('chilling-field'),
-    name: '한파',
-    exclusiveTo: character('frost-knight'),
-    type: 'flip',
-    rarity: 'common',
-    tags: ['utility'],
-    targetType: 'single-enemy',
-    cost: 1,
-    base: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }],
-    tails: { mode: 'any', effects: [{ kind: 'block', amount: 3 }] }
+  'frost-mark': {
+    id: skill('frost-mark'), name: '서리 표식', exclusiveTo: character('frost-knight'),
+    type: 'flip', rarity: 'common', tags: ['attack', 'utility'], targetType: 'single-enemy', cooldown: 1, cost: 1,
+    base: [{ kind: 'damage', amount: 3 }, { kind: 'drawSpecific', coins: [coin('basic'), coin('frost')], count: 1 }],
+    heads: { mode: 'any', effects: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }] },
+    tails: { mode: 'any', effects: [{ kind: 'block', amount: 2 }] },
+    upgrade: { name: '남겨진 표식', description: '앞면이면 버림 더미에 임시 냉기 동전 1개', patch: { kind: 'addFaceEffect', face: 'heads', effect: { kind: 'addCoin', coin: coin('frost'), zone: 'discard', count: 1 } } }
   },
-  'glacier-strike': {
-    id: skill('glacier-strike'),
-    name: '빙결 일격',
-    exclusiveTo: character('frost-knight'),
-    type: 'consume',
-    rarity: 'advanced',
-    tags: ['attack'],
-    targetType: 'single-enemy',
-    consume: { element: 'frost', count: 1 },
-    effects: [
-      { kind: 'damage', amount: 7 },
-      { kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }
-    ]
+  'frost-fur-cloak': {
+    id: skill('frost-fur-cloak'), name: '서리털 망토', exclusiveTo: character('frost-knight'),
+    type: 'flip', rarity: 'common', tags: ['defense'], targetType: 'single-enemy', cooldown: 1, cost: 1,
+    base: [{ kind: 'block', amount: 5 }],
+    heads: { mode: 'any', effects: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }] },
+    tails: { mode: 'any', effects: [{ kind: 'block', amount: 2 }] },
+    upgrade: { name: '두꺼운 서리털', description: '기본 방어 7', patch: { kind: 'baseAmount', index: 0, delta: 2 } }
+  },
+  'freezing-incision': {
+    id: skill('freezing-incision'), name: '빙점 절개', exclusiveTo: character('frost-knight'),
+    type: 'consume', rarity: 'advanced', tags: ['attack'], targetType: 'single-enemy', cooldown: 2,
+    consume: { element: 'frost', count: 3, mode: 'upTo' }, effects: [{ kind: 'damageByConsumed', base: 5, perCoin: 5 }],
+    upgrade: { name: '예리한 빙점', description: '냉기 동전당 피해 6', patch: { kind: 'replaceEffect', section: 'base', index: 0, effect: { kind: 'damageByConsumed', base: 5, perCoin: 6 } } }
+  },
+  'emergency-ice-pouch': {
+    id: skill('emergency-ice-pouch'), name: '비상용 얼음주머니', exclusiveTo: character('frost-knight'),
+    type: 'flip', rarity: 'advanced', tags: ['utility'], targetType: 'self', oncePerCombat: true, cooldown: 3, cost: 1,
+    base: [{ kind: 'addCoin', coin: coin('frost'), zone: 'hand', count: 2 }, { kind: 'increasePreserveCapacity', count: 1 }],
+    upgrade: { name: '재사용 주머니', description: '일회성 제거, 코스트 2, 쿨타임 3', patch: { kind: 'removeOncePerCombat', cooldown: 3, costDelta: 1 } }
+  },
+  'freeze-dry': {
+    id: skill('freeze-dry'), name: '동결 건조', exclusiveTo: character('frost-knight'),
+    type: 'consume', rarity: 'rare', tags: ['attack', 'ultimate'], targetType: 'single-enemy', cooldown: 3,
+    consume: { element: 'frost', count: 3, mode: 'all' }, effects: [{ kind: 'damageByConsumed', base: 0, perCoin: 8, frostbittenBonusPerCoin: 2 }],
+    upgrade: { name: '급속 건조', description: '최소 소비 3 → 2', patch: { kind: 'costDelta', delta: -1 } }
+  },
+  'preserved-pickpocket': {
+    id: skill('preserved-pickpocket'), name: '보존품 소매치기', exclusiveTo: character('frost-knight'),
+    type: 'flip', rarity: 'common', tags: ['attack'], targetType: 'single-enemy', cooldown: 1, cost: 1,
+    treatPreservedBasicAsElement: 'frost',
+    base: [{ kind: 'damage', amount: 4 }], heads: { mode: 'any', effects: [{ kind: 'damage', amount: 2 }] }, tails: { mode: 'any', effects: [{ kind: 'block', amount: 2 }] },
+    preservedBonus: [{ kind: 'drawSpecific', coins: [coin('basic'), coin('frost')], count: 1 }],
+    upgrade: { name: '노련한 소매치기', description: '앞면 피해 +4', patch: { kind: 'replaceEffect', section: 'heads', index: 0, effect: { kind: 'damage', amount: 4 } } }
+  },
+  'hidden-inner-pocket': {
+    id: skill('hidden-inner-pocket'), name: '숨은 안주머니', exclusiveTo: character('frost-knight'),
+    type: 'flip', rarity: 'common', tags: ['defense', 'utility'], targetType: 'single-enemy', cooldown: 2, cost: 1,
+    base: [{ kind: 'block', amount: 3 }, { kind: 'preserveChosenCoin', count: 1 }],
+    heads: { mode: 'any', effects: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }] },
+    tails: { mode: 'any', effects: [{ kind: 'block', amount: 2 }] },
+    upgrade: { name: '빈틈없는 안주머니', description: '코스트 0', patch: { kind: 'costDelta', delta: -1 } }
+  },
+  'trackless-raid': {
+    id: skill('trackless-raid'), name: '발자국 없는 습격', exclusiveTo: character('frost-knight'),
+    type: 'flip', rarity: 'advanced', tags: ['attack'], targetType: 'single-enemy', cooldown: 1, cost: 2,
+    base: [{ kind: 'damage', amount: 6 }, { kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }],
+    preservedBonus: [{ kind: 'damage', amount: 4 }, { kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }],
+    heads: { mode: 'any', effects: [{ kind: 'damage', amount: 3 }] }, tails: { mode: 'any', effects: [{ kind: 'block', amount: 3 }] },
+    upgrade: { name: '흔적 소거', description: '코스트 1', patch: { kind: 'costDelta', delta: -1 } }
+  },
+  'loot-swap': {
+    id: skill('loot-swap'), name: '장물 바꿔치기', exclusiveTo: character('frost-knight'),
+    type: 'consume', rarity: 'advanced', tags: ['defense', 'utility'], targetType: 'self', cooldown: 2,
+    consume: { element: 'frost', count: 1 }, effects: [{ kind: 'block', amount: 5 }, { kind: 'drawSpecific', coins: [coin('basic'), coin('frost')], count: 1, preserve: true }],
+    preservedBonus: [{ kind: 'block', amount: 3 }],
+    upgrade: { name: '값비싼 교환', description: '기본 방어 8', patch: { kind: 'baseAmount', index: 0, delta: 3 } }
+  },
+  'subzero-perfect-crime': {
+    id: skill('subzero-perfect-crime'), name: '영하의 완전범죄', exclusiveTo: character('frost-knight'),
+    type: 'consume', rarity: 'rare', tags: ['attack', 'ultimate'], targetType: 'single-enemy', cooldown: 3,
+    consume: { element: 'frost', count: 1 }, effects: [{ kind: 'damageByTargetFrostbite', base: 6, multiplier: 3, cap: 24 }],
+    preservedBonus: [{ kind: 'drawSpecific', coins: [coin('basic'), coin('frost')], count: 1, preserve: true }],
+    upgrade: { name: '완벽한 알리바이', description: '동상 배수 4, 상한 30', patch: { kind: 'replaceEffect', section: 'base', index: 0, effect: { kind: 'damageByTargetFrostbite', base: 6, multiplier: 4, cap: 30 } } }
   }
   ,
   // ---- P3.4 후속: 비시작 전용 보상 스킬 (도달성 게이트 — 각 캐릭터 보상 풀에 최소 1종) ----
@@ -503,21 +542,6 @@ export const skills = {
     type: 'consume', rarity: 'rare', tags: ['attack', 'ultimate'], targetType: 'single-enemy', oncePerCombat: true,
     consume: { element: 'lightning', count: 3 }, effects: [{ kind: 'executeOrDischargeShock' }],
     upgrade: { name: '강화', description: '번개 코인 소비 3개 → 2개', patch: { kind: 'costDelta', delta: -1 } }
-  },
-  'winters-grasp': {
-    id: skill('winters-grasp'),
-    name: '동장군',
-    exclusiveTo: character('frost-knight'),
-    type: 'flip',
-    rarity: 'advanced',
-    tags: ['attack'],
-    targetType: 'single-enemy',
-    cost: 1,
-    base: [
-      { kind: 'damage', amount: 4 },
-      { kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }
-    ],
-    tails: { mode: 'any', effects: [{ kind: 'block', amount: 3 }] }
   },
   'aegis-surge': {
     id: skill('aegis-surge'),
@@ -1153,20 +1177,21 @@ export const characters = {
   },
   'frost-knight': {
     id: character('frost-knight'),
-    name: '냉기 기사',
+    name: '냉기 도적',
     maxHp: 70,
     startingBag: [...Array.from({ length: 8 }, () => coin('basic')), coin('frost'), coin('frost')],
     startingSkills: [
       skill('slash'),
       skill('guard'),
-      skill('frost-slash'),
-      skill('glacial-wall')
+      skill('ice-claw'),
+      skill('ice-sleight')
     ],
     trait: {
-      id: 'winter-mantle',
-      name: '겨울 외투',
+      id: 'double-pocket',
+      name: '이중 주머니',
       hook: 'combatStart',
-      effects: [{ kind: 'addCoin', coin: coin('frost'), zone: 'draw', count: 1 }]
+      effects: [],
+      mechanic: 'preserveHand'
     }
   }
   ,
@@ -1330,6 +1355,39 @@ export const passives = {
     id: passive('discharge-suppression'), name: '방전 억제', description: '턴 종료 시 감전이 가장 높은 적의 감전이 감소하지 않는다',
     exclusiveTo: character('sorcerer'), element: 'lightning', hook: 'combatStart',
     effects: [], mechanic: 'dischargeSuppression', price: 100
+  },
+  // ── P11 냉기 도적: 범용 5 + 냉기 3 ──
+  'coin-appraiser': {
+    id: passive('coin-appraiser'), name: '감별사의 엄지', description: '전투 시작 시 냉기 동전 1개를 뽑는다. 없으면 기본 동전을 뽑는다',
+    exclusiveTo: character('frost-knight'), element: null, hook: 'combatStart', effects: [], mechanic: 'coinAppraiser', price: 80
+  },
+  'small-change-insurance': {
+    id: passive('small-change-insurance'), name: '잔돈 보험', description: '매 턴 첫 뒷면에 방어 2를 얻는다',
+    exclusiveTo: character('frost-knight'), element: null, hook: 'turnStart', effects: [], mechanic: 'smallChangeInsurance', price: 70
+  },
+  'double-entry-ledger': {
+    id: passive('double-entry-ledger'), name: '양면 장부', description: '한 턴에 앞면과 뒷면이 나오면 기본 동전 1개를 뽑는다. 턴당 1회',
+    exclusiveTo: character('frost-knight'), element: null, hook: 'turnStart', effects: [], mechanic: 'doubleEntry', price: 90
+  },
+  'matured-hand': {
+    id: passive('matured-hand'), name: '숙성된 패', description: '매 턴 첫 보존 동전 스킬의 기존 피해와 방어가 2 증가한다',
+    exclusiveTo: character('frost-knight'), element: null, hook: 'turnStart', effects: [], mechanic: 'maturedHand', price: 90
+  },
+  'profit-settlement': {
+    id: passive('profit-settlement'), name: '손익 정산', description: '매 턴 첫 동전 소비 후 다음 턴 뽑기 +1',
+    exclusiveTo: character('frost-knight'), element: null, hook: 'turnStart', effects: [], mechanic: 'profitSettlement', price: 80
+  },
+  'cold-hands': {
+    id: passive('cold-hands'), name: '차가운 손버릇', description: '매 턴 첫 보존 냉기 동전 사용/소비 시 현재 대상에게 동상 1',
+    exclusiveTo: character('frost-knight'), element: 'frost', hook: 'turnStart', effects: [], mechanic: 'coldHands', price: 90
+  },
+  'frost-compound': {
+    id: passive('frost-compound'), name: '서리 복리', description: '매 턴 처음 동상인 적에게 주는 공격 피해 +3',
+    exclusiveTo: character('frost-knight'), element: 'frost', hook: 'turnStart', effects: [], mechanic: 'frostCompound', price: 100
+  },
+  'refrozen-loot': {
+    id: passive('refrozen-loot'), name: '되얼린 장물', description: '냉기 동전을 한 번에 2개 이상 소비하면 손에 임시 냉기 동전 1개. 턴당 1회',
+    exclusiveTo: character('frost-knight'), element: 'frost', hook: 'turnStart', effects: [], mechanic: 'refrozenLoot', price: 100
   }
 } satisfies Record<string, PassiveDef>;
 
