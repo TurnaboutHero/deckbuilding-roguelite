@@ -155,26 +155,22 @@ describe('소환 장비 엔진', () => {
     expect(ended.state.summons).toHaveLength(1); // 새 턴의 trait 소환
   });
 
-  it('선택 장비 소환 + 뒷면당 지속 연장, 슬롯 3 초과 시 최고령 교체', () => {
+  it('선택 장비 소환 + 뒷면당 지속 연장, 슬롯 3개가 가득 차면 새 소환 불발', () => {
     const db = testDb();
     let state = newCombat();
     // trait 검 1개 존재. 방패 2개 추가 소환 → 3 슬롯 꽉 참 (스킬 사용 상한 3/턴 내)
     state = useSkillAt(state, 0, db, { chosenEquipment: id<EquipmentDefId>('mana-shield') }).state;
     state = useSkillAt(state, 3, db, { chosenEquipment: id<EquipmentDefId>('mana-shield') }).state;
     expect(state.summons).toHaveLength(3);
-    // 4번째 소환 → 최고령(trait 검) 교체
-    const oldestUid = state.summons[0]!.uid;
+    // 4번째 소환은 불발하고 기존 3개를 그대로 유지한다.
+    const before = state.summons;
+    const nextSummonUid = state.nextSummonUid;
     const fourth = useSkillAt(state, 4, db, { chosenEquipment: id<EquipmentDefId>('mana-shield') });
     state = fourth.state;
-    expect(state.summons).toHaveLength(3);
-    expect(state.summons.every((summon) => summon.uid !== oldestUid)).toBe(true);
-    expect(
-      fourth.events.some(
-        (event) =>
-          (event as { type: string; uid?: number }).type === 'summonReplaced' &&
-          (event as { uid: number }).uid === oldestUid,
-      ),
-    ).toBe(true);
+    expect(state.summons).toEqual(before);
+    expect(state.nextSummonUid).toBe(nextSummonUid);
+    expect(fourth.events.some((event) => (event as { type: string }).type === 'summonAdded')).toBe(false);
+    expect(fourth.events.some((event) => (event as { type: string }).type === 'summonReplaced')).toBe(false);
   });
 
   it('명령: 선택 소환 즉시 행동 + 지속 -1, 강화 보너스가 행동에 더해진다', () => {

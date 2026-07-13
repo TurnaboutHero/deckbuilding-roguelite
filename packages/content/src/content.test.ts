@@ -75,8 +75,10 @@ const withHandDefs = (state: CombatState, defs: readonly string[]): CombatState 
 describe('P9 latest design sync', () => {
   it('ships the revised starters while retaining legacy reward ids', () => {
     expect(characters.warrior.startingSkills.map(String)).toEqual(['jab', 'fist-guard', 'burning-fist', 'flame-hook']);
-    expect(skills['flame-hook']).toMatchObject({ name: '잿불 베기', cost: 1 });
+    expect(skills['flame-hook']).toMatchObject({ name: '불씨권', cost: 1 });
+    expect('upgrade' in skills['flame-hook']).toBe(false);
     expect(skills['inner-passion']).toBeDefined();
+    expect('upgrade' in skills['inner-passion']).toBe(false);
     expect(characters.sorcerer.startingSkills.map(String)).toEqual(['slash', 'guard', 'attaque', 'parade']);
     expect(Object.values(contentDb.skills).filter((entry) => String(entry.exclusiveTo) === 'sorcerer')).toEqual(
       expect.arrayContaining([
@@ -193,8 +195,8 @@ describe('P9 latest design sync', () => {
       { kind: 'addCoin', coin: coinId('mana'), zone: 'hand', count: 1 }
     ]);
     expect((upgraded('reactor-overdrive') as ConsumeSkillDef).consume.count).toBe(1);
-    expect((upgraded('arcane-duplicate') as ConsumeSkillDef).effects[0]).toMatchObject({ fullCapExtension: 3 });
-    expect((upgraded('azure-armory-open') as FlipSkillDef).base[0]).toMatchObject({ baseDamage: 4 });
+    expect((upgraded('arcane-duplicate') as ConsumeSkillDef).effects[0]).toMatchObject({ duration: 3, fullCapExtension: 3 });
+    expect((upgraded('azure-armory-open') as FlipSkillDef).base[0]).toMatchObject({ baseDamage: 3, baseCount: 4 });
     expect((upgraded('redoublement') as FlipSkillDef).base[0]).toEqual({ kind: 'readyRemise', amount: 2 });
     expect((upgraded('attaque-composee') as FlipSkillDef).remise?.addLightningToHandAfterReuse).toBe(2);
     expect((upgraded('charge-mark') as FlipSkillDef).heads?.effects[0]).toMatchObject({ stacks: 2 });
@@ -270,6 +272,230 @@ const useConsumeAt = (
 
 const combat = (seed: string, character = 'warrior'): CombatState =>
   createCombat({ character: character as never, enemies: ['raider' as never] }, contentDb, seed);
+
+describe('P10 Fire Warrior and Arcanist design sync', () => {
+  const combatWith = (seed: string, character: string, equippedSkills: string[], passiveIds: string[]) =>
+    createCombat(
+      {
+        character: character as never,
+        enemies: ['raider' as never],
+        equippedSkills: equippedSkills.map((id) => skillId(id)),
+        passives: passiveIds as never[]
+      },
+      contentDb,
+      seed
+    );
+
+  it('requires a fire coin for Inner Passion while preserving a real flip result', () => {
+    let state = withEquippedSkill(combat('p10-inner-passion'), 'inner-passion');
+    state = withHandDefs(state, ['basic', 'fire']);
+    const basic = state.zones.hand[0]!;
+    const fire = state.zones.hand[1]!;
+    expect(step(state, { type: 'placeCoin', coin: basic, slot: slotId(0) }, contentDb)).toMatchObject({
+      ok: false,
+      error: 'coin does not satisfy required flip element'
+    });
+    const result = useFlip(withFaces(state, ['heads']), [fire], 0);
+    expect(result.state.player.overheat).toBe(true);
+    expect(result.state.enemies[0]?.hp).toBe(70);
+    expect(statusStacks(result.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(1);
+  });
+
+  it('pins the confirmed fire kit, passives, and overheat-only Fire Fist upgrade', () => {
+    expect(skills['burnout-blow']).toMatchObject({ oncePerCombat: true, consume: { element: 'fire', count: 3 } });
+    expect(skills['warrior-flame-rampage']).toMatchObject({ cost: 2, oncePerCombat: true });
+    expect(deriveUpgradedSkill(skills['warrior-flame-rampage']!)).toMatchObject({ cost: 3, cooldown: 1, oncePerCombat: undefined });
+    expect((deriveUpgradedSkill(skills['fire-fist']!) as FlipSkillDef).overheatBonus).toEqual([{ kind: 'damage', amount: 6 }]);
+    expect((deriveUpgradedSkill(skills['fire-fist']!) as FlipSkillDef).base).toEqual(skills['fire-fist']?.base);
+    expect(Object.values(passives).filter((entry) => String(entry.exclusiveTo) === 'warrior').map((entry) => entry.name)).toEqual(
+      expect.arrayContaining(['강철 피부', '방패 숙련', '빈틈없는 대비', '불굴의 투지', '전투 호흡', '발화 본능', '잔불 칼날', '뜨거운 방벽'])
+    );
+  });
+
+  it('ships the corrected repeat starter costs and the five armor skills', () => {
+    expect(skills['arcane-charge']).toMatchObject({ cost: 1, cooldown: 0 });
+    expect(skills['arcane-command']).toMatchObject({ cost: 2, cooldown: 0 });
+    expect(skills['armor-counter']).toMatchObject({ cost: 2, cooldown: 1 });
+    expect(skills['armor-compression']).toMatchObject({ cost: 2, cooldown: 1 });
+    expect(skills['mana-amplification']).toMatchObject({ consume: { element: 'mana', count: 2 }, cooldown: 1 });
+    expect(skills['armor-smash']).toMatchObject({ consume: { element: 'mana', count: 2 }, cooldown: 1 });
+    expect(skills['arcane-armor-release']).toMatchObject({ consume: { element: 'mana', count: 3 }, oncePerCombat: true });
+  });
+
+  it('keeps armor while turning it into one-hit damage and honors the next-attack setup', () => {
+    let state = withEquippedSkills(combat('p10-armor', 'arcanist'), ['armor-compression', 'armor-smash']);
+    state = withHandDefs(state, ['basic', 'basic', 'mana', 'mana', 'mana']);
+    state = withFaces(state, ['heads', 'tails']);
+    const compressed = useFlipAt(state, 0, state.zones.hand.slice(0, 2));
+    expect(compressed.state.player.block).toBe(10);
+    expect(compressed.state.player.nextAttackDamageBonus).toBe(2);
+    const smashed = useConsumeAt(compressed.state, 1, compressed.state.zones.hand.slice(0, 2), 0);
+    expect(smashed.state.enemies[0]?.hp).toBe(57);
+    expect(smashed.state.player.block).toBe(10);
+    expect(smashed.state.player.nextAttackDamageBonus).toBe(0);
+    expect((skills['armor-smash'] as ConsumeSkillDef).effects[0]).toEqual({
+      kind: 'damagePlusBlock', base: 6, cap: 10
+    });
+
+    let literalDamage = withEquippedSkills(
+      combat('p10-literal-damage-bonus', 'arcanist'),
+      ['armor-compression', 'burnout-blow']
+    );
+    literalDamage = withHandDefs(literalDamage, ['basic', 'basic', 'fire', 'fire', 'fire']);
+    literalDamage = withFaces(literalDamage, ['heads', 'tails']);
+    const literalPrepared = useFlipAt(literalDamage, 0, literalDamage.zones.hand.slice(0, 2));
+    useConsumeAt(literalPrepared.state, 1, literalPrepared.state.zones.hand, 0);
+    expect((skills['burnout-blow'] as ConsumeSkillDef).effects[0]).toEqual({ kind: 'damage', amount: 6 });
+
+    const expiryBase = combatWith('p10-armor-bonus-expiry', 'arcanist', ['jab'], []);
+    const expired = step(
+      { ...expiryBase, player: { ...expiryBase.player, nextAttackDamageBonus: 4 } },
+      { type: 'endTurn' },
+      contentDb
+    );
+    if (!expired.ok) throw new Error(expired.error);
+    expect(expired.state.player.nextAttackDamageBonus).toBe(0);
+  });
+
+  it('pins all eight arcanist support passives and corrected P9 upgrades', () => {
+    expect(Object.values(passives).filter((entry) => String(entry.exclusiveTo) === 'arcanist').map((entry) => entry.name)).toEqual(
+      expect.arrayContaining(['전개 예습', '역상 방호식', '교차 연산', '잔류식 재구축', '명령 보존식', '마나 피막', '청색 순환로', '병장 공명로'])
+    );
+    expect((deriveUpgradedSkill(skills['arcane-duplicate']!) as ConsumeSkillDef).effects[0]).toEqual({
+      kind: 'cloneChosenSummon', duration: 3, fullCapExtension: 3
+    });
+    expect((deriveUpgradedSkill(skills['azure-armory-open']!) as FlipSkillDef).base[0]).toEqual({
+      kind: 'virtualManaSwordVolley', baseDamage: 3, baseCount: 4
+    });
+  });
+
+  it('executes the eight fire passive contracts at their exact timing', () => {
+    const armored = combatWith('p10-fire-start', 'warrior', ['fist-guard'], ['iron-body']);
+    expect(armored.player.block).toBe(5);
+
+    let shield = combatWith('p10-fire-shield', 'warrior', ['fist-guard'], ['steady-breath']);
+    shield = withFaces(shield, ['tails']);
+    const shielded = useFlip(shield, [shield.zones.hand[0]!], 0);
+    expect(shielded.state.player.block).toBe(8);
+
+    const prepared = step(combatWith('p10-fire-prepare', 'warrior', ['jab'], ['reserve-coin']), { type: 'endTurn' }, contentDb);
+    if (!prepared.ok) throw new Error(prepared.error);
+    expect(prepared.events).toContainEqual({ type: 'blockGained', target: { type: 'player' }, amount: 2 });
+
+    const indomitable = step(combatWith('p10-fire-grit', 'warrior', ['jab'], ['opening-stance']), { type: 'endTurn' }, contentDb);
+    if (!indomitable.ok) throw new Error(indomitable.error);
+    expect(indomitable.state.player.hp).toBe(60);
+
+    const breathingBase = combatWith('p10-fire-breathe', 'warrior', ['jab'], ['thick-hide']);
+    const breathing = step({ ...breathingBase, player: { ...breathingBase.player, hp: 36 } }, { type: 'endTurn' }, contentDb);
+    if (!breathing.ok) throw new Error(breathing.error);
+    expect(breathing.state.player.hp).toBe(28);
+
+    let burn = combatWith('p10-fire-burn-passives', 'warrior', ['flame-hook'], ['ember-stock', 'kindling-rhythm', 'flame-opening']);
+    burn = withHandDefs(burn, ['fire']);
+    burn = withFaces(burn, ['tails']);
+    const burning = useFlip(burn, [burn.zones.hand[0]!], 0);
+    expect(statusStacks(burning.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(3);
+    const ended = step(burning.state, { type: 'endTurn' }, contentDb);
+    if (!ended.ok) throw new Error(ended.error);
+    expect(ended.events).toContainEqual({ type: 'blockGained', target: { type: 'player' }, amount: 2 });
+  });
+
+  it('applies the fire flurry damage and burn result to every living enemy', () => {
+    let state = createCombat(
+      {
+        character: 'warrior' as never,
+        enemies: ['raider', 'goblin'] as never[],
+        equippedSkills: [skillId('fire-flurry')]
+      },
+      contentDb,
+      'p10-fire-flurry-aoe'
+    );
+    state = withHandDefs(state, ['fire', 'basic']);
+    state = withFaces(state, ['heads', 'tails']);
+    const beforeHp = state.enemies.map((enemy) => enemy.hp);
+    const resolved = useFlip(state, state.zones.hand.slice(0, 2));
+    for (let index = 0; index < resolved.state.enemies.length; index += 1) {
+      expect(resolved.state.enemies[index]?.hp).toBe((beforeHp[index] ?? 0) - 5);
+      expect(statusStacks(resolved.state.enemies[index]?.statuses ?? {}, 'burn')).toBe(4);
+    }
+  });
+
+  it('resolves summoned shield block before arcane armor release uses end-turn block', () => {
+    let state = createCombat(
+      {
+        character: 'arcanist' as never,
+        enemies: ['raider', 'goblin'] as never[],
+        equippedSkills: [skillId('arcane-armor-release')]
+      },
+      contentDb,
+      'p10-armor-release-order'
+    );
+    state = withHandDefs(state, ['mana', 'mana', 'mana']);
+    state = {
+      ...state,
+      summons: [
+        ...state.summons,
+        { uid: state.nextSummonUid, defId: 'mana-shield' as never, duration: 2, enhance: 0, aoeUses: 0 }
+      ],
+      nextSummonUid: state.nextSummonUid + 1
+    };
+    const beforeHp = state.enemies.map((enemy) => enemy.hp);
+    const released = useConsumeAt(state, 0, state.zones.hand.slice(0, 3));
+    expect(released.state.player.block).toBe(10);
+    const ended = step(released.state, { type: 'endTurn' }, contentDb);
+    if (!ended.ok) throw new Error(ended.error);
+    expect(ended.events).toContainEqual({ type: 'blockGained', target: { type: 'player' }, amount: 2 });
+    expect(ended.state.enemies[0]?.hp).toBe((beforeHp[0] ?? 0) - 15);
+    expect(ended.state.enemies[1]?.hp).toBe((beforeHp[1] ?? 0) - 12);
+  });
+
+  it('executes arcanist summon, flip, and mana-consumption passive contracts', () => {
+    let preview = combatWith('p10-preview', 'arcanist', ['arcane-charge'], ['armor-memory']);
+    expect(preview.summons[0]?.duration).toBe(2);
+    preview = withFaces(preview, ['heads']);
+    const deployed = useFlip(preview, [preview.zones.hand[0]!]);
+    expect(deployed.state.summons.at(-1)?.duration).toBe(2);
+
+    let flipPassives = combatWith('p10-flip-passives', 'arcanist', ['armor-counter'], ['drill-discipline', 'overcharge-core', 'mana-membrane']);
+    flipPassives = withHandDefs(flipPassives, ['mana', 'mana']);
+    flipPassives = withFaces(flipPassives, ['heads', 'tails']);
+    const mixed = useFlip(flipPassives, flipPassives.zones.hand.slice(0, 2), 0);
+    expect(mixed.state.player.block).toBe(6);
+    expect(mixed.state.zones.hand.some((uid) => String(mixed.state.coins[Number(uid)]?.defId) === 'basic')).toBe(true);
+
+    let command = combatWith('p10-command-save', 'arcanist', ['arcane-command'], ['command-preservation']);
+    command = withHandDefs(command, ['basic', 'basic']);
+    command = withFaces(command, ['heads', 'heads']);
+    for (const coin of command.zones.hand.slice(0, 2)) {
+      const placed = step(command, { type: 'placeCoin', coin, slot: slotId(0) }, contentDb);
+      if (!placed.ok) throw new Error(placed.error);
+      command = placed.state;
+    }
+    const commandResult = step(command, { type: 'useFlipSkill', slot: slotId(0), chosenSummon: command.summons[0]?.uid }, contentDb);
+    if (!commandResult.ok) throw new Error(commandResult.error);
+    const commanded = commandResult;
+    expect(commanded.state.summons[0]?.duration).toBe(1);
+
+    let consume = combatWith('p10-mana-passives', 'arcanist', ['mana-amplification', 'armor-smash'], ['blue-circuit', 'armament-resonance']);
+    consume = withHandDefs(consume, ['mana', 'mana', 'mana', 'mana']);
+    consume = { ...consume, player: { ...consume.player, block: 4 } };
+    const amplified = useConsumeAt(consume, 0, consume.zones.hand.slice(0, 2));
+    const smashed = useConsumeAt(amplified.state, 1, amplified.state.zones.hand.filter((uid) => String(amplified.state.coins[Number(uid)]?.defId) === 'mana').slice(0, 2), 0);
+    expect(smashed.state.player.weaponOutput).toBe(1);
+    expect(smashed.state.player.manaConsumedForResonance).toBe(1);
+    expect(Object.values(smashed.state.coins).some((coin) => !coin.permanent && String(coin.defId) === 'mana')).toBe(true);
+  });
+
+  it('stores one expired arcanist equipment and spends it on the next summon', () => {
+    const initial = combatWith('p10-residual', 'arcanist', ['slash'], ['mana-reserve']);
+    expect(initial.summons[0]?.duration).toBe(1);
+    const ended = step(initial, { type: 'endTurn' }, contentDb);
+    if (!ended.ok) throw new Error(ended.error);
+    expect(ended.state.summons[0]?.duration).toBe(2);
+    expect(ended.state.player.residualRebuildStored).toBe(false);
+  });
+});
 
 const averageAction = (enemy: EnemyDef, kind: 'attack' | 'block'): number =>
   enemy.intents.reduce(
@@ -471,8 +697,8 @@ describe('P3.3 heart-of-flame interaction regressions', () => {
 describe('P3.4 shipped content goldens', () => {
   it('ships the p7 version with legacy allowlist', () => {
     // P7: 쿨다운 행동 모델·8슬롯·양면 코인·과열 출하에 결속된 버전 승격, 직전 p6는 레거시로
-    expect(CONTENT_VERSION).toBe('1.3.0-p9');
-    expect(LEGACY_CONTENT_VERSIONS[0]).toBe('1.2.0-p7');
+    expect(CONTENT_VERSION).toBe('1.4.0-p10');
+    expect(LEGACY_CONTENT_VERSIONS[0]).toBe('1.3.0-p9');
     expect(LEGACY_CONTENT_VERSIONS).toContain('1.0.0-rc.1');
     expect(LEGACY_CONTENT_VERSIONS).toContain('0.9.0-p4');
     expect(LEGACY_CONTENT_VERSIONS).toContain('0.8.0-p3.4');
@@ -556,8 +782,8 @@ describe('P3.4 shipped content goldens', () => {
 describe('P4.2 provisional enemy content goldens', () => {
   // D2 조우 대역 산술: goblin+ghoul=70(2마리 65~85), thief+goblin=58(감전 압박 예외),
   // ghoul+goblin+slime=86(3마리 75~95). 수치 전부 balance-provisional.
-  it('pins the six enemy definitions — P9(1.3.0-p9)에서도 적 6종 정의는 불변이어야 한다', () => {
-    expect(CONTENT_VERSION).toBe('1.3.0-p9');
+  it('pins the six enemy definitions — P10에서도 적 6종 정의는 불변이어야 한다', () => {
+    expect(CONTENT_VERSION).toBe('1.4.0-p10');
     expect(enemies.goblin).toEqual({
       id: 'goblin',
       name: '고블린',
@@ -797,7 +1023,7 @@ describe('P3.4 hostile coin proc rerouting regressions', () => {
 
 describe('M5 shipped content', () => {
   it('ships the M5 version, mana coin, skills, and fixed enemy definitions', () => {
-    expect(CONTENT_VERSION).toBe('1.3.0-p9');
+    expect(CONTENT_VERSION).toBe('1.4.0-p10');
     // P7 D4 — mana 앞면 2→1 하향 + 뒷면 2 신설 (v1.3 표 우선)
     expect(coins.mana).toEqual({
       id: coinId('mana'),
@@ -1277,12 +1503,17 @@ describe('P9 shipped content goldens (1.3.0-p9)', () => {
 
   it('pins the warrior overheat kit and the new draw/cooldown utilities (D3/D5)', () => {
     expect(skills['inner-passion']).toMatchObject({
-      type: 'consume',
+      type: 'flip',
       cooldown: 3,
-      consume: { element: 'fire', count: 1 },
-      effects: [{ kind: 'enterOverheat' }, { kind: 'draw', count: 1 }]
+      cost: 1,
+      requiredElement: 'fire',
+      base: [{ kind: 'enterOverheat' }],
+      heads: { mode: 'any', effects: [{ kind: 'damage', amount: 5 }] },
+      tails: { mode: 'any', effects: [{ kind: 'block', amount: 3 }] }
     });
     expect(skills['fire-fist']).toMatchObject({
+      name: '화격권',
+      rarity: 'common',
       cost: 2,
       cooldown: 1,
       base: [

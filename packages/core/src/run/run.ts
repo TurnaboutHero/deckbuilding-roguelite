@@ -319,8 +319,17 @@ export const deriveUpgradedSkill = (def: SkillDef): SkillDef => {
   const upgrade = def.upgrade;
   if (upgrade === undefined) return def;
   const patch = upgrade.patch;
-  if (patch.kind === "removeOncePerCombat")
-    return { ...def, oncePerCombat: undefined, cooldown: patch.cooldown };
+  if (patch.kind === "removeOncePerCombat") {
+    const costDelta = patch.costDelta ?? 0;
+    if (def.type === "flip")
+      return { ...def, oncePerCombat: undefined, cooldown: patch.cooldown, cost: def.cost + costDelta };
+    return {
+      ...def,
+      oncePerCombat: undefined,
+      cooldown: patch.cooldown,
+      consume: { ...def.consume, count: def.consume.count + costDelta }
+    };
+  }
   if (patch.kind === "costDelta") {
     if (def.type === "flip") return { ...def, cost: def.cost + patch.delta };
     return { ...def, consume: { ...def.consume, count: def.consume.count + patch.delta } };
@@ -358,6 +367,12 @@ export const deriveUpgradedSkill = (def: SkillDef): SkillDef => {
       if (atoms[patch.index] === undefined) throw new Error(`upgrade replaceEffect target is invalid: ${String(def.id)}`);
       atoms[patch.index] = patch.effect;
       return def.type === "flip" ? { ...def, base: atoms } : { ...def, effects: atoms };
+    }
+    if (patch.section === "overheat") {
+      const effects = [...(def.overheatBonus ?? [])];
+      if (effects[patch.index] === undefined) throw new Error(`upgrade replaceEffect overheat target is invalid: ${String(def.id)}`);
+      effects[patch.index] = patch.effect;
+      return { ...def, overheatBonus: effects };
     }
     if (def.type !== "flip" || def[patch.section] === undefined)
       throw new Error(`upgrade replaceEffect face is invalid: ${String(def.id)}`);

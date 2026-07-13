@@ -1,12 +1,12 @@
 # 문서 안내
 
-> 마지막 동기화: 2026-07-13 · 기준: P9 / PRD v1.3 · 콘텐츠 `1.3.0-p9` · 런 저장 v7
+> 마지막 동기화: 2026-07-13 · 기준: P10 / PRD v1.3 · 런 저장 v7
 
 이 디렉터리에는 현재 규칙, 구현 스냅샷, 과거 구현 계획이 함께 있다. 문서 세대가 다르므로 아래 우선순위를 먼저 확인한다.
 
 ## 문서 우선순위
 
-1. **제품·게임 규칙**: [`PRD.md`](./PRD.md)의 최신 변경 이력과 [`../PRD/P9_NEW_DESIGN_DECISIONS.md`](../PRD/P9_NEW_DESIGN_DECISIONS.md). 기반 전투 규칙은 P7 결정 로그를 함께 참조한다.
+1. **제품·게임 규칙**: [`PRD.md`](./PRD.md)의 최신 변경 이력과 [`../PRD/P10_CHARACTER_DESIGN_SYNC.md`](../PRD/P10_CHARACTER_DESIGN_SYNC.md). 기반 전투 규칙은 P7·P9 결정 로그를 함께 참조한다.
 2. **현재 구현 동작**: `packages/core`, `packages/content`의 코드와 회귀 테스트
 3. **현재 구현 요약**: [`current-implementation.md`](./current-implementation.md)
 4. **신규 콘텐츠 작성 기준**: [`content-design-guide.md`](./content-design-guide.md)
@@ -19,7 +19,8 @@
 | 문서 | 역할 | 상태 |
 |---|---|---|
 | [`PRD.md`](./PRD.md) | 브랜드 코어, 전투 규칙, UX, 콘텐츠 방향 | **현재 제품 정본** — v1.3 변경 이력이 본문 충돌보다 우선 |
-| [`../PRD/P9_NEW_DESIGN_DECISIONS.md`](../PRD/P9_NEW_DESIGN_DECISIONS.md) | 마도기사·번개 결투사·르미즈·소환 선택 등 P9 결정 로그 | **최신 오버라이드** |
+| [`../PRD/P10_CHARACTER_DESIGN_SYNC.md`](../PRD/P10_CHARACTER_DESIGN_SYNC.md) | 화염 전사·마도기사 최신 통합안과 충돌 해소 | **최신 캐릭터 오버라이드** |
+| [`../PRD/P9_NEW_DESIGN_DECISIONS.md`](../PRD/P9_NEW_DESIGN_DECISIONS.md) | 번개 결투사·르미즈·소환 선택 등 P9 결정 로그 | **활성 기반 규칙** |
 | [`../PRD/P7_NEW_DESIGN_DECISIONS.md`](../PRD/P7_NEW_DESIGN_DECISIONS.md) | 쿨다운·8슬롯·양면 속성 코인·과열 등 기반 전투 규칙 | **활성 기반 규칙** |
 | [`current-implementation.md`](./current-implementation.md) | 모노레포, 전투 파이프라인, 런·저장·CI의 현재 구현 스냅샷 | **현재 기술 안내** |
 | [`content-design-guide.md`](./content-design-guide.md) | 캐릭터·스킬·코인·몬스터를 추가할 때의 활성 양식 | **현재 작성 가이드** |

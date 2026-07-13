@@ -1,14 +1,14 @@
 import type { ContentDb, FlipSkillDef } from '../content-types';
 import type { CharacterId, CoinDefId, CoinUid, EnemyDefId, PassiveId, SkillId, SlotId } from '../ids';
 import { derive, rngFrom, seedFromString } from '../rng';
-import { flipSkillRequiresEnemyTarget, skillRequiresSummonChoice } from './commands';
+import { coinSatisfiesFlipRequirement, flipSkillRequiresEnemyTarget, skillRequiresSummonChoice } from './commands';
 import type { Command } from './commands';
 import { drawCards } from './draw';
 import { initialIntent, runEnemyPhase } from './enemy';
 import { runSummonPhase } from './summons';
 import type { CombatEvent } from './events';
 import { resolveConsume } from './resolve/consume';
-import { applyDamage, applyEffectAtom, checkCombatEnd, resolveFlip } from './resolve/flip';
+import { applyBlock, applyDamage, applyEffectAtom, checkCombatEnd, resolveFlip } from './resolve/flip';
 import { cloneState, MAX_SKILL_SLOTS, statusStacks } from './state';
 import type { CombatState, CombatZones } from './state';
 
@@ -87,7 +87,16 @@ const startPlayerTurn = (
       balanceSenseUsed: false,
       lastMoveUsed: false,
       residualChargeUsed: false,
-      overcurrentUsed: false
+      overcurrentUsed: false,
+      firstDamageReducedThisTurn: false,
+      firstBurnBoostUsedThisTurn: false,
+      burnAppliedThisTurn: false,
+      inverseGuardUsedThisTurn: false,
+      crossCalculationUsedThisTurn: false,
+      commandPreservationUsedThisTurn: false,
+      manaMembraneBlockThisTurn: 0,
+      blueCircuitUsedThisTurn: false,
+      nextAttackDamageBonus: 0
     },
     slots: input.slots.map((candidate) => ({
       ...candidate,
@@ -190,6 +199,13 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
     player: {
       hp: currentHp, maxHp, block: 0, statuses: {}, nextDrawPenalty: 0, nextDrawBonus: 0,
       overheat: false, weaponOutput: 0,
+      nextAttackDamageBonus: 0, endTurnBlockAoeCap: 0,
+      firstDamageReducedThisTurn: false, combatBreathingUsed: false,
+      firstBurnBoostUsedThisTurn: false, burnAppliedThisTurn: false,
+      previewDeploymentUsed: false, inverseGuardUsedThisTurn: false,
+      crossCalculationUsedThisTurn: false, residualRebuildStored: false,
+      commandPreservationUsedThisTurn: false, manaMembraneBlockThisTurn: 0,
+      blueCircuitUsedThisTurn: false, manaConsumedForResonance: 0,
       remiseCharges: character.trait.mechanic === 'remise' ? 1 : 0,
       continuousMotionUsed: false, retrievalHabitUsed: false, balanceSenseUsed: false,
       lastMoveUsed: false, residualChargeUsed: false, overcurrentUsed: false
@@ -287,6 +303,9 @@ const placeCoin = (input: CombatState, coin: CoinUid, slotId: SlotId, db: Conten
   if (slotState === undefined) return { ok: false, error: 'slot does not exist' };
   if (slotState.skillId === null) return { ok: false, error: 'slot is empty' };
   const skill = db.skills[String(slotState.skillId)];
+  if (skill?.type === 'flip' && !coinSatisfiesFlipRequirement(input, db, skill, coin)) {
+    return { ok: false, error: 'coin does not satisfy required flip element' };
+  }
   if (skill?.type === 'flip' && (input.zones.placed[slotId]?.length ?? 0) >= skill.cost) {
     return { ok: false, error: 'slot cost is already full' };
   }
@@ -328,6 +347,17 @@ const endTurn = (input: CombatState, db: ContentDb): StepResult => {
     ...state,
     zones: { ...state.zones, hand: [...state.zones.hand, ...returned], placed }
   };
+  const passiveMechanics = new Set(state.passives.flatMap((id) => {
+    const mechanic = (db.passives ?? {})[String(id)]?.mechanic;
+    return mechanic === undefined ? [] : [mechanic];
+  }));
+  if (passiveMechanics.has('preparedStance')) {
+    const amount = Math.min(2, state.zones.hand.length);
+    if (amount > 0) state = applyBlock(state, { type: 'player' }, amount, events);
+  }
+  if (passiveMechanics.has('hotBarrier') && state.player.burnAppliedThisTurn) {
+    state = applyBlock(state, { type: 'player' }, 2, events);
+  }
 
   const burn = statusStacks(state.player.statuses, 'burn');
   if (burn > 0) {
@@ -363,6 +393,18 @@ const endTurn = (input: CombatState, db: ContentDb): StepResult => {
     state = summonPhase.state;
     events.push(...summonPhase.events);
     if (state.phase === 'victory') return { ok: true, state, events };
+  }
+  if (state.player.endTurnBlockAoeCap > 0) {
+    const amount = Math.min(state.player.endTurnBlockAoeCap, state.player.block);
+    state = { ...state, player: { ...state.player, endTurnBlockAoeCap: 0 } };
+    if (amount > 0) {
+      for (let index = 0; index < state.enemies.length; index += 1) {
+        if ((state.enemies[index]?.hp ?? 0) <= 0) continue;
+        state = applyDamage(state, { type: 'enemy', index }, amount, 'skill', events, { type: 'player' });
+      }
+      state = checkCombatEnd(state, events);
+      if (state.phase === 'victory') return { ok: true, state, events };
+    }
   }
 
   const enemy = runEnemyPhase(state, db);

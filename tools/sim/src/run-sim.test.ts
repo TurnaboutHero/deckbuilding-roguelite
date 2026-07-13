@@ -28,15 +28,15 @@ describe('M5 full-run simulator', () => {
   });
 
   it('completes the deterministic generated-graph run with boundary state intact', () => {
-    // P9 재고정 (1.3.0-p9 결속): 신규 캐릭터 콘텐츠를 포함한 현재 결정론 런 골든.
+    // P10 재고정 (1.4.0-p10 결속): 화염 전사 최신 시작 스킬·패시브를 포함한 결정론 런 골든.
     // warrior 시작 셋 = jab·fist-guard·burning-fist·inner-passion + 빈 슬롯 4(null).
-    // seed 42 fight-first는 여전히 11번째 전투에서 패배한다 — balance-provisional 관측치
+    // seed 42 fight-first는 10번째 전투 후 패배한다 — balance-provisional 관측치
     // (baseline 정책 우선순위가 신규 격투 스킬 ID를 모른다는 한계 포함, 백로그 보고).
     const simulation = simulateRun('42');
 
     expect(simulation.summary.result).toBe('defeat');
-    expect(simulation.summary.combatsCompleted).toBe(11);
-    expect(simulation.combats).toHaveLength(11);
+    expect(simulation.summary.combatsCompleted).toBe(10);
+    expect(simulation.combats).toHaveLength(10);
     for (let index = 0; index < simulation.combats.length; index += 1) {
       const combat = simulation.combats[index];
       if (combat === undefined) throw new Error('missing combat record');
@@ -56,10 +56,10 @@ describe('M5 full-run simulator', () => {
     expect(simulation.summary).toEqual({
       seed: '42',
       result: 'defeat',
-      combatsCompleted: 11,
-      turnsPerCombat: [3, 3, 4, 2, 3, 3, 3, 4, 4, 4, 2], // P9 워리어 시작 세트(잿불 베기) 반영 결정론 골든 (balance-provisional)
+      combatsCompleted: 10,
+      turnsPerCombat: [3, 3, 4, 2, 3, 3, 3, 4, 4, 3], // P10 화염 전사 시작 세트 반영 결정론 골든 (balance-provisional)
       carriedHp: 0,
-      finalBag: ["basic", "basic", "basic", "basic", "basic", "basic", "basic", "basic", "fire", "fire", "fire", "fire", "basic", "fire", "fire", "fire", "basic", "basic", "basic", "basic"],
+      finalBag: ["basic", "basic", "basic", "basic", "basic", "basic", "basic", "basic", "fire", "fire", "fire", "fire", "basic", "fire", "fire", "fire", "basic", "basic", "basic"],
       finalEquippedSkills: ["jab", "fist-guard", "burning-fist", "flame-hook", "null", "null", "null", "conflagration"],
       encounterOrder: [
         ['raider'],
@@ -71,8 +71,7 @@ describe('M5 full-run simulator', () => {
         ['gatekeeper'],
         ['gatekeeper-plus'],
         ['raider-plus'],
-        ['gatekeeper-plus'],
-        ['raider-plus', 'gatekeeper-plus']
+        ['gatekeeper-plus']
       ]
     });
   });

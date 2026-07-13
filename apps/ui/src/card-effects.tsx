@@ -87,6 +87,18 @@ const atomSegment = (atom: EffectAtom): { text: string; term?: KeywordTerm } => 
   if (atom.kind === "damagePerBlock") {
     return { text: `현재 방어 1당 피해 ${atom.amountPerBlock}`, term: "block" };
   }
+  if (atom.kind === "blockFromCurrent") {
+    return { text: `현재 방어만큼 방어 (최대 ${atom.cap})`, term: "block" };
+  }
+  if (atom.kind === "damagePlusBlock") {
+    return { text: `피해 ${atom.base} + 현재 방어 (최대 +${atom.cap})`, term: "block" };
+  }
+  if (atom.kind === "prepareNextAttackDamage") {
+    return { text: `이번 턴 다음 공격 피해 +${atom.amount}` };
+  }
+  if (atom.kind === "scheduleEndTurnBlockAoe") {
+    return { text: `소환 행동 후 현재 방어만큼 전체 피해 (최대 ${atom.cap})`, term: "block" };
+  }
   if (atom.kind === "summonEquipment") {
     return {
       text:
@@ -106,7 +118,7 @@ const atomSegment = (atom: EffectAtom): { text: string; term?: KeywordTerm } => 
   if (atom.kind === "extendChosenSummon") return { text: `선택 소환 지속 +${atom.amount}` };
   if (atom.kind === "grantChosenSummonAoe") return { text: `선택 소환 광역 행동 ${atom.uses}회` };
   if (atom.kind === "cloneChosenSummon") return { text: `선택 소환 복제 (지속 ${atom.duration})` };
-  if (atom.kind === "virtualManaSwordVolley") return { text: `임시 마나 검 일제 공격 (기본 피해 ${atom.baseDamage})` };
+  if (atom.kind === "virtualManaSwordVolley") return { text: `임시 마나 검 ${atom.baseCount ?? 3}개 + 소환 수만큼 일제 공격 (피해 ${atom.baseDamage})` };
   if (atom.kind === "doubleTargetShock") return { text: "대상의 감전 2배", term: "shock" };
   if (atom.kind === "blockPerTargetShock") return { text: `방어 ${atom.base} + 감전 (최대 +${atom.cap})`, term: "shock" };
   if (atom.kind === "executeOrDischargeShock") return { text: "감전이 HP보다 높으면 처형, 아니면 감전만큼 피해 후 제거", term: "shock" };
@@ -178,6 +190,13 @@ export function skillEffectRows(skill: SkillDef): EffectRowModel[] {
   }
 
   const rows: EffectRowModel[] = [
+    ...(skill.requiredElement === undefined
+      ? []
+      : [{
+          kind: "cost" as const,
+          badge: "비용",
+          segments: [{ text: `${elementKo(skill.requiredElement)} ×${skill.cost} 장전` }],
+        }]),
     {
       kind: "base",
       badge: "기본",

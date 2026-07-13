@@ -1,8 +1,8 @@
 # 현재 구현 스냅샷
 
-> 마지막 동기화: 2026-07-13 · 기준: P9 / PRD v1.3 · 콘텐츠 `1.3.0-p9` · 런 저장 v7
+> 마지막 동기화: 2026-07-13 · 기준: P10 / PRD v1.3 · 콘텐츠 `1.4.0-p10` · 런 저장 v7
 
-이 문서는 **현재 코드가 실제로 수행하는 동작**을 설명한다. 제품 의도와 게임 규칙의 정본은 [`PRD.md`](./PRD.md)와 최신 [`../PRD/P9_NEW_DESIGN_DECISIONS.md`](../PRD/P9_NEW_DESIGN_DECISIONS.md)이며, 기반 전투 규칙의 역사적 근거는 [`../PRD/P7_NEW_DESIGN_DECISIONS.md`](../PRD/P7_NEW_DESIGN_DECISIONS.md)에 남긴다. 이 문서는 구현을 읽기 위한 기술 안내다.
+이 문서는 **현재 코드가 실제로 수행하는 동작**을 설명한다. 제품 의도와 게임 규칙의 정본은 [`PRD.md`](./PRD.md)와 최신 [`../PRD/P10_CHARACTER_DESIGN_SYNC.md`](../PRD/P10_CHARACTER_DESIGN_SYNC.md)이며, 기반 전투 규칙은 P7·P9 결정 로그에 남긴다. 이 문서는 구현을 읽기 위한 기술 안내다.
 
 문서 우선순위와 역사 문서 구분은 [`docs/README.md`](./README.md)를 먼저 본다.
 
@@ -10,8 +10,8 @@
 
 | 항목 | 현재 기준 | 코드 정본 |
 |---|---|---|
-| 제품 규칙 | PRD v1.3 + P9 오버라이드 | `docs/PRD.md`, `PRD/P9_NEW_DESIGN_DECISIONS.md` |
-| 콘텐츠 | `1.3.0-p9` | `packages/content/src/index.ts` |
+| 제품 규칙 | PRD v1.3 + P10 캐릭터 오버라이드 | `docs/PRD.md`, `PRD/P10_CHARACTER_DESIGN_SYNC.md` |
+| 콘텐츠 | `1.4.0-p10` | `packages/content/src/index.ts` |
 | 런 저장 | v7 | `packages/core/src/run/types.ts`, `apps/ui/src/run-storage.ts` |
 | 장착 슬롯 | 8칸, 빈 슬롯 `null`, 시작 스킬 4개 | `packages/core/src/combat/state.ts` |
 | 행동 제한 | 전역 사용 횟수 캡 없음, 스킬별 쿨다운 | `packages/core/src/content-types.ts`, `combat/commands.ts` |
@@ -156,11 +156,18 @@ sim     → core + content
 
 과열은 `PlayerState.overheat: boolean`으로 표현한다.
 
-1. 화염 소비 스킬의 `enterOverheat` 효과로 진입한다.
+1. `requiredElement: 'fire'`인 플립 스킬의 `enterOverheat` 효과로 진입한다.
 2. 중첩되지 않고 턴을 넘어 유지된다.
 3. `overheatBonus`가 없는 스킬은 과열을 소비하지 않는다.
 4. 과열 강화 분기가 있는 스킬이 성공적으로 해결되면 보너스를 적용한 뒤 과열을 소비한다.
 5. 취소되거나 불법인 명령은 과열을 소비하지 않는다.
+
+## 7.1 P10 캐릭터 전투 상태
+
+- 화염 전사는 첫 피해 감소, 체력 50% 진입 회복, 첫 화상 증가, 화상 턴 종료 방어를 전투·턴 플래그로 제한한다.
+- 마도기사는 다음 공격 피해 보너스, 장비 행동 뒤 예약 광역 피해, 재구축 저장, 명령 지속 보존, 마나 소비 누적을 전투 상태로 추적한다.
+- 병기 출력은 0~5이며 마나 검 피해와 마나 방패 방어에 공통으로 더한다.
+- 마력 갑주 스킬이 현재 방어를 참조해도 방어는 감소하지 않는다.
 
 ## 8. 콘텐츠 데이터와 검증
 

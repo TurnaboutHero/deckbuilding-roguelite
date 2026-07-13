@@ -76,10 +76,28 @@ describe("skillEffectRows", () => {
 
   it("tags overheat entry with the overheat keyword", () => {
     const rows = skillEffectRows(skill("inner-passion"));
-    const effect = rows.find((row) => row.kind === "effect");
-    expect(effect?.segments).toEqual([
+    expect(rows.find((row) => row.kind === "cost")?.segments).toEqual([
+      { text: "화염 ×1 장전" },
+    ]);
+    expect(rows.find((row) => row.kind === "base")?.segments).toEqual([
       { text: "과열 진입", term: "overheat" },
-      { text: "코인 1개 뽑기" },
+    ]);
+  });
+
+  it("renders armor reference and delayed release effects without generic copy", () => {
+    expect(skillEffectRows(skill("mana-amplification"))[1]?.segments[0]?.text).toBe(
+      "현재 방어만큼 방어 (최대 10)",
+    );
+    expect(skillEffectRows(skill("armor-smash"))[1]?.segments[0]?.text).toBe(
+      "피해 6 + 현재 방어 (최대 +10)",
+    );
+    expect(
+      skillEffectRows(skill("arcane-armor-release"))[1]?.segments.map(
+        (segment) => segment.text,
+      ),
+    ).toEqual([
+      "방어 10",
+      "소환 행동 후 현재 방어만큼 전체 피해 (최대 18)",
     ]);
   });
 

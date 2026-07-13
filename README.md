@@ -6,7 +6,7 @@
 
 ## 현재 기준
 
-> P9 · PRD v1.3 · 콘텐츠 `1.3.0-p9` · 런 저장 v7
+> P10 · PRD v1.3 · 콘텐츠 `1.4.0-p10` · 런 저장 v7
 > 공학 상태: engineering-safe · 밸런스: balance-provisional · 경험: experience-unverified
 
 - **플레이**: https://turnabouthero.github.io/deckbuilding-roguelite/
@@ -25,6 +25,7 @@
 |---|---|
 | [`docs/README.md`](docs/README.md) | 문서 우선순위, 현재 문서와 역사 문서 구분 |
 | [`docs/PRD.md`](docs/PRD.md) | 제품 요구사항과 게임 규칙 정본. v1.3 변경 이력이 본문 충돌보다 우선 |
+| [`PRD/P10_CHARACTER_DESIGN_SYNC.md`](PRD/P10_CHARACTER_DESIGN_SYNC.md) | 화염 전사·마도기사 최신 통합 기획과 구현 결정 |
 | [`PRD/P7_NEW_DESIGN_DECISIONS.md`](PRD/P7_NEW_DESIGN_DECISIONS.md) | 쿨다운·8슬롯·양면 속성 코인·과열 등 최신 오버라이드 |
 | [`docs/current-implementation.md`](docs/current-implementation.md) | 현재 코드를 기준으로 한 아키텍처·전투·런·저장·CI 안내 |
 | [`docs/content-design-guide.md`](docs/content-design-guide.md) | 신규 코인·스킬·캐릭터·몬스터 작성 기준 |

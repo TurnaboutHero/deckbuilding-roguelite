@@ -148,7 +148,7 @@ describe("rejectionReason", () => {
           { ...coin, defId: "basic" as never, grants: [] },
         ]),
       ),
-    }, 4, { skillId: "inner-passion" as never });
+    }, 4, { skillId: "burnout-blow" as never });
     expect(
       rejectionReason(
         state,

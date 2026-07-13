@@ -62,6 +62,17 @@ const isBasicCoinInHand = (state: CombatState, db: ContentDb, coin: CoinUid): bo
   return instance !== undefined && def?.element === null && instance.grants.length === 0;
 };
 
+export const coinSatisfiesFlipRequirement = (
+  state: CombatState,
+  db: ContentDb,
+  skill: FlipSkillDef,
+  coin: CoinUid
+): boolean => {
+  if (skill.requiredElement === undefined) return true;
+  const instance = state.coins[Number(coin)];
+  return instance !== undefined && effectiveElements(instance, db).includes(skill.requiredElement);
+};
+
 // P6 D6 — 소환 선택 스킬 술어 (UI/심이 선택 필요 여부를 중복 구현하지 않도록 공개)
 export const skillRequiresEquipmentChoice = (skill: FlipSkillDef): boolean =>
   [...skill.base, ...(skill.heads?.effects ?? []), ...(skill.tails?.effects ?? [])].some(
@@ -143,7 +154,7 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
       }
       if ((state.zones.placed[slot]?.length ?? 0) < skill.cost) {
         for (const coin of state.zones.hand) {
-          commands.push({ type: 'placeCoin', coin, slot });
+          if (coinSatisfiesFlipRequirement(state, db, skill, coin)) commands.push({ type: 'placeCoin', coin, slot });
         }
       }
     } else {

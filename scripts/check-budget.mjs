@@ -6,12 +6,12 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "apps/ui/dist");
-// P9: 마도기사·전기 결투사의 두 빌드와 선택형 소환/르미즈 해결 규칙을 추가했다.
-// 이미지 자산 증가는 없으며, 중복 명령 비교·선택 라우팅을 제거한 뒤의 실측치에
-// 총 22KiB, JS 5KiB, CSS 64B만 허용한다. 단일 파일·LCP·CLS 게이트는 유지한다.
+// P10: 화염 전사·마도기사의 스킬/패시브와 전투 상태 해결 규칙을 추가했다.
+// 이미지·CSS 자산 증가는 없으며 P9 예산에서 총 12KiB, JS 12KiB만 추가로
+// 허용한다. 단일 파일·LCP·CLS 게이트는 유지한다.
 const BUDGETS = {
-  total: 2767257,
-  js: 414720, // 405 KiB
+  total: 2779545,
+  js: 427008, // 417 KiB
   css: 71744, // 70 KiB + 64 B
   maxFile: 716800, // 700 KiB
 };

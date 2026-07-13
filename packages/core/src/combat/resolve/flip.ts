@@ -80,12 +80,21 @@ export const applyDamage = (
   if (amount < 0) throw new Error('damage amount cannot be negative');
   const finalAmount = source === 'burn' ? amount : modifiedDamage(state, target, amount, attacker);
   if (target.type === 'player') {
-    const blocked = source === 'burn' ? 0 : Math.min(state.player.block, finalAmount);
-    const hpDamage = finalAmount - blocked;
+    const canReduce = source !== 'burn' && finalAmount > 0 && !state.player.firstDamageReducedThisTurn &&
+      state.passives.some((id) => String(id) === 'opening-stance');
+    const reducedAmount = Math.max(0, finalAmount - (canReduce ? 1 : 0));
+    const blocked = source === 'burn' ? 0 : Math.min(state.player.block, reducedAmount);
+    const hpDamage = reducedAmount - blocked;
+    const nextHp = Math.max(0, state.player.hp - hpDamage);
+    const shouldBreathe = hpDamage > 0 && !state.player.combatBreathingUsed &&
+      state.passives.some((id) => String(id) === 'thick-hide') &&
+      state.player.hp > state.player.maxHp / 2 && nextHp <= state.player.maxHp / 2;
     const player = {
       ...state.player,
       block: state.player.block - blocked,
-      hp: Math.max(0, state.player.hp - hpDamage)
+      hp: shouldBreathe ? Math.min(state.player.maxHp, nextHp + 3) : nextHp,
+      firstDamageReducedThisTurn: state.player.firstDamageReducedThisTurn || canReduce,
+      combatBreathingUsed: state.player.combatBreathingUsed || shouldBreathe
     };
     events.push({ type: 'damageDealt', target, amount: hpDamage, blocked, source });
     return checkCombatEnd({ ...state, player }, events);
@@ -272,9 +281,12 @@ export const applyEffectAtom = (
     case 'applyStatus': {
       const statusTarget = atom.to === 'self' ? { type: 'player' as const } : target;
       if (statusTarget.type === 'enemy' && !isAliveEnemy(state, statusTarget.index)) return state;
+      const firstBurnBoost = atom.status === 'burn' && atom.to === 'target' && !state.player.firstBurnBoostUsedThisTurn &&
+        state.passives.some((id) => String(id) === 'ember-stock');
+      const appliedAtom = firstBurnBoost ? { ...atom, stacks: atom.stacks + 1 } : atom;
       const event =
         atom.status === 'burn'
-          ? { type: 'statusApplied' as const, target: statusTarget, status: atom.status, stacks: atom.stacks }
+          ? { type: 'statusApplied' as const, target: statusTarget, status: atom.status, stacks: appliedAtom.stacks }
           : { type: 'statusApplied' as const, target: statusTarget, status: atom.status, stacks: atom.stacks, turns: atom.stacks };
       if (statusTarget.type === 'player') {
         events.push(event);
@@ -282,17 +294,26 @@ export const applyEffectAtom = (
           ...state,
           player: {
             ...state.player,
-            statuses: { ...state.player.statuses, [atom.status]: addStatus(state.player.statuses[atom.status], atom) }
+            statuses: { ...state.player.statuses, [atom.status]: addStatus(state.player.statuses[atom.status], appliedAtom) },
+            firstBurnBoostUsedThisTurn: state.player.firstBurnBoostUsedThisTurn || firstBurnBoost
           }
         };
       }
       const enemies = state.enemies.map((enemy, index) =>
         index === statusTarget.index
-          ? { ...enemy, statuses: { ...enemy.statuses, [atom.status]: addStatus(enemy.statuses[atom.status], atom) } }
+          ? { ...enemy, statuses: { ...enemy.statuses, [atom.status]: addStatus(enemy.statuses[atom.status], appliedAtom) } }
           : enemy
       );
       events.push(event);
-      return { ...state, enemies };
+      return {
+        ...state,
+        enemies,
+        player: {
+          ...state.player,
+          firstBurnBoostUsedThisTurn: state.player.firstBurnBoostUsedThisTurn || firstBurnBoost,
+          burnAppliedThisTurn: state.player.burnAppliedThisTurn || atom.status === 'burn'
+        }
+      };
     }
     case 'addCoin':
       return addTemporaryCoin(state, atom, events);
@@ -326,6 +347,16 @@ export const applyEffectAtom = (
         ? fireTurnTriggers(damaged, 'onDamageDealt', target, db, events, options?.turnTriggerScope)
         : damaged;
     }
+    case 'blockFromCurrent':
+      return applyBlock(state, { type: 'player' }, Math.min(atom.cap, state.player.block), events);
+    case 'damagePlusBlock': {
+      if (target.type !== 'enemy' || !isAliveEnemy(state, target.index)) return state;
+      return applyDamage(state, target, atom.base + Math.min(atom.cap, state.player.block), 'skill', events, { type: 'player' });
+    }
+    case 'prepareNextAttackDamage':
+      return { ...state, player: { ...state.player, nextAttackDamageBonus: state.player.nextAttackDamageBonus + atom.amount } };
+    case 'scheduleEndTurnBlockAoe':
+      return { ...state, player: { ...state.player, endTurnBlockAoeCap: Math.max(state.player.endTurnBlockAoeCap, atom.cap) } };
     // P6 D6 — 소환 (뒷면당 지속 연장)
     case 'summonEquipment': {
       const equipmentId =
@@ -346,7 +377,7 @@ export const applyEffectAtom = (
       const bonus = atom.bonusPerTails * (options?.tailsCount ?? 0);
       const acted = actSummon(state, index, bonus, db, events);
       if (acted.phase === 'victory' || acted.phase === 'defeat') return acted;
-      return tickSummonDuration(acted, uid, events);
+      return tickSummonDuration(acted, uid, events, db, true);
     }
     // P6 D6 — 마나 병기: 전체 소환 강화 (이번 전투 지속)
     case 'empowerSummons':
@@ -393,7 +424,7 @@ export const applyEffectAtom = (
       return { ...state, summons: [...state.summons, clone], nextSummonUid: state.nextSummonUid + 1 };
     }
     case 'virtualManaSwordVolley': {
-      const count = 3 + state.summons.length;
+      const count = (atom.baseCount ?? 3) + state.summons.length;
       let next = state;
       for (let volley = 0; volley < count; volley += 1) {
         for (let index = 0; index < next.enemies.length; index += 1) {
@@ -489,6 +520,7 @@ const isTargetEffect = (atom: EffectAtom): boolean =>
   atom.kind === 'damage' ||
   atom.kind === 'damagePerTargetBurn' ||
   atom.kind === 'damagePerBlock' ||
+  atom.kind === 'damagePlusBlock' ||
   (atom.kind === 'applyStatus' && atom.to === 'target');
 
 /** 전체 대상 스킬의 본체/면 효과를 모든 생존 적에게 적용한다. */
@@ -497,10 +529,14 @@ export const targetsForSkillEffect = (
   atom: EffectAtom,
   skill: FlipSkillDef | ConsumeSkillDef,
   fallback: TargetRef
-): TargetRef[] =>
-  skill.targetType === 'all-enemies' && isTargetEffect(atom)
+): TargetRef[] => {
+  if (atom.kind === 'block' || atom.kind === 'blockFromCurrent' || atom.kind === 'prepareNextAttackDamage' || atom.kind === 'scheduleEndTurnBlockAoe') {
+    return [{ type: 'player' }];
+  }
+  return skill.targetType === 'all-enemies' && isTargetEffect(atom)
     ? state.enemies.flatMap((enemy, index) => (enemy.hp > 0 ? [{ type: 'enemy' as const, index }] : []))
     : [fallback];
+};
 
 const targetForSkill = (state: CombatState, skill: FlipSkillDef, target?: number): TargetRef => {
   if (skill.targetType === 'self') return { type: 'player' };
@@ -681,6 +717,42 @@ export const resolveFlip = (
     const headsCount = resolutionFaces.length - tailsCount;
     const resolutionSkill = includeBase ? effectSkill : { ...effectSkill, base: [] };
     const effects = collectEffects(resolutionSkill, resolutionFaces, resolutionElements, includeBase && input.player.overheat);
+    if (includeBase && skill.tags.includes('attack') && state.player.nextAttackDamageBonus > 0) {
+      const primaryDamage = effects.find((atom) => atom.kind === 'damage');
+      if (primaryDamage !== undefined && primaryDamage.kind === 'damage') {
+        primaryDamage.amount += state.player.nextAttackDamageBonus;
+      } else {
+        effects.push({ kind: 'damage', amount: state.player.nextAttackDamageBonus });
+      }
+      state = { ...state, player: { ...state.player, nextAttackDamageBonus: 0 } };
+    }
+    if (includeBase && skill.tags.includes('defense') && passiveMechanics.has('shieldMastery') && effects.some((atom) => atom.kind === 'block')) {
+      effects.push({ kind: 'block', amount: 1 });
+    }
+    if (includeBase && tailsCount >= 2 && !state.player.inverseGuardUsedThisTurn && passiveMechanics.has('inverseGuard')) {
+      effects.push({ kind: 'block', amount: 3 });
+      state = { ...state, player: { ...state.player, inverseGuardUsedThisTurn: true } };
+    }
+    if (includeBase && tailsCount > 0 && headsCount > 0 && !state.player.crossCalculationUsedThisTurn && passiveMechanics.has('crossCalculation')) {
+      const basic = Object.values(db.coins).find((coin) => coin.element === null)?.id;
+      if (basic !== undefined) effects.push({ kind: 'addCoin', coin: basic, zone: 'hand', count: 1 });
+      state = { ...state, player: { ...state.player, crossCalculationUsedThisTurn: true } };
+    }
+    if (includeBase && skill.tags.includes('attack') && passiveMechanics.has('emberBlade')) {
+      const fireTails = resolutionFaces.reduce((count, face, index) =>
+        count + (face === 'tails' && (resolutionElements[index] ?? []).includes('fire') ? 1 : 0), 0);
+      for (let i = 0; i < fireTails; i += 1) effects.push({ kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' });
+    }
+    if (includeBase && passiveMechanics.has('manaMembrane')) {
+      const manaTails = resolutionFaces.reduce((count, face, index) =>
+        count + (face === 'tails' && (resolutionElements[index] ?? []).includes('mana') ? 1 : 0), 0);
+      const available = Math.max(0, 3 - state.player.manaMembraneBlockThisTurn);
+      const gained = Math.min(available, manaTails);
+      if (gained > 0) {
+        effects.push({ kind: 'block', amount: gained });
+        state = { ...state, player: { ...state.player, manaMembraneBlockThisTurn: state.player.manaMembraneBlockThisTurn + gained } };
+      }
+    }
     if (includeBase && !isReuse && input.zones.hand.length === 0 && !state.player.lastMoveUsed && passiveMechanics.has('lastMove')) {
       if (effects.some((atom) => atom.kind === 'damage')) effects.push({ kind: 'damage', amount: 2 });
       if (effects.some((atom) => atom.kind === 'block')) effects.push({ kind: 'block', amount: 2 });

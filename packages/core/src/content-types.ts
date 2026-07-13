@@ -38,11 +38,11 @@ export type SkillUpgradePatch =
   | { kind: 'addFaceEffect'; face: 'heads' | 'tails'; effect: EffectAtom }
   | { kind: 'addMixedFaceEffect'; effect: EffectAtom }
   | { kind: 'setFaceMode'; face: 'heads' | 'tails'; mode: 'any' | 'per' }
-  | { kind: 'replaceEffect'; section: 'base' | 'heads' | 'tails'; index: number; effect: EffectAtom }
+  | { kind: 'replaceEffect'; section: 'base' | 'heads' | 'tails' | 'overheat'; index: number; effect: EffectAtom }
   | { kind: 'setRemiseLightningCount'; count: number }
   | { kind: 'addCoinOnUse'; coin: CoinDefId; zone: 'draw' | 'discard' | 'hand'; count: number }
   | { kind: 'costDelta'; delta: number }
-  | { kind: 'removeOncePerCombat'; cooldown?: 1 | 2 | 3 | 4 };
+  | { kind: 'removeOncePerCombat'; cooldown?: 1 | 2 | 3 | 4; costDelta?: number };
 
 export interface SkillUpgradeDef {
   name: string;
@@ -60,7 +60,12 @@ export interface PassiveDef {
   element: Element | null;
   hook: 'combatStart' | 'turnStart';
   effects: EffectAtom[];
-  mechanic?: 'continuousMotion' | 'retrievalHabit' | 'balanceSense' | 'lastMove' | 'residualCharge' | 'overcurrent' | 'dischargeSuppression';
+  mechanic?:
+    | 'continuousMotion' | 'retrievalHabit' | 'balanceSense' | 'lastMove' | 'residualCharge' | 'overcurrent' | 'dischargeSuppression'
+    | 'shieldMastery' | 'preparedStance' | 'indomitableSpirit' | 'combatBreathing'
+    | 'ignitionInstinct' | 'emberBlade' | 'hotBarrier'
+    | 'previewDeployment' | 'inverseGuard' | 'crossCalculation' | 'residualRebuild'
+    | 'commandPreservation' | 'manaMembrane' | 'blueCircuit' | 'armamentResonance';
   price: number;
 }
 
@@ -85,6 +90,8 @@ export interface SkillDefBase {
 export interface FlipSkillDef extends SkillDefBase {
   type: 'flip';
   cost: number;
+  // 일부 플립형 스킬은 지정 속성 동전만 장전할 수 있다. 소비가 아니므로 면과 proc은 정상 판정한다.
+  requiredElement?: Element;
   base: EffectAtom[];
   heads?: { mode: 'any' | 'per'; effects: EffectAtom[] };
   tails?: { mode: 'any' | 'per'; effects: EffectAtom[] };
@@ -139,6 +146,10 @@ export type EffectAtom =
   | { kind: 'damagePerTargetBurn'; amountPerStack: number }
   // P6 D6 — 마력 갑주: 현재 방어 참조 피해 (방어 비소모)
   | { kind: 'damagePerBlock'; amountPerBlock: number }
+  | { kind: 'blockFromCurrent'; cap: number }
+  | { kind: 'damagePlusBlock'; base: number; cap: number }
+  | { kind: 'prepareNextAttackDamage'; amount: number }
+  | { kind: 'scheduleEndTurnBlockAoe'; cap: number }
   // P6 D6 — 소환: equipment 'chosen'은 커맨드의 chosenEquipment(기본: 정렬 첫 장비)
   | { kind: 'summonEquipment'; equipment: EquipmentDefId | 'chosen'; duration: number; durationPerTails?: number }
   // P6 D6 — 명령: 선택 소환 즉시 행동(+뒷면당 효과 보너스), 지속 -1
@@ -150,7 +161,7 @@ export type EffectAtom =
   | { kind: 'extendChosenSummon'; amount: number }
   | { kind: 'grantChosenSummonAoe'; uses: number; usesPerHeads?: number }
   | { kind: 'cloneChosenSummon'; duration: number; fullCapExtension: number }
-  | { kind: 'virtualManaSwordVolley'; baseDamage: number }
+  | { kind: 'virtualManaSwordVolley'; baseDamage: number; baseCount?: number }
   | { kind: 'doubleTargetShock' }
   | { kind: 'blockPerTargetShock'; base: number; cap: number }
   | { kind: 'executeOrDischargeShock' }
@@ -550,6 +561,8 @@ const validateSkillUpgrades = (skills: readonly SkillDef[]): string[] => {
         errors.push(`${owner}: replaceEffect ${patch.section} requires a flip skill`);
       const atoms = patch.section === 'base'
         ? (skill.type === 'flip' ? skill.base : skill.effects)
+        : patch.section === 'overheat'
+          ? skill.overheatBonus
         : skill.type === 'flip'
           ? skill[patch.section]?.effects
           : undefined;

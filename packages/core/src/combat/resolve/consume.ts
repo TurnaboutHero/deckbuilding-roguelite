@@ -95,10 +95,61 @@ export const resolveConsume = (
       exhausted: [...input.zones.exhausted, ...coins]
     }
   };
+  const passiveMechanics = new Set(
+    input.passives.flatMap((id) => {
+      const mechanic = (db.passives ?? {})[String(id)]?.mechanic;
+      return mechanic === undefined ? [] : [mechanic];
+    })
+  );
+  if (skill.consume.element === 'mana') {
+    if (coins.length >= 2 && !state.player.blueCircuitUsedThisTurn && passiveMechanics.has('blueCircuit')) {
+      const mana = Object.values(db.coins).find((coin) => coin.element === 'mana')?.id;
+      if (mana !== undefined) {
+        state = applyEffectAtom(state, { kind: 'addCoin', coin: mana, zone: 'discard', count: 1 }, { type: 'player' }, db, events);
+      }
+      state = { ...state, player: { ...state.player, blueCircuitUsedThisTurn: true } };
+    }
+    if (passiveMechanics.has('armamentResonance') && state.player.weaponOutput < 5) {
+      const total = state.player.manaConsumedForResonance + coins.length;
+      const gain = Math.min(5 - state.player.weaponOutput, Math.floor(total / 3));
+      state = {
+        ...state,
+        player: {
+          ...state.player,
+          weaponOutput: state.player.weaponOutput + gain,
+          manaConsumedForResonance: total - gain * 3
+        }
+      };
+      if (gain > 0) events.push({ type: 'weaponOutputChanged', amount: gain, value: state.player.weaponOutput });
+    }
+  }
 
   // 피해 전용 과열 보너스는 기본 피해와 같은 타격으로 합산 (flip과 동일 규칙)
   const overheatBonus = input.player.overheat ? (skill.overheatBonus ?? []) : [];
-  const effects = [...skill.effects];
+  let effects = [...skill.effects];
+  if (skill.tags.includes('attack') && state.player.nextAttackDamageBonus > 0) {
+    const primaryDamageIndex = effects.findIndex((atom) =>
+      atom.kind === 'damage' || atom.kind === 'damagePlusBlock'
+    );
+    if (primaryDamageIndex >= 0) {
+      effects = effects.map((atom, index) => {
+        if (index !== primaryDamageIndex) return atom;
+        if (atom.kind === 'damage') {
+          return { ...atom, amount: atom.amount + state.player.nextAttackDamageBonus };
+        }
+        if (atom.kind === 'damagePlusBlock') {
+          return { ...atom, base: atom.base + state.player.nextAttackDamageBonus };
+        }
+        return atom;
+      });
+    } else {
+      effects.push({ kind: 'damage', amount: state.player.nextAttackDamageBonus });
+    }
+    state = { ...state, player: { ...state.player, nextAttackDamageBonus: 0 } };
+  }
+  if (skill.tags.includes('defense') && passiveMechanics.has('shieldMastery') && effects.some((atom) => atom.kind === 'block')) {
+    effects.push({ kind: 'block', amount: 1 });
+  }
   if (overheatBonus.length > 0) {
     if (overheatBonus.every((atom) => atom.kind === 'damage')) {
       let insertAt = -1;

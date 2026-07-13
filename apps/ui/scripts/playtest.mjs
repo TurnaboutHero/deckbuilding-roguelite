@@ -1013,7 +1013,7 @@ const winCurrentCombat = async (page) => {
   const { page, errors } = await boot(undefined, {
     url: urlWith({
       seed: SEED,
-      skills: "jab,fist-guard,burning-fist,inner-passion",
+      skills: "jab,fist-guard,burning-fist,ignite-sword",
     }),
   });
   const pileSum = async (selector) => {
@@ -1120,7 +1120,7 @@ const winCurrentCombat = async (page) => {
   await page.screenshot({ path: `${outDir}/26-discard-inspector.png` });
   await page.keyboard.press("Escape");
 
-  // 시작 손패의 영구 화염 동전을 내면의 열정으로 소비 → 전투 중 제외, 전투 후 복귀 안내.
+  // 테스트 장착한 점화권으로 영구 화염 동전을 소비 → 전투 중 제외, 전투 후 복귀 안내.
   check(
     "S11 소비 전 화염 동전 보유",
     (await page.locator(".hand-tray .coin.fire").count()) >= 1,
@@ -1532,7 +1532,7 @@ const winCurrentCombat = async (page) => {
   // 경제 보존: 골드 105 = 완료 노드(전투 35 + 엘리트 70) 총수입과 일치.
   const injectBase = {
     version: 7,
-    contentVersion: "1.3.0-p9",
+    contentVersion: "1.4.0-p10",
     runSeed: "S12-INJECT",
     character: "warrior",
     currentHp: 63,
@@ -3068,7 +3068,7 @@ const winCurrentCombat = async (page) => {
 // 정식 콘텐츠 무접촉). 가격·경계 진실은 코어/저장 검증기가 소유 — 여기선 DOM 반영만 확인.
 // P6: 상점 패시브 1슬롯 진열·구매 커버리지 추가.
 {
-  const CONTENT_VERSION_PIN = "1.3.0-p9"; // 버전 승격 시 골든처럼 함께 재고정
+  const CONTENT_VERSION_PIN = "1.4.0-p10"; // 버전 승격 시 골든처럼 함께 재고정
   const WARRIOR_SKILLS = [
     "jab",
     "fist-guard",
@@ -3325,7 +3325,7 @@ const winCurrentCombat = async (page) => {
     ];
     const save = {
       version: 7,
-      contentVersion: "1.3.0-p9",
+      contentVersion: "1.4.0-p10",
       runSeed: "S26-EVENT",
       character: "warrior",
       currentHp: 63,
@@ -3534,7 +3534,7 @@ const winCurrentCombat = async (page) => {
     }));
   const mobileSave = (phase, extra = {}) => ({
     version: 7,
-    contentVersion: "1.3.0-p9",
+    contentVersion: "1.4.0-p10",
     runSeed: "S28",
     character: "warrior",
     currentHp: 63,
@@ -3744,7 +3744,7 @@ const winCurrentCombat = async (page) => {
   };
   const kbSave = (phase, extra = {}) => ({
     version: 7,
-    contentVersion: "1.3.0-p9",
+    contentVersion: "1.4.0-p10",
     runSeed: "S29",
     character: "warrior",
     currentHp: 63,
@@ -3964,7 +3964,7 @@ const winCurrentCombat = async (page) => {
 {
   const phaseSave = (phase, extra = {}) => ({
     version: 7,
-    contentVersion: "1.3.0-p9",
+    contentVersion: "1.4.0-p10",
     runSeed: "S31",
     character: "warrior",
     currentHp: 63,
@@ -4261,7 +4261,7 @@ const V7_WARRIOR_SKILLS = [
 ];
 const v6Save = (overrides = {}) => ({
   version: 7,
-  contentVersion: "1.3.0-p9",
+  contentVersion: "1.4.0-p10",
   runSeed: "S33-P6",
   character: "warrior",
   currentHp: 63,
@@ -4313,14 +4313,16 @@ const phaseAttr = (page, name) =>
       "+21",
     ),
   );
-  // P7 warrior 시작 스킬 4종은 모두 upgrade 정의 보유 — 빈 슬롯은 목록에서 제외
+  // P10: 불씨권 강화는 미확정이므로 비활성, 나머지 시작 스킬 3종만 활성.
   const upgradeButtons = page.locator('[data-testid^="rest-upgrade-"]');
   check(
-    "S33 강화 리스트 시작 스킬 4종 전부 활성",
+    "S33 강화 리스트 4종 중 확정 3종만 활성",
     (await upgradeButtons.count()) === 4 &&
       (await upgradeButtons.evaluateAll((buttons) =>
-        buttons.every((button) => !button.disabled),
-      )),
+        buttons.filter((button) => !button.disabled).length === 3,
+      )) &&
+      (await page.locator('[data-testid="rest-upgrade-3"]').getAttribute("title")) ===
+        "강화가 정의되지 않은 스킬",
   );
   await page.screenshot({ path: `${outDir}/60-p6-rest.png` });
   await page.locator('[data-testid="rest-heal"]').click();
@@ -4425,9 +4427,9 @@ const phaseAttr = (page, name) =>
     '[data-testid="treasure-screen"]',
   );
   check(
-    "S34 보물 화면·패시브 미리보기 (단단한 몸)",
+    "S34 보물 화면·패시브 미리보기 (강철 피부)",
     (await page.locator('[data-testid="treasure-screen"]').innerText()).includes(
-      "단단한 몸",
+      "강철 피부",
     ),
   );
   check(

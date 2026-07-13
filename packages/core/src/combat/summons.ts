@@ -1,6 +1,6 @@
 // P6 D6 — 소환 장비 엔진 (명시 규칙: 결정 로그 §D6)
 // · 최대 3 슬롯, 배열 순서 = 소환 순서(선입) = 자동 행동 순서
-// · 슬롯 초과 시 가장 오래된 소환(배열 첫 항목) 교체
+// · 슬롯이 가득 차면 새 소환은 불발(기존 장비 유지)
 // · 행동 대상: 살아있는 최소 인덱스 적 (사망 시 자동 재타깃, 전멸 시 무시)
 // · 플레이어 턴 종료 시 자동 행동 → 지속 1 감소 → 0이면 소멸
 // · 전투 종료 시 전체 소멸 (전투는 저장 대상이 아니므로 별도 정리 불요)
@@ -44,31 +44,38 @@ export const addSummon = (
   equipmentDefOf(db, defId);
   if (!Number.isInteger(duration) || duration < 1)
     throw new Error('summon duration must be a positive integer');
+  if (input.summons.length >= SUMMON_SLOT_CAP) return input;
+  const mechanics = new Set(input.passives.flatMap((id) => {
+    const mechanic = (db.passives ?? {})[String(id)]?.mechanic;
+    return mechanic === undefined ? [] : [mechanic];
+  }));
+  const previewBonus = mechanics.has('previewDeployment') && !input.player.previewDeploymentUsed ? 1 : 0;
+  const rebuildBonus = mechanics.has('residualRebuild') && input.player.residualRebuildStored ? 1 : 0;
+  const finalDuration = duration + previewBonus + rebuildBonus;
   const summon: SummonState = {
     uid: input.nextSummonUid,
     defId,
-    duration,
+    duration: finalDuration,
     enhance: 0,
     aoeUses: 0,
   };
-  let summons = [...input.summons];
-  if (summons.length >= SUMMON_SLOT_CAP) {
-    const oldest = summons[0]!;
-    events.push({
-      type: 'summonReplaced',
-      uid: oldest.uid,
-      equipment: String(oldest.defId),
-    });
-    summons = summons.slice(1);
-  }
-  summons = [...summons, summon];
+  const summons = [...input.summons, summon];
   events.push({
     type: 'summonAdded',
     uid: summon.uid,
     equipment: String(defId),
-    duration,
+    duration: finalDuration,
   });
-  return { ...input, summons, nextSummonUid: input.nextSummonUid + 1 };
+  return {
+    ...input,
+    player: {
+      ...input.player,
+      previewDeploymentUsed: input.player.previewDeploymentUsed || previewBonus > 0,
+      residualRebuildStored: rebuildBonus > 0 ? false : input.player.residualRebuildStored
+    },
+    summons,
+    nextSummonUid: input.nextSummonUid + 1
+  };
 };
 
 // 소환 1개 행동 실행 (자동/명령 공용). bonus = 명령의 뒷면 보너스 + 영구 enhance.
@@ -118,8 +125,18 @@ export const tickSummonDuration = (
   input: CombatState,
   summonUid: number,
   events: CombatEvent[],
+  db: ContentDb,
+  fromCommand = false,
 ): CombatState => {
+  const mechanics = new Set(input.passives.flatMap((id) => {
+    const mechanic = (db.passives ?? {})[String(id)]?.mechanic;
+    return mechanic === undefined ? [] : [mechanic];
+  }));
+  if (fromCommand && mechanics.has('commandPreservation') && !input.player.commandPreservationUsedThisTurn) {
+    return { ...input, player: { ...input.player, commandPreservationUsedThisTurn: true } };
+  }
   const summons: SummonState[] = [];
+  let expired = false;
   for (const summon of input.summons) {
     if (summon.uid !== summonUid) {
       summons.push(summon);
@@ -127,6 +144,7 @@ export const tickSummonDuration = (
     }
     const duration = summon.duration - 1;
     if (duration <= 0) {
+      expired = true;
       events.push({
         type: 'summonExpired',
         uid: summon.uid,
@@ -136,7 +154,14 @@ export const tickSummonDuration = (
       summons.push({ ...summon, duration });
     }
   }
-  return { ...input, summons };
+  return {
+    ...input,
+    summons,
+    player: {
+      ...input.player,
+      residualRebuildStored: input.player.residualRebuildStored || (expired && mechanics.has('residualRebuild'))
+    }
+  };
 };
 
 // 플레이어 턴 종료 훅: 슬롯 순서대로 자동 행동 → 지속 감소/소멸
@@ -151,7 +176,7 @@ export const runSummonPhase = (
     const index = state.summons.findIndex((summon) => summon.uid === uid);
     if (index < 0) continue;
     state = actSummon(state, index, 0, db, events);
-    state = tickSummonDuration(state, uid, events);
+    state = tickSummonDuration(state, uid, events, db);
     if (state.phase === 'victory' || state.phase === 'defeat') break;
   }
   return { state, events };

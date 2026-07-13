@@ -34,6 +34,20 @@ export interface PlayerState extends UnitState {
   // P7 D5 — 과열: 비중첩 불리언, 턴 넘어 지속, 과열 강화 스킬 해결 후 소비
   overheat: boolean;
   weaponOutput: number;
+  nextAttackDamageBonus: number;
+  endTurnBlockAoeCap: number;
+  firstDamageReducedThisTurn: boolean;
+  combatBreathingUsed: boolean;
+  firstBurnBoostUsedThisTurn: boolean;
+  burnAppliedThisTurn: boolean;
+  previewDeploymentUsed: boolean;
+  inverseGuardUsedThisTurn: boolean;
+  crossCalculationUsedThisTurn: boolean;
+  residualRebuildStored: boolean;
+  commandPreservationUsedThisTurn: boolean;
+  manaMembraneBlockThisTurn: number;
+  blueCircuitUsedThisTurn: boolean;
+  manaConsumedForResonance: number;
   remiseCharges: number;
   continuousMotionUsed: boolean;
   retrievalHabitUsed: boolean;
