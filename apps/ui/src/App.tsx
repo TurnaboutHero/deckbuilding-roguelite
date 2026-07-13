@@ -93,6 +93,7 @@ import { AnchoredOverlay, OverlayPortal } from "./overlay";
 import { buildResolutionSummary, statusKo } from "./resolution-summary";
 import { ResolutionTicket } from "./resolution-ticket";
 import type { ResolutionSummary } from "./resolution-summary";
+import { feedbackCuesFor } from "./feedback-cues";
 import {
   cycleTarget,
   defaultTarget,
@@ -2756,6 +2757,9 @@ const CombatBoard = ({
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let delay = 180;
+    if (event !== undefined && !reducedMotion) {
+      for (const cue of feedbackCuesFor(event)) triggerVfx(cue.key, cue.duration);
+    }
     if (event?.type === "coinFlipped") {
       setFlipping((items) => ({ ...items, [Number(event.coin)]: true }));
       delay = 750;
@@ -2770,11 +2774,6 @@ const CombatBoard = ({
       delay = 220;
     } else if (event?.type === "damageDealt") {
       playSfx("hit");
-      triggerVfx(
-        event.target.type === "player"
-          ? "unit-player"
-          : `unit-enemy-${event.target.index}`,
-      );
       showFloat(
         `-${event.amount}`,
         event.target.type === "player" ? "player" : "enemy",
@@ -2784,11 +2783,6 @@ const CombatBoard = ({
       delay = event.source === "enemy" ? 520 : 420;
     } else if (event?.type === "blockGained") {
       playSfx("block");
-      triggerVfx(
-        event.target.type === "player"
-          ? "block-player"
-          : `block-enemy-${event.target.index}`,
-      );
       showFloat(
         `+${event.amount}`,
         event.target.type === "player" ? "player" : "enemy",
@@ -2797,35 +2791,22 @@ const CombatBoard = ({
       );
       delay = 360;
     } else if (event?.type === "statusApplied") {
-      if (event.status === "burn")
-        triggerVfx(
-          event.target.type === "player"
-            ? "burn-player"
-            : `burn-enemy-${event.target.index}`,
-        );
       showFloat(
-        `화상 +${event.stacks}`,
+        `${statusKo(event.status)} +${event.stacks}`,
         event.target.type === "player" ? "player" : "enemy",
         "status",
         event.target.type === "enemy" ? event.target.index : undefined,
       );
       delay = 380;
     } else if (event?.type === "statusTicked") {
-      if (event.status === "burn")
-        triggerVfx(
-          event.target.type === "player"
-            ? "burn-player"
-            : `burn-enemy-${event.target.index}`,
-        );
       showFloat(
-        `화상 -${event.amount}`,
+        `${statusKo(event.status)} -${event.amount}`,
         event.target.type === "player" ? "player" : "enemy",
         "status",
         event.target.type === "enemy" ? event.target.index : undefined,
       );
       delay = 460;
     } else if (event?.type === "witherApplied") {
-      triggerVfx("wither-player");
       showFloat(`다음 드로우 -${event.amount}`, "player", "status");
       delay = 460;
     } else if (event?.type === "enemyPassiveTriggered") {
@@ -3154,6 +3135,7 @@ const CombatBoard = ({
                     aria-label={`${def?.name ?? "장비"} 지속 ${summon.duration}${summon.enhance > 0 ? ` 강화 +${summon.enhance}` : ""}`}
                     className={`summon-slot ${isWard ? "ward" : "strike"}`}
                     data-testid={`summon-slot-${slotIndex}`}
+                    style={vfx.has(`summon-${summon.uid}`) ? feedbackPulse : undefined}
                   >
                     {isWard ? <ShieldIcon scale={1.6} /> : <SwordIcon scale={1.6} />}
                     <em className="summon-duration">{summon.duration}</em>
@@ -3305,6 +3287,7 @@ const CombatBoard = ({
               className={`skill-card ${use !== undefined ? "ready" : ""} ${slotState.cooldownRemaining > 0 ? "spent" : ""} ${slotState.skillId === null ? "empty-slot" : ""} ${lockedOnce ? "combat-locked" : ""} ${placed.length > 0 || isResolving ? "lifted" : ""} ${isResolving ? "resolving" : ""} ${dropTarget && drag?.over === index ? "drop-target" : ""}`}
               data-slot={index}
               key={`${index}-${String(slotState.skillId)}`}
+              style={vfx.has(`skill-slot-${index}`) || vfx.has(`cooldown-slot-${index}`) ? feedbackPulse : undefined}
               ref={(element) => {
                 const anchor = skillCardRefs.current[index];
                 if (anchor !== undefined) anchor.current = element;
@@ -3752,9 +3735,11 @@ const UnitPanel = ({
   <div
     className={`unit ${side} ${vfx.has(`unit-${unitKey}`) ? "vfx-hit" : ""} ${targeting ? "targetable" : ""} ${targetSelected ? "target-selected" : ""}`}
     onClick={targeting ? onTarget : undefined}
+    style={vfx.has(`heal-${unitKey}`) || vfx.has(`overheat-${unitKey}`) ? feedbackPulse : undefined}
   >
     <div
       className={`unit-plate ${vfx.has(`wither-${side}`) ? "vfx-wither" : ""}`}
+      style={vfx.has(`frostbite-${unitKey}`) || vfx.has(`shock-${unitKey}`) ? feedbackPulse : undefined}
     >
       <div className="plate-row">
         <span className="unit-name">{name}</span>
@@ -3896,3 +3881,4 @@ const UnitPanel = ({
       ))}
   </div>
 );
+const feedbackPulse = { animation: "vfx-block-pop 300ms steps(3) 1" };
