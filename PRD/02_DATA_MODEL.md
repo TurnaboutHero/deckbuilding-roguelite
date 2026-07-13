@@ -1,87 +1,146 @@
-# 코인플립 로그라이크 — 데이터 모델
+# [역사 문서] 코인플립 로그라이크 — 초기 데이터 모델
 
-> 서버/DB가 없는 로컬 게임이므로 "테이블"이 아니라 **콘텐츠 정의(불변) / 런타임 상태(가변) / 저장(localStorage)** 세 층으로 나뉜다.
-> 정확한 TypeScript 시그니처는 [docs/implementation-plan.md §6](../docs/implementation-plan.md)이 원본.
+> 생성 시점: 2026-07-10
+>
+> ⚠️ 이 문서는 초기 MVP의 데이터 모델을 기록한 역사 스냅샷이다. 현재 TypeScript 계약은 `packages/core/src/content-types.ts`, `packages/core/src/combat/state.ts`, `packages/core/src/run/types.ts`가 정본이며, 읽기용 요약은 [`../docs/current-implementation.md`](../docs/current-implementation.md)를 사용한다.
 
----
+## 1. 유지된 핵심 구조
 
-## 전체 구조
+초기 설계의 다음 3층 분리는 현재도 유지된다.
 
-```
+```text
 [콘텐츠 정의 — packages/content, 불변 리터럴]
-  CoinDef ─┐
-  SkillDef ─┼── ContentDb ──(주입)──> 코어 엔진
-  EnemyDef ─┤
-  CharacterDef ─┘
+  CoinDef / SkillDef / EnemyDef / CharacterDef / ...
+                         │ ContentDb 주입
+                         ▼
+[런타임 상태 — packages/core]
+  RunState ── 전투 시작 ──> CombatState
+                         │
+                         └─ CoinInstance / EnemyState / SlotState / ...
 
-[런타임 상태 — 메모리, 코어가 소유]
-  RunState 1 ──1:1── CombatState (전투 중일 때만)
-  CombatState 1 ──1:N── CoinInstance (uid로 추적, 5개 영역 중 하나에 소속)
-  CombatState 1 ──1:N── EnemyState
-
-[저장 — localStorage, 전투 경계에서만]
-  RunSave (RunState의 직렬화 스냅샷)
+[저장 — apps/ui localStorage]
+  RunSave만 전투 경계에서 직렬화
 ```
 
-## 엔티티 상세
+- 콘텐츠 수치와 규칙 데이터는 TypeScript 리터럴이다.
+- 전투 변화는 `step(state, command, db) -> { state, events }`를 통한다.
+- 코인은 UID로 추적하며 다섯 영역 중 정확히 하나에 속한다.
+- 런 문자열 시드와 명령 열로 전투를 재현한다.
+- UI와 시뮬레이터가 같은 코어와 이벤트를 사용한다.
 
-### CoinDef (동전 종류)
-어떤 동전인지 정의. MVP는 3종: `basic`, `fire`, `mana`(선택).
+## 2. 초기 모델에서 바뀐 핵심
 
-| 필드 | 설명 | 예시 | 필수 |
-|------|------|------|------|
-| id | 동전 종류 식별자 | `fire` | O |
-| element | 속성 (기본 동전은 없음) | `fire` / null | O |
-| proc | 특정 면에서 발동하는 속성 효과 | 앞면 → 화상 +1 | X |
+| 항목 | 초기 스냅샷 | 현재 P7 |
+|---|---|---|
+| 속성 코인 | 특정 한 면의 단수 `proc` | 앞·뒷면 `procs.heads` / `procs.tails` 모두 필수 |
+| 속성 종류 | 기본·화염·마나 중심 | 화염·마나·냉기·전기·혈액 |
+| 스킬 사용 상태 | `usedThisTurn` + 전역 3회 카운터 | `cooldownRemaining` + `usedThisCombat`, 전역 캡 없음 |
+| 슬롯 | 6칸 | 8칸, 빈 슬롯 `null`, 시작 스킬 4개 |
+| 플레이어 상태 | HP·방어·상태·드로우 페널티 | 다음 턴 드로우 보너스와 `overheat` 추가 |
+| 효과 원자 | 피해·방어·상태·코인·속성 취급 | 회복·드로우·쿨다운·과열·트리거·소환 등 확장 |
+| 런 | 선형 5전투 중심 | 3막 × 10방문 그래프, 상점·이벤트·휴식·보물·보스 |
+| 성장 | 코인·스킬 보상 | 패시브·강화·소환 장비·골드 경제 포함 |
+| 저장 | 버전 필드 예약 | v7, v1~v6 마이그레이션, 주·백업·격리 |
 
-### CoinInstance (전투 중의 동전 한 닢)
-| 필드 | 설명 | 예시 | 필수 |
-|------|------|------|------|
-| uid | 전투 내 고유 번호 (총량 검증용) | 17 | O |
-| defId | 어떤 종류인지 | `basic` | O |
-| permanent | 영구(주머니 소속) / 임시(전투 후 소멸) | true | O |
-| grants | "이번 턴 화염 취급" 태그 목록 | `['fire']` | O(빈 배열) |
+## 3. 현재 핵심 타입 요약
 
-- 항상 5개 영역(뽑을 더미/손패/스킬 슬롯/버림/소모) 중 정확히 한 곳에 소속
-- **불변식**: 전 영역 합계 = 시작 10개 + 생성된 임시 코인 수
+### CoinDef / CoinInstance
 
-### SkillDef (스킬 카드)
-| 필드 | 설명 | 예시 | 필수 |
-|------|------|------|------|
-| id, name, rarity | 식별/표시/등급 | `warrior.slash`, 베기, common | O |
-| type | `flip`(장전형) / `consume`(소비형) | flip | O |
-| cost 또는 consume | 장전 동전 수 / 소비 조건(속성+개수) | 1 / 화염×1 | O |
-| base / heads / tails | 기본 효과 / 면 추가 효과(any·per 모드) | 피해 6 / +4(any) | O/X |
-| oncePerCombat | 일회성 (전투당 1회) | false | X |
-| targetType, tags | 대상 유형 / attack 등 태그 | single-enemy | O |
+```ts
+interface CoinDef {
+  id: CoinDefId;
+  element: Element | null;
+  procs?: {
+    heads?: EffectAtom[];
+    tails?: EffectAtom[];
+  };
+}
 
-효과는 코드 함수가 아닌 **효과 원자(EffectAtom) 배열** — damage / block / selfDamage / applyStatus / addCoin / grantElement.
+interface CoinInstance {
+  uid: CoinUid;
+  defId: CoinDefId;
+  permanent: boolean;
+  grants: Element[];
+}
+```
 
-### EnemyDef · EnemyState (적)
-정의: HP, 고정 행동 사이클(의도 리스트). 상태: 현재 HP, 방어, 상태이상, 공개된 의도. MVP 3종: 약탈자(공격형 75), 수문장(방어형 70), 주술사(디버프형 60 — 위축: 드로우 −1).
+`effectiveElements(coin, db)`는 기본 속성과 임시 부여 속성의 합집합을 반환한다. 모든 속성 판정은 이 함수를 경유한다.
 
-### CombatState (전투 상태 — 순수 데이터)
-turn, phase, player(HP/방어/상태이상), enemies[], coins{}, zones{}, slots[](usedThisTurn/usedThisCombat), rng(flip/shuffle/ai 스냅샷). **모든 변화는 `step(state, command) → {state, events}` 리듀서로만.**
+### SkillDef
 
-### RunState / RunSave (런 진행 + 저장)
-| 필드 | 설명 | 예시 |
-|------|------|------|
-| runSeed | 런 전체 재현 시드 | "BRAVE-EMBER-42" |
-| character | 캐릭터 | warrior |
-| hp | 현재/최대 (전투 간 이월) | 58/70 |
-| bag | 영구 코인 목록 (defId만) | basic×8, fire×3 |
-| skills | 장착 스킬 (슬롯 6) | [...] |
-| progress.combatIndex | 몇 번째 전투인지 | 2 |
+```ts
+type SkillDef = FlipSkillDef | ConsumeSkillDef;
 
-- RunSave는 **전투 경계에서만** localStorage에 기록. 전투 중 이탈 → 해당 전투는 attempt 소금을 바꿔 재시작
-- 파생 가능한 것(더미 순서, 적 의도)은 저장하지 않는다 — 시드에서 재파생
+interface SkillDefBase {
+  id: SkillId;
+  name: string;
+  rarity: 'common' | 'advanced' | 'rare';
+  tags: readonly ('attack' | 'defense' | 'utility' | 'ultimate')[];
+  targetType: 'single-enemy' | 'all-enemies' | 'self' | 'none';
+  cooldown?: 0 | 1 | 2 | 3;
+  oncePerCombat?: boolean;
+  overheatBonus?: EffectAtom[];
+  exclusiveTo?: CharacterId;
+  upgrade?: SkillUpgradeDef;
+}
+```
 
-## 왜 이 구조인가
+- `flip`: 비용만큼 장전한 코인을 플립한다.
+- `consume`: 손의 지정 속성 코인을 플립 없이 소모 영역으로 보낸다.
+- `cooldown` 미지정 기본값은 1이고, 0은 같은 턴 반복이다.
+- `oncePerCombat`은 별도 전투당 1회 잠금이다.
 
-- **결정론**: 시드+커맨드 로그 = 완전한 재현 → 버그 리포트·골든 테스트·밸런스 시뮬이 전부 공짜
-- **확장성**: 새 스킬 = 리터럴 1개, 새 속성 = union 1항 + proc 1개. grants가 배열이라 다속성도 무비용 (Phase 3)
-- **단순성**: 서버 스키마·마이그레이션 없음. RunSave에 version 필드만 예약
+### CombatState
 
-## [NEEDS CLARIFICATION]
+현재 상태에는 다음이 포함된다.
 
-- [ ] 없음 — 구조 결정은 docs/implementation-plan.md §6에서 완료. 수정 의견은 Turn 4 카드에서.
+```text
+turn / phase
+player(HP, block, statuses, draw modifiers, overheat)
+enemies[]
+coins{}
+zones(draw, hand, placed, discard, exhausted)
+slots[8](skillId|null, cooldownRemaining, usedThisCombat)
+turnTriggers[]
+rng(flip, shuffle, ai)
+characterId / passives[] / enemyScale
+summons[]
+events[]
+```
+
+코인 영역 합계와 `coins` 원장의 개수는 항상 일치해야 한다.
+
+### RunState / RunSave
+
+현재 저장은 다음 장기 상태를 가진다.
+
+```text
+version=7 / contentVersion / runSeed
+character / currentHp / maxHp / bag
+equippedSkills[8] / upgradedSlots[8]
+acquiredPassives / gold
+graph / nodeChoices / combatIndex / attempt / phase
+pendingRewards / pendingShop / pendingEvent / pendingTreasure
+경제·이벤트·휴식 통계 카운터
+```
+
+전투 중 임시 코인, 쿨다운, 화상, 소환 상태는 저장하지 않는다. 전투 도중 이탈하면 `attempt + 1`로 전투를 결정론적으로 다시 만든다.
+
+## 4. 현재 저장 안전성
+
+- v1~v6 저장을 v7로 마이그레이션한다.
+- 6슬롯 배열은 8칸으로 `null` / `false` 패딩한다.
+- 주 저장과 백업에 같은 데이터를 쓴다.
+- 주 저장이 손상되면 백업으로 복구하고 손상 원문을 격리한다.
+- 파싱 불가 데이터는 `corrupt`, 미래 스키마·미지 콘텐츠는 `unsupported`로 구분한다.
+- 그래프, 획득 수량, 슬롯, pending 상태를 콘텐츠와 진행도에 맞춰 검증한다.
+
+## 5. 왜 이 구조를 유지하는가
+
+- **결정론**: 시드 + 명령 로그로 재현, 회귀 테스트와 시뮬레이션 공유
+- **규칙 단일화**: UI, 봇, 프리뷰가 코어 실행 결과를 사용
+- **콘텐츠 확장성**: 새 스킬 대부분을 효과 원자 조합으로 작성
+- **저장 안정성**: 런 경계 데이터만 버전 관리하고 전투는 재구성
+- **이식성**: 코어가 DOM·React·localStorage에 의존하지 않음
+
+세부 타입과 현재 해결 순서는 [`../docs/current-implementation.md`](../docs/current-implementation.md), 신규 콘텐츠 작성법은 [`../docs/content-design-guide.md`](../docs/content-design-guide.md)를 본다.

@@ -1,26 +1,63 @@
-# 코인플립 로그라이크 — 디자인 문서
+# PRD 작업 문서 안내
 
-> Show Me The PRD로 생성됨 (2026-07-10)
-> **원본 심층 명세**: [docs/PRD.md](../docs/PRD.md) (v0.3) · [docs/implementation-plan.md](../docs/implementation-plan.md) (v1.1) — 규칙 충돌 시 원본이 이긴다.
+> 마지막 동기화: 2026-07-13 · 현재 기준: P7 / PRD v1.3
 
-## 문서 구성
+이 디렉터리에는 초기 바이브코딩용 문서, 단계별 결정 로그, 검증 증거, 사람 플레이테스트 자료가 함께 있다. 생성 시점이 다르므로 `01_PRD.md`~`04_PROJECT_SPEC.md`를 현재 규칙 정본으로 단독 사용하지 않는다.
 
-| 문서 | 내용 | 언제 읽나 |
-|------|------|----------|
-| [01_PRD.md](./01_PRD.md) | 뭘 만드는지, 성공 기준, 디자인 방향, 가정 원장 | 프로젝트 시작 전 |
-| [02_DATA_MODEL.md](./02_DATA_MODEL.md) | 콘텐츠/런타임/저장 3층 데이터 구조 | 코어 설계할 때 |
-| [03_PHASES.md](./03_PHASES.md) | 3-Phase 계획 + 게이트 + 시작 프롬프트 | 개발 순서 정할 때 |
-| [04_PROJECT_SPEC.md](./04_PROJECT_SPEC.md) | AI 행동 규칙 (절대 하지 마 / 항상 해) | AI에게 코드 시킬 때마다 |
-| [PHASE1_HOLDS.md](./PHASE1_HOLDS.md) | Phase 1 사람 게이트·폴리시·증거 보류 원장 | Phase 2 진행 중 미완 항목 추적 |
-| [M5_PLAYTEST_NOTES.md](./M5_PLAYTEST_NOTES.md) | 수문장·화상 빌드의 Fable 보조 리뷰와 사람 질문 | M6 지표·사람 테스트 설계 |
-| [M6_BALANCE_REPORT.md](./M6_BALANCE_REPORT.md) | 정책×적 지표·CRN·경고와 수치 무변경 판정 | 사람 N≥5 플레이테스트 준비 |
-| [references/](./references/) | 픽셀 아트 무드보드 4장 + sources.json | 아트 방향 잡을 때 |
+전체 문서 우선순위는 [`../docs/README.md`](../docs/README.md)를 먼저 본다.
 
-## 다음 단계
+## 현재 정본과 활성 안내
 
-Phase 1 자동 구현·검증·배포와 Phase 2의 M5~M6 자동화는 완료됐다. Phase 1 사람 검증은 [PHASE1_HOLDS.md](./PHASE1_HOLDS.md)에, M5 체감 질문은 [M5_PLAYTEST_NOTES.md](./M5_PLAYTEST_NOTES.md)에 보류 상태로 유지한다. 다음 단계는 로컬 JSON 로그를 이용한 사람 N≥5 플레이테스트이며, 그 전에는 수치 변경이나 Phase 3 확장을 시작하지 않는다.
+| 문서 | 역할 |
+|---|---|
+| [`../docs/PRD.md`](../docs/PRD.md) | 브랜드 코어, 제품 요구사항, 게임 규칙 정본. v1.3 변경 이력이 본문 충돌보다 우선 |
+| [`P7_NEW_DESIGN_DECISIONS.md`](./P7_NEW_DESIGN_DECISIONS.md) | 쿨다운·8슬롯·양면 속성 코인·과열 등 최신 설계 오버라이드 |
+| [`../docs/current-implementation.md`](../docs/current-implementation.md) | 현재 코드의 전투·런·저장·UI·CI 구현 스냅샷 |
+| [`../docs/content-design-guide.md`](../docs/content-design-guide.md) | 신규 콘텐츠 작성 규칙과 템플릿 |
+| [`PLAYTEST_KIT.md`](./PLAYTEST_KIT.md) | 사람 플레이테스트 실행 절차 |
 
-## 미결 사항 (가정 원장 요약 — 상세는 01_PRD.md)
+## 역사적 바이브코딩 문서
 
-- 확정: 픽셀 32px+Neo둥근모, 배포 GitHub Pages, 로컬 저장, 데스크톱 웹 우선
-- 잔여 가정: 사운드 MVP 제외 / 한국어 단일 / 브라우저 지원 범위(최신 데스크톱) / UI 상세 레퍼런스 미수집(커버아트로 대체)
+다음 문서는 2026-07-10 당시 MVP를 시작하기 위해 생성된 스냅샷이다. 결정 배경과 개발 이력 보존에는 유효하지만 현재 작업 프롬프트의 규칙 정본으로 사용하지 않는다.
+
+| 문서 | 당시 역할 | 현재와 충돌하는 대표 항목 |
+|---|---|---|
+| [`01_PRD.md`](./01_PRD.md) | 초기 제품 요약 | 5전투 런, 전사 중심 범위, 상점·보스·모바일 미구현 전제 |
+| [`02_DATA_MODEL.md`](./02_DATA_MODEL.md) | 초기 데이터 모델 | 단면 `proc`, `usedThisTurn`, 6슬롯, 저장 마이그레이션 부재 |
+| [`03_PHASES.md`](./03_PHASES.md) | M0~M6 3-Phase 계획 | 이미 완료된 항목이 체크리스트·미래 범위로 남아 있음 |
+| [`04_PROJECT_SPEC.md`](./04_PROJECT_SPEC.md) | 초기 AI 작업 규율 | 오래된 SSoT 경로, 명령, MVP 전용 제한 |
+
+역사 문서를 참고해 구현할 때는 반드시 P7 결정 로그와 현재 구현 문서를 함께 읽는다.
+
+## 결정·검증 자료
+
+| 문서 | 용도 |
+|---|---|
+| [`PHASE1_HOLDS.md`](./PHASE1_HOLDS.md) | 사람 게이트 보류와 공학 트랙 오버라이드 기록 |
+| [`M5_PLAYTEST_NOTES.md`](./M5_PLAYTEST_NOTES.md) | 초기 체감 리뷰와 사람 질문 |
+| [`M6_BALANCE_REPORT.md`](./M6_BALANCE_REPORT.md) | 정책별 시뮬레이션 결과와 밸런스 유보 근거 |
+| [`P7_NEW_DESIGN_DECISIONS.md`](./P7_NEW_DESIGN_DECISIONS.md) | P7 요구·채택 결정·감사 보정 |
+
+단계별 보고서는 당시 증거 스냅샷이다. 이후 코드가 바뀌어도 과거 결과를 현재 수치처럼 덮어쓰지 않고, 새 보고서를 추가하거나 명확한 후속 절을 기록한다.
+
+## AI 작업 프롬프트에 넣을 최소 문서
+
+현재 규칙을 구현하거나 수정할 때는 최소한 다음을 함께 제공한다.
+
+```text
+@docs/README.md
+@docs/PRD.md
+@PRD/P7_NEW_DESIGN_DECISIONS.md
+@docs/current-implementation.md
+@docs/content-design-guide.md   # 콘텐츠 작업일 때
+```
+
+`01_PRD.md`~`04_PROJECT_SPEC.md`만 제공하는 프롬프트는 금지한다.
+
+## 문서 갱신 원칙
+
+- 새 게임 규칙: `docs/PRD.md`와 해당 결정 로그를 갱신한다.
+- 코드 구현 계약: `docs/current-implementation.md`를 갱신한다.
+- 콘텐츠 제한·템플릿: `docs/content-design-guide.md`를 갱신한다.
+- 사람 검증 결과: 기존 공학 상태와 섞지 말고 플레이테스트 문서에 증거를 추가한다.
+- 오래된 보고서의 날짜·결론은 보존하고, 현재 정본처럼 보이는 링크와 문구만 교정한다.
