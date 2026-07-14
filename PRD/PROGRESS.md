@@ -95,7 +95,7 @@ typecheck 4/4 ✓ · lint ✓ · test 25파일 226/226 ✓ · build 4/4 ✓
 - ~~[해소] 감사 수정분 미배포~~ — 커밋 `2acfd23`, CI `29070513959`, Deploy `29070513929` 성공. 라이브 번들에서 주머니 인스펙터·회수 힌트 포함 여부와 HTTP 200 확인.
 - ~~[해소] 스크린샷 시스템 라이브러리~~ — sudo 없이 해결 (apt-get download + dpkg -x + LD_LIBRARY_PATH). 시각 검증 통과, Neo둥근모 폰트 정식 탑재
 - ~~[해소] 배포처 결정~~ — 리포 공개 전환 후 GitHub Pages 활성화·자동 배포 완료.
-- **[experience-unverified] 플레이테스트 게이트 2건**: M2 손맛 · M4 갈등 관찰 — 정식 플레이 URL: https://turnabouthero.github.io/deckbuilding-roguelite/ (2026-07-11 오버라이드로 개발 차단 효력만 해제 — 사람 판정 자체는 여전히 열려 있음)
+- **[experience-unverified] 플레이테스트 게이트 2건**: M2 손맛 · M4 갈등 관찰 — 정식 플레이 URL: https://team-project-0-1.github.io/deckbuilding-roguelite/ (2026-07-11 오버라이드로 개발 차단 효력만 해제 — 사람 판정 자체는 여전히 열려 있음)
 - **[experience-unverified] M5 수문장·화상 체감 + M6 N≥5 지표 판정** — Fable 검토는 질문 설계 보조일 뿐 사람 판정을 대체하지 않는다. Phase 3 콘텐츠가 늘수록 이 표본의 가치가 커진다.
 - **[보고 전용] M6 경고** — 전체 평균 턴 3.761, 속성 활용 0.514, 화상 기여 0.103, Gatekeeper Aggro/Greedy 정확 수렴 70/125. 자동 결함은 아니며 사람 로그로 판정한다.
 - 폴리시 백로그(사소): 거부된 행동 사유 피드백, 프리뷰의 자해·코인 생성 축

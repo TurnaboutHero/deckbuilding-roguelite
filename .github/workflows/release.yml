@@ -87,4 +87,4 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             --title "deckbuilding-roguelite ${GITHUB_REF_NAME}" \
             --generate-notes \
-            --notes "engineering-complete / experience-unverified — 라이브: https://turnabouthero.github.io/deckbuilding-roguelite/"
+            --notes "engineering-complete / experience-unverified — 라이브: https://team-project-0-1.github.io/deckbuilding-roguelite/"

@@ -1,6 +1,6 @@
 # 문서 안내
 
-> 마지막 동기화: 2026-07-13 · 기준: PRD v2.0 / P12
+> 마지막 동기화: 2026-07-14 · 기준: PRD v2.0 / P12
 
 문서의 역할을 제품 정본, 구현 스냅샷, 콘텐츠 작성 가이드, 결정 기록으로 분리한다. 같은 규칙을 여러 문서에서 독립적으로 수정하지 않는다.
 
@@ -18,6 +18,7 @@
 
 | 문서 | 역할 | 상태 |
 |---|---|---|
+| [`project-direction.md`](./project-direction.md) | 공개 전략·타깃·그래픽·에셋·검증에 대한 내부 의사결정 | **방향 합의안** |
 | [`PRD.md`](./PRD.md) | 브랜드 코어, 전투·런·보상·캐릭터·UX 규칙 | **제품 단일 정본** |
 | [`current-implementation.md`](./current-implementation.md) | 현재 코드의 상태·명령·해결 순서·저장·검증 안내 | **기술 스냅샷** |
 | [`content-design-guide.md`](./content-design-guide.md) | 코인·스킬·패시브·캐릭터·몬스터 작성 규칙 | **작성 계약** |
@@ -45,6 +46,7 @@
 
 | 정보 | 원본 |
 |---|---|
+| 타깃·공개·그래픽·에셋 제작 방향 | `project-direction.md` |
 | 왜 필요한가, 플레이어가 무엇을 경험하는가 | `docs/PRD.md` |
 | 현재 코드가 어떤 순서로 처리하는가 | 코드·테스트, `current-implementation.md` |
 | 콘텐츠 필드와 작성 제한 | 타입·검증기, `content-design-guide.md` |

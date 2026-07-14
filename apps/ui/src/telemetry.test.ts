@@ -1,7 +1,6 @@
 import { contentDb } from "@game/content";
 import type { CoinUid, CombatState, SlotId } from "@game/core";
 import { createCombat, step } from "@game/core";
-// @ts-expect-error -- Vitest runs in Node; the UI package intentionally has no Node type dependency.
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
