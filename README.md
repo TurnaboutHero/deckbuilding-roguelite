@@ -102,6 +102,18 @@ pnpm release:verify
 
 GitHub Pages 배포 경로는 `/deckbuilding-roguelite/`입니다. 클라이언트 빌드에는 API 키가 필요하지 않습니다.
 
+### 운영·분석 확장 계획
+
+초기 외부 플레이테스트 기간에는 GitHub Pages와 현재 GitHub Actions 배포 흐름을 유지한다. 정적 웹게임을 빠르게 수정·공개하고 반응을 확인하는 것이 우선이므로, Cloudflare Pages로의 즉시 이전은 진행하지 않는다.
+
+다음 조건이 확인되면 Cloudflare 이전 또는 연동을 재검토한다.
+
+- 커스텀 도메인, 배포 미리보기 또는 CDN 운영 요구가 생긴 경우
+- 익명 플레이 이벤트·피드백을 수집할 Worker 기반 API가 필요한 경우
+- GitHub Pages의 운영 한계가 실제 플레이테스트를 방해하는 경우
+
+방문 수·유입 경로·실사용 성능은 Cloudflare Web Analytics를 후보로 검토한다. 캐릭터 선택, 전투 시작·종료, 런 종료 같은 게임 행동 이벤트는 별도 익명 수집 API가 필요하며, 현재의 플레이 로그는 사용자가 직접 내려받는 로컬 JSON으로만 유지한다. 외부 전송은 수집 항목, 보관 기간, 고지 방식을 합의한 뒤에 도입한다.
+
 ## 문서
 
 문서 세대가 섞여 있으므로 먼저 [`docs/README.md`](docs/README.md)의 우선순위를 확인합니다.
