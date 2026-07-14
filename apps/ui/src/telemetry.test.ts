@@ -1,9 +1,9 @@
 import { contentDb } from "@game/content";
 import type { CoinUid, CombatState, SlotId } from "@game/core";
 import { createCombat, step } from "@game/core";
-import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
+import telemetrySource from "./telemetry.ts?raw";
 import {
   beginHumanCombat,
   createHumanRunTrace,
@@ -296,10 +296,6 @@ describe("telemetry sanitization and local export", () => {
   });
 
   it("contains no network transport or environment-fingerprint access path", () => {
-    const source = readFileSync(
-      new URL("./telemetry.ts", import.meta.url),
-      "utf8",
-    );
     const forbiddenPatterns = [
       /\bfetch\s*\(/,
       /\bXMLHttpRequest\b/,
@@ -309,6 +305,6 @@ describe("telemetry sanitization and local export", () => {
       /\buserAgent\b/,
     ];
     for (const pattern of forbiddenPatterns)
-      expect(source).not.toMatch(pattern);
+      expect(telemetrySource).not.toMatch(pattern);
   });
 });
