@@ -27,6 +27,7 @@ import type {
   Command,
   CombatEvent,
   CombatState,
+  EquipmentDefId,
   PassiveId,
   RunState,
   SkillId,
@@ -50,7 +51,7 @@ export interface ReplayVerification {
 
 const character = "warrior" as never;
 
-const commandFromTelemetry = (command: TelemetryCommand): Command => {
+export const commandFromHumanTelemetry = (command: TelemetryCommand): Command => {
   if (command.type === "placeCoin") {
     return {
       type: "placeCoin",
@@ -62,13 +63,23 @@ const commandFromTelemetry = (command: TelemetryCommand): Command => {
     return { type: "unplaceCoin", coin: command.coin as CoinUid };
   }
   if (command.type === "useFlipSkill") {
-    return command.target === undefined
-      ? { type: "useFlipSkill", slot: command.slot as SlotId }
-      : {
-          type: "useFlipSkill",
-          slot: command.slot as SlotId,
-          target: command.target,
-        };
+    return {
+      type: "useFlipSkill",
+      slot: command.slot as SlotId,
+      ...(command.target === undefined ? {} : { target: command.target }),
+      ...(command.chosen === undefined
+        ? {}
+        : { chosen: command.chosen.map((coin) => coin as CoinUid) }),
+      ...(command.desiredCoin === undefined
+        ? {}
+        : { desiredCoin: command.desiredCoin as CoinDefId }),
+      ...(command.chosenEquipment === undefined
+        ? {}
+        : { chosenEquipment: command.chosenEquipment as EquipmentDefId }),
+      ...(command.chosenSummon === undefined
+        ? {}
+        : { chosenSummon: command.chosenSummon }),
+    };
   }
   if (command.type === "useConsumeSkill") {
     const converted = {
@@ -76,11 +87,23 @@ const commandFromTelemetry = (command: TelemetryCommand): Command => {
       slot: command.slot as SlotId,
       coins: command.coins.map((coin) => coin as CoinUid),
     };
-    return command.target === undefined
-      ? converted
-      : { ...converted, target: command.target };
+    return {
+      ...converted,
+      ...(command.target === undefined ? {} : { target: command.target }),
+      ...(command.desiredCoin === undefined
+        ? {}
+        : { desiredCoin: command.desiredCoin as CoinDefId }),
+      ...(command.chosenSummon === undefined
+        ? {}
+        : { chosenSummon: command.chosenSummon }),
+    };
   }
-  return { type: "endTurn" };
+  return command.preserve === undefined
+    ? { type: "endTurn" }
+    : {
+        type: "endTurn",
+        preserve: command.preserve.map((coin) => coin as CoinUid),
+      };
 };
 
 const hpList = (state: CombatState): number[] =>
@@ -487,7 +510,7 @@ export function replayHumanRun(trace: HumanRunTraceLike): {
         break;
       }
       const before = state;
-      const commands = decision.commands.map(commandFromTelemetry);
+      const commands = decision.commands.map(commandFromHumanTelemetry);
       const events: CombatEvent[] = [];
       for (const command of commands) {
         const result = step(state, command, contentDb);

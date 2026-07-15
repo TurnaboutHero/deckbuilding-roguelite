@@ -147,20 +147,39 @@ const sanitizeCommand = (value: unknown, label: string): TelemetryCommand => {
     return { type, coin: nonNegativeInteger(object, "coin", label) };
   }
   if (type === "useFlipSkill") {
-    const command = { type, slot: nonNegativeInteger(object, "slot", label) };
+    const command: Extract<TelemetryCommand, { type: "useFlipSkill" }> = {
+      type,
+      slot: nonNegativeInteger(object, "slot", label),
+    };
     const target = optionalIndex(object, "target", label);
-    return target === undefined ? command : { ...command, target };
+    const chosenSummon = optionalIndex(object, "chosenSummon", label);
+    if (target !== undefined) command.target = target;
+    if (object.chosen !== undefined)
+      command.chosen = numberArray(object.chosen, `${label}.chosen`);
+    if (object.desiredCoin !== undefined)
+      command.desiredCoin = stringValue(object, "desiredCoin", label);
+    if (object.chosenEquipment !== undefined)
+      command.chosenEquipment = stringValue(object, "chosenEquipment", label);
+    if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
+    return command;
   }
   if (type === "useConsumeSkill") {
-    const command = {
+    const command: Extract<TelemetryCommand, { type: "useConsumeSkill" }> = {
       type,
       slot: nonNegativeInteger(object, "slot", label),
       coins: numberArray(object.coins, `${label}.coins`),
     };
     const target = optionalIndex(object, "target", label);
-    return target === undefined ? command : { ...command, target };
+    const chosenSummon = optionalIndex(object, "chosenSummon", label);
+    if (target !== undefined) command.target = target;
+    if (object.desiredCoin !== undefined)
+      command.desiredCoin = stringValue(object, "desiredCoin", label);
+    if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
+    return command;
   }
-  return { type: "endTurn" };
+  return object.preserve === undefined
+    ? { type: "endTurn" }
+    : { type: "endTurn", preserve: numberArray(object.preserve, `${label}.preserve`) };
 };
 
 const sanitizeDamage = (value: unknown, label: string): HumanDamageFact => {
@@ -193,6 +212,15 @@ const sanitizeDecision = (value: unknown, label: string): HumanDecisionFact => {
   const hp = objectValue(object.hp, `${label}.hp`);
   return {
     turn: nonNegativeInteger(object, "turn", label),
+    ...(object.source === undefined
+      ? {}
+      : {
+          source: literalValue(
+            object.source,
+            ["manual", "auto-turn-end"] as const,
+            `${label}.source`,
+          ),
+        }),
     commands: boundedArray(object.commands, `${label}.commands`, 32).map(
       (command, index) => sanitizeCommand(command, `${label}.commands[${index}]`),
     ),

@@ -13,6 +13,10 @@
   animation: vfx-hit-flash 280ms steps(3) 1;
 }
 
+.combat-shell[data-screen-shake="off"] .unit.vfx-hit .sprite {
+  animation-name: vfx-hit-flash-no-shake;
+}
+
 .block-chip.vfx-pop {
   animation: vfx-block-pop 220ms steps(3) 1;
 }
@@ -55,6 +59,18 @@
     transform: translateX(0);
     filter: brightness(1) sepia(0) saturate(1)
       drop-shadow(2px 3px 0 rgba(28, 23, 36, 0.3));
+  }
+}
+
+@keyframes vfx-hit-flash-no-shake {
+  0%,
+  100% {
+    filter: brightness(1) sepia(0) saturate(1)
+      drop-shadow(2px 3px 0 rgba(28, 23, 36, 0.3));
+  }
+  50% {
+    filter: brightness(1.75) sepia(0.55) saturate(1.9) hue-rotate(315deg)
+      drop-shadow(0 0 4px rgba(255, 90, 78, 0.85));
   }
 }
 

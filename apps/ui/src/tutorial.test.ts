@@ -5,7 +5,7 @@ import { contentDb } from "@game/content";
 import type { CharacterId, CoinDefId, EnemyDefId } from "@game/core";
 import { createCombat } from "@game/core";
 
-import { activeTutorialTip } from "./tutorial";
+import { activeTutorialTip, TUTORIAL_TIP_COPY } from "./tutorial";
 
 const id = <T extends string>(value: string): T => value as T;
 
@@ -21,6 +21,16 @@ const freshCombat = () =>
   );
 
 describe("activeTutorialTip", () => {
+  it("기본 안내는 장전 → 수동 사용·실행 순서 → 선택적 자동 실행을 가르친다", () => {
+    const copy = `${TUTORIAL_TIP_COPY["basic-loop"]} ${TUTORIAL_TIP_COPY["turn-flow"]}`;
+    expect(copy).toContain("장전");
+    expect(copy).toContain("실행 순서");
+    expect(copy).toContain("턴 종료");
+    expect(copy).toContain("자동 실행");
+    expect(copy).toContain("스킬 사용");
+    expect(copy).toContain("실행할지 묻고");
+  });
+
   it("첫 전투에서는 기본 루프 팁이 최우선이다", () => {
     const state = freshCombat();
     expect(activeTutorialTip(state, contentDb, new Set(), false)).toBe("basic-loop");

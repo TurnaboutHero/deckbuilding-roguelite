@@ -1,5 +1,5 @@
 import { contentDb } from "@game/content";
-import type { CoinUid, CombatState, SlotId } from "@game/core";
+import type { CoinUid, CombatState, Command, SlotId } from "@game/core";
 import { createCombat, step } from "@game/core";
 import { describe, expect, it, vi } from "vitest";
 
@@ -87,6 +87,84 @@ const terminalTrace = (): HumanRunTrace => {
 };
 
 describe("human telemetry capture", () => {
+  it("preserves explicit combat choices and the optional decision source", () => {
+    const combat = bootCombat();
+    const started = beginHumanCombat(
+      createHumanRunTrace({
+        runSeed: "telemetry-explicit",
+        contentVersion: "test-content",
+        maxHp: combat.player.maxHp,
+        startedAt: fixedStart,
+      }),
+      { combatIndex: 0, attempt: 0, combat },
+    );
+    const coin = combat.zones.hand[0];
+    if (coin === undefined) throw new Error("missing test coin");
+    const commands: Command[] = [
+      {
+        type: "useFlipSkill",
+        slot: 0 as SlotId,
+        target: 1,
+        chosen: [coin],
+        desiredCoin: "fire" as never,
+        chosenEquipment: "mana-shield" as never,
+        chosenSummon: 7,
+      },
+      {
+        type: "useConsumeSkill",
+        slot: 1 as SlotId,
+        coins: [coin],
+        target: 0,
+        desiredCoin: "mana" as never,
+        chosenSummon: 9,
+      },
+      { type: "endTurn", preserve: [coin] },
+    ];
+
+    const trace = recordHumanDecision(started, {
+      combatIndex: 0,
+      attempt: 0,
+      before: combat,
+      commands,
+      after: combat,
+      events: [],
+      source: "auto-turn-end",
+    });
+
+    expect(trace.combats[0]?.decisions[0]).toMatchObject({
+      source: "auto-turn-end",
+      commands: [
+        {
+          type: "useFlipSkill",
+          slot: 0,
+          target: 1,
+          chosen: [Number(coin)],
+          desiredCoin: "fire",
+          chosenEquipment: "mana-shield",
+          chosenSummon: 7,
+        },
+        {
+          type: "useConsumeSkill",
+          slot: 1,
+          coins: [Number(coin)],
+          target: 0,
+          desiredCoin: "mana",
+          chosenSummon: 9,
+        },
+        { type: "endTurn", preserve: [Number(coin)] },
+      ],
+    });
+    expect(sanitizeHumanRunTrace(trace)).toEqual(trace);
+
+    const legacy = structuredClone(trace) as unknown as {
+      combats: Array<{ decisions: Array<{ source?: string }> }>;
+    };
+    delete legacy.combats[0]?.decisions[0]?.source;
+    expect(
+      sanitizeHumanRunTrace(legacy).combats[0]?.decisions[0]?.source,
+    ).toBeUndefined();
+  });
+
   it("records only core command/event/state facts with a versioned schema", () => {
     const trace = terminalTrace();
     const initial = bootCombat();

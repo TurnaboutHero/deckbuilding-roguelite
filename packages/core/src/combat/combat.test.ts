@@ -593,6 +593,28 @@ describe('draw and win loss', () => {
     expect(ended.events).toContainEqual({ type: 'coinsDiscarded', coins: unused, reason: 'turnEnd' });
   });
 
+  it('does not auto-use a loaded skill when the player ends the turn', () => {
+    const db = testDb();
+    const state = createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'loaded-turn-end');
+    const loadedCoin = firstHandCoin(state);
+    const loaded = step(state, { type: 'placeCoin', coin: loadedCoin, slot: slot(0) }, db);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+
+    const ended = step(loaded.state, { type: 'endTurn' }, db);
+    expect(ended.ok).toBe(true);
+    if (!ended.ok) return;
+    expect(ended.events.some((event) => event.type === 'skillUsed')).toBe(false);
+    expect(ended.events).toContainEqual(
+      expect.objectContaining({
+        type: 'coinsDiscarded',
+        coins: expect.arrayContaining([loadedCoin]),
+        reason: 'turnEnd'
+      })
+    );
+    expect(Object.values(ended.state.zones.placed).flat()).toEqual([]);
+  });
+
   it('ends on enemy hp zero, player hp zero, and checks after each atom', () => {
     const db = testDb();
     const state = replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'win'), [

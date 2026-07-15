@@ -11,10 +11,11 @@ export type TutorialTipId =
   "basic-loop" | "turn-flow" | "piles" | "cooldown" | "element-coin" | "two-sided" | "preserve" | "consume";
 
 // 순서 = 우선순위 (한 번에 하나만 노출)
-const TIP_COPY: Record<TutorialTipId, string> = {
+export const TUTORIAL_TIP_COPY: Record<TutorialTipId, string> = {
   "basic-loop":
-    "턴이 시작되면 동전 5개를 뽑습니다. 코스트만큼 동전을 장전하고 스킬 제목을 누르면 각 동전이 플립됩니다.",
-  "turn-flow": "원하는 때에 턴을 끝낼 수 있습니다. 턴 종료 후 적은 미리 표시한 의도에 따라 행동합니다.",
+    "턴이 시작되면 동전 5개를 뽑습니다. 코스트만큼 장전하면 스킬 사용 버튼과 미사용 실행 순서 번호가 나타납니다.",
+  "turn-flow":
+    "장전된 스킬은 스킬 사용으로 바로 쓸 수 있습니다. 남겨 둔 채 턴 종료하면 실행할지 묻고, 원하면 이후 자동 실행으로 바꿀 수 있습니다.",
   piles:
     "사용한 동전과 턴 종료 때 남은 동전은 버림 더미로 갑니다. 뽑을 더미가 부족하면 버림 더미를 섞어 계속 뽑습니다.",
   cooldown:
@@ -121,7 +122,7 @@ export function TutorialStrip(props: { state: CombatState; db: ContentDb; fuelSe
   if (tip === null) return null;
   return (
     <div aria-live="polite" className="tutorial-strip" data-testid={`tutorial-${tip}`}>
-      <span className="tutorial-copy">{TIP_COPY[tip]}</span>
+      <span className="tutorial-copy">{TUTORIAL_TIP_COPY[tip]}</span>
       <button aria-label="안내 닫기" className="tutorial-dismiss" type="button" onClick={dismiss}>
         확인
       </button>

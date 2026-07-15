@@ -25,7 +25,7 @@ import { describe, expect, it } from "vitest";
 import { chooseRunCommand } from "../run-sim";
 import { parseHumanReportArgs } from "./human-report";
 import { readHumanLogDirectory } from "./reader";
-import { replayHumanRun } from "./replay";
+import { commandFromHumanTelemetry, replayHumanRun } from "./replay";
 import { buildHumanReport, renderHumanReportMarkdown } from "./report";
 import type {
   HumanDamageFact,
@@ -36,6 +36,51 @@ import type {
 
 const hpList = (state: CombatState): number[] =>
   state.enemies.map((enemy) => enemy.hp);
+
+describe("explicit telemetry command replay", () => {
+  it("reconstructs every optional reducer choice and accepts legacy omissions", () => {
+    expect(
+      commandFromHumanTelemetry({
+        type: "useFlipSkill",
+        slot: 2,
+        target: 1,
+        chosen: [3],
+        desiredCoin: "fire",
+        chosenEquipment: "mana-shield",
+        chosenSummon: 8,
+      }),
+    ).toEqual({
+      type: "useFlipSkill",
+      slot: 2,
+      target: 1,
+      chosen: [3],
+      desiredCoin: "fire",
+      chosenEquipment: "mana-shield",
+      chosenSummon: 8,
+    });
+    expect(
+      commandFromHumanTelemetry({
+        type: "useConsumeSkill",
+        slot: 1,
+        coins: [4, 5],
+        desiredCoin: "mana",
+        chosenSummon: 3,
+      }),
+    ).toEqual({
+      type: "useConsumeSkill",
+      slot: 1,
+      coins: [4, 5],
+      desiredCoin: "mana",
+      chosenSummon: 3,
+    });
+    expect(
+      commandFromHumanTelemetry({ type: "endTurn", preserve: [6] }),
+    ).toEqual({ type: "endTurn", preserve: [6] });
+    expect(
+      commandFromHumanTelemetry({ type: "useFlipSkill", slot: 0 }),
+    ).toEqual({ type: "useFlipSkill", slot: 0 });
+  });
+});
 
 const commandFact = (command: Command): HumanDecisionFact["commands"][number] => {
   if (command.type === "placeCoin") {
@@ -304,6 +349,41 @@ describe("human log report", () => {
     expect(read.files).toHaveLength(1);
     const replay = replayHumanRun(read.files[0]!.trace);
     expect(replay.verification).toEqual({ ok: true, mismatches: [] });
+  });
+
+  it("keeps optional explicit choices while reading older schema-v3 logs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "human-log-explicit-"));
+    const trace = makeTrace("human-fixture-explicit");
+    const decision = trace.combats[0]?.decisions[0];
+    if (decision === undefined) throw new Error("missing decision");
+    decision.source = "auto-turn-end";
+    decision.commands = [
+      {
+        type: "useFlipSkill",
+        slot: 0,
+        target: 1,
+        chosen: [2],
+        desiredCoin: "fire",
+        chosenEquipment: "mana-shield",
+        chosenSummon: 4,
+      },
+      {
+        type: "useConsumeSkill",
+        slot: 1,
+        coins: [3],
+        desiredCoin: "mana",
+        chosenSummon: 5,
+      },
+      { type: "endTurn", preserve: [6] },
+    ];
+    writeTrace(dir, "explicit.json", trace);
+
+    const read = readHumanLogDirectory(dir);
+    expect(read.rejected).toEqual([]);
+    expect(read.files[0]?.trace.combats[0]?.decisions[0]).toMatchObject({
+      source: "auto-turn-end",
+      commands: decision.commands,
+    });
   });
 
   it("rejects tampered facts and content drift", () => {

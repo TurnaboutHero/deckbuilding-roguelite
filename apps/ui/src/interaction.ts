@@ -16,7 +16,75 @@ import { legalCommands, step } from "@game/core";
 // "아직 안 굴린 동전"이므로 반드시 지운다. 이 리듀서가 그 수명주기의 단일 창구다.
 export type CoinFaces = Record<number, Face>;
 
-export type RewardViewStage = "coin" | "removal" | "skill" | "fallback-coin" | "passive";
+export type RewardViewStage =
+  "coin" | "removal" | "skill" | "fallback-coin" | "passive";
+
+export type CardActionTone = "idle" | "ready" | "busy" | "targeting";
+
+export interface CardActionViewInput {
+  cooldownRemaining: number;
+  kind: "flip" | "consume";
+  loaded: number;
+  ready: boolean;
+  resolving: boolean;
+  selecting?: boolean;
+  targeting: boolean;
+  total: number;
+  usedThisCombat: boolean;
+}
+
+export interface CardActionView {
+  actionable: boolean;
+  label: string;
+  tone: CardActionTone;
+}
+
+// 카드의 시각 상태와 실행 가능 여부를 한 줄 행동 바로 압축한다. 합법성 판정은
+// legalCommands가 정본이며, 이 함수는 이미 계산된 UI 상태를 문구로만 투영한다.
+export const cardActionView = (input: CardActionViewInput): CardActionView => {
+  if (input.resolving)
+    return { actionable: false, label: "발동 중…", tone: "busy" };
+  if (input.usedThisCombat)
+    return { actionable: false, label: "이번 전투 사용 완료", tone: "idle" };
+  if (input.cooldownRemaining > 0)
+    return {
+      actionable: false,
+      label: `재사용까지 ${input.cooldownRemaining}턴`,
+      tone: "idle",
+    };
+  if (input.targeting)
+    return {
+      actionable: true,
+      label: "대상 선택 중 · 취소",
+      tone: "targeting",
+    };
+  if (input.kind === "consume" && input.selecting) {
+    return {
+      actionable: input.ready,
+      label: `${input.loaded}/${input.total} 소비${input.ready ? " · 확정" : ""}`,
+      tone: input.ready ? "ready" : "idle",
+    };
+  }
+  if (input.ready)
+    return { actionable: true, label: "스킬 사용", tone: "ready" };
+  if (input.kind === "consume")
+    return {
+      actionable: false,
+      label: `속성 동전 ${input.total}개 필요`,
+      tone: "idle",
+    };
+  return {
+    actionable: false,
+    label: `동전 ${input.loaded}/${input.total}`,
+    tone: "idle",
+  };
+};
+
+export const pendingLoadedCoinCount = (state: CombatState): number =>
+  Object.values(state.zones.placed).reduce(
+    (count, coins) => count + coins.length,
+    0,
+  );
 
 // 보상 순서 자체는 코어가 PendingRewards 플래그로 결정한다. UI는 그 상태를
 // 어느 패널로 보여줄지만 투영하며, 보상 적용이나 완료 판정은 코어 API에 맡긴다.
@@ -63,6 +131,10 @@ export const coinFacesAfterEvent = (
 };
 
 export type DragSource = { kind: "hand" } | { kind: "socket"; slot: SlotId };
+export type DropTarget =
+  | { kind: "slot"; slot: SlotId; coin?: CoinUid }
+  | { kind: "tray" }
+  | { kind: "none" };
 
 // 뽑을 더미 구성 — 종류·매수만 공개한다. 순서는 시드 파생 비밀이라 절대 노출하지 않는다
 // (PRD §15.1은 잔여 매수 표시만 확정 — 구성 공개는 StS 관례를 따르되 순서 은닉이 긴장감의 전제).
@@ -146,13 +218,23 @@ export const dragTargetSlots = (
 export const dropCommands = (
   coin: CoinUid,
   source: DragSource,
-  target: { kind: "slot"; slot: SlotId } | { kind: "tray" } | { kind: "none" },
+  target: DropTarget,
 ): Command[] | null => {
   if (source.kind === "hand") {
     if (target.kind !== "slot") return null;
     return [{ type: "placeCoin", coin, slot: target.slot }];
   }
-  // 소켓 출발: 트레이/빈 곳 = 회수, 다른 카드의 합법 소켓 = 이동(회수 후 장전)
+  // 이미 장전된 동전 위에 놓으면 두 동전을 맞바꾼다. 같은 카드 안의
+  // 소켓 순서 변경과 서로 다른 카드 사이의 교환을 동일한 규칙으로 처리한다.
+  if (target.kind === "slot" && target.coin !== undefined && target.coin !== coin) {
+    return [
+      { type: "unplaceCoin", coin },
+      { type: "unplaceCoin", coin: target.coin },
+      { type: "placeCoin", coin: target.coin, slot: source.slot },
+      { type: "placeCoin", coin, slot: target.slot },
+    ];
+  }
+  // 소켓 출발: 트레이/빈 곳 = 회수, 다른 카드의 빈 소켓 = 이동(회수 후 장전)
   if (target.kind === "slot" && Number(target.slot) !== Number(source.slot)) {
     return [
       { type: "unplaceCoin", coin },
@@ -214,4 +296,30 @@ export const stepSequence = (
     events.push(...result.events);
   }
   return { state: current, events };
+};
+
+// 드래그 중 교환 가능한 상대 동전만 공개한다. 양쪽 스킬의 속성 제한과
+// 소켓 수용량은 실제 커맨드 시퀀스를 끝까지 시뮬레이션해 판정한다.
+export const dragSwapTargetCoins = (
+  state: CombatState,
+  coin: CoinUid,
+  source: DragSource,
+  db: ContentDb,
+): Set<number> => {
+  if (source.kind !== "socket") return new Set();
+  const targets = new Set<number>();
+  for (const [slotKey, coins] of Object.entries(state.zones.placed)) {
+    const targetSlot = Number(slotKey) as SlotId;
+    for (const targetCoin of coins) {
+      if (targetCoin === coin) continue;
+      const commands = dropCommands(coin, source, {
+        kind: "slot",
+        slot: targetSlot,
+        coin: targetCoin,
+      });
+      if (commands !== null && stepSequence(state, commands, db) !== null)
+        targets.add(Number(targetCoin));
+    }
+  }
+  return targets;
 };

@@ -7,9 +7,24 @@ export type RewardResolution = "selected" | "skipped" | "declined";
 export type TelemetryCommand =
   | { type: "placeCoin"; coin: number; slot: number }
   | { type: "unplaceCoin"; coin: number }
-  | { type: "useFlipSkill"; slot: number; target?: number }
-  | { type: "useConsumeSkill"; slot: number; coins: number[]; target?: number }
-  | { type: "endTurn" };
+  | {
+      type: "useFlipSkill";
+      slot: number;
+      target?: number;
+      chosen?: number[];
+      desiredCoin?: string;
+      chosenEquipment?: string;
+      chosenSummon?: number;
+    }
+  | {
+      type: "useConsumeSkill";
+      slot: number;
+      coins: number[];
+      target?: number;
+      desiredCoin?: string;
+      chosenSummon?: number;
+    }
+  | { type: "endTurn"; preserve?: number[] };
 
 export interface HumanDamageFact {
   target: "player" | "enemy";
@@ -21,6 +36,7 @@ export interface HumanDamageFact {
 
 export interface HumanDecisionFact {
   turn: number;
+  source?: "manual" | "auto-turn-end";
   commands: TelemetryCommand[];
   skills: Array<{ slot: number; skill: string; kind: "flip" | "consume" }>;
   flips: Array<{ coin: number; face: "heads" | "tails" }>;

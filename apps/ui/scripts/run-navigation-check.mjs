@@ -6,7 +6,9 @@ const baseUrl = "http://127.0.0.1:4182/deckbuilding-roguelite/";
 const failures = [];
 
 const check = (name, condition, detail = "") => {
-  console.log(`[${condition ? "ok" : "FAIL"}] ${name}${detail ? ` — ${detail}` : ""}`);
+  console.log(
+    `[${condition ? "ok" : "FAIL"}] ${name}${detail ? ` — ${detail}` : ""}`,
+  );
   if (!condition) failures.push(`${name}${detail ? ` — ${detail}` : ""}`);
 };
 
@@ -21,7 +23,9 @@ const browser = await chromium.launch(
 );
 
 try {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 720 },
+  });
   const page = await context.newPage();
   const errors = [];
   const badResponses = [];
@@ -54,10 +58,14 @@ try {
   check(
     "shared overlay layer tokens exist",
     layerTokens.every(([, value]) => value !== ""),
-    layerTokens.filter(([, value]) => value === "").map(([name]) => name).join(", "),
+    layerTokens
+      .filter(([, value]) => value === "")
+      .map(([name]) => name)
+      .join(", "),
   );
 
-  const hasTitle = (await page.locator('[data-testid="title-screen"]').count()) === 1;
+  const hasTitle =
+    (await page.locator('[data-testid="title-screen"]').count()) === 1;
   check("title shown without save", hasTitle);
   if (!hasTitle) {
     throw new Error("title-screen is missing");
@@ -122,6 +130,12 @@ try {
 
   await page.locator(".hand-tray .coin").first().click();
   await page.locator(".skill-card").first().locator(".socket").first().click();
+  check(
+    "loading a coin does not pin the skill preview",
+    (await page.locator(".preview-tip").count()) === 0,
+  );
+  await page.mouse.move(0, 0);
+  await page.locator(".skill-card").first().hover();
   await page.waitForSelector(".preview-tip");
   const previewLayer = await page.locator(".preview-tip").evaluate((tip) => ({
     layer: tip.parentElement?.dataset.overlayLayer ?? null,
@@ -131,6 +145,14 @@ try {
     "skill preview uses tooltip layer",
     previewLayer.layer === "tooltip",
     JSON.stringify(previewLayer),
+  );
+  await page
+    .locator(".skill-row")
+    .evaluate((row) => row.dispatchEvent(new Event("scroll")));
+  await page.waitForTimeout(50);
+  check(
+    "scrolling the skill rail closes the preview",
+    (await page.locator(".preview-tip").count()) === 0,
   );
 
   await page.locator(".pouch-circle").click();
@@ -150,18 +172,28 @@ try {
   await page.waitForSelector('[data-testid="run-menu"]');
   check(
     "run menu uses modal layer",
-    (await page.locator('[data-testid="run-menu"]').evaluate(
-      (menu) => menu.parentElement?.dataset.overlayLayer ?? null,
-    )) === "modal",
+    (await page
+      .locator('[data-testid="run-menu"]')
+      .evaluate((menu) => menu.parentElement?.dataset.overlayLayer ?? null)) ===
+      "modal",
   );
   await page.keyboard.press("Escape");
-  check("escape closes run menu", (await page.locator('[data-testid="run-menu"]').count()) === 0);
+  check(
+    "escape closes run menu",
+    (await page.locator('[data-testid="run-menu"]').count()) === 0,
+  );
 
   await page.locator('[data-testid="run-menu-open"]').click();
   await page.locator('[data-testid="run-menu-exit"]').click();
   await page.waitForSelector('[data-testid="title-screen"]');
-  check("exit preserves continue", !(await page.locator('[data-testid="title-continue"]').isDisabled()));
-  check("title shows saved summary", (await page.locator('[data-testid="title-save-summary"]').count()) === 1);
+  check(
+    "exit preserves continue",
+    !(await page.locator('[data-testid="title-continue"]').isDisabled()),
+  );
+  check(
+    "title shows saved summary",
+    (await page.locator('[data-testid="title-save-summary"]').count()) === 1,
+  );
 
   await page.locator('[data-testid="title-continue"]').click();
   await page.waitForSelector('[data-testid="run-progress"]');
@@ -174,7 +206,10 @@ try {
   await page.waitForSelector('[data-testid="confirm-action"]');
   await page.locator('[data-testid="confirm-action"]').click();
   await page.waitForSelector('[data-testid="run-progress"]');
-  check("saved run reload returns to run", (await page.locator('[data-testid="run-progress"]').count()) === 1);
+  check(
+    "saved run reload returns to run",
+    (await page.locator('[data-testid="run-progress"]').count()) === 1,
+  );
   const attemptAfterLoad = Number(
     await page.locator(".combat-shell").getAttribute("data-attempt"),
   );
@@ -203,24 +238,35 @@ try {
   );
 
   check("desktop page errors 0", errors.length === 0, errors.join(" | "));
-  check("desktop 4xx responses 0", badResponses.length === 0, badResponses.join(" | "));
+  check(
+    "desktop 4xx responses 0",
+    badResponses.length === 0,
+    badResponses.join(" | "),
+  );
   await context.close();
 
-  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const mobile = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+  });
   const mobilePage = await mobile.newPage();
   await mobilePage.goto(`${baseUrl}?select=1`, { waitUntil: "networkidle" });
   await mobilePage.waitForSelector('[data-testid="character-select"]');
   check(
     "mobile character select has no horizontal overflow",
     await mobilePage.evaluate(
-      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
     ),
   );
   check(
     "mobile uses one character column",
-    await mobilePage.locator(".character-grid").evaluate(
-      (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length === 1,
-    ),
+    await mobilePage
+      .locator(".character-grid")
+      .evaluate(
+        (element) =>
+          getComputedStyle(element).gridTemplateColumns.split(" ").length === 1,
+      ),
   );
   await mobile.close();
 } finally {

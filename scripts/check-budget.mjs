@@ -14,9 +14,12 @@ const dist = join(root, "apps/ui/dist");
 const BUDGETS = {
   // Character selection now ships five optimized standing illustrations.
   // Reserve a bounded 360 KiB for this intentional static-art addition.
-  total: 3189145,
-  js: 481280, // 470 KiB
-  css: 73216, // 71.5 KiB
+  // The 2026-07-15 combat UX completion adds the ordered execution workflow,
+  // help/history/preferences surfaces, and their responsive/accessibility CSS.
+  // Keep the measured addition bounded instead of disabling the gate.
+  total: 3213312,
+  js: 497664, // 486 KiB
+  css: 86016, // 84 KiB
   maxFile: 716800, // 700 KiB
 };
 

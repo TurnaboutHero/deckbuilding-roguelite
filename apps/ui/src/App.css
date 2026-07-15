@@ -91,9 +91,9 @@ button:focus-visible {
 }
 
 .battlefield,
+.execution-rail,
 .skill-row,
 .bottom-hud,
-.seed-strip,
 .run-meta {
   position: relative;
   z-index: var(--z-stage);
@@ -151,7 +151,7 @@ button:focus-visible {
   flex: 1; /* HUD·카드에서 회수한 세로 공간을 전장이 흡수 */
   min-height: 306px;
   /* 중앙 진행 메타는 첫 행, 양쪽 유닛 패널은 둘째 행에 둬 폭과 무관하게 충돌하지 않는다. */
-  padding: 50px clamp(40px, 6vw, 116px) 0;
+  padding: 60px clamp(40px, 6vw, 116px) 0;
 }
 
 .enemy-line {
@@ -207,6 +207,19 @@ button:focus-visible {
   box-shadow:
     0 0 0 4px var(--gold-2),
     0 0 0 10px rgba(240, 144, 44, 0.42);
+}
+
+.targeting-prompt {
+  top: 4px;
+  bottom: auto;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 4px 8px;
+}
+
+/* 선택 프롬프트는 상단 런 메타보다 앞에 있어 실제 버튼이 가려지지 않아야 한다. */
+.battlefield.choice-open {
+  z-index: calc(var(--z-controls) + 1);
 }
 
 .plate-row {
@@ -362,7 +375,7 @@ button:focus-visible {
   top: 40%;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 24px;
+  font-size: calc(24px * var(--damage-number-scale, 1));
   font-weight: 400;
   text-shadow: 2px 2px 0 var(--out);
   animation: float-up 0.9s steps(8) forwards;
@@ -384,7 +397,7 @@ button:focus-visible {
 
 .float-text.kind-coin {
   color: #ffe9a8;
-  font-size: 16px;
+  font-size: calc(16px * var(--damage-number-scale, 1));
 }
 
 .test-encounter-badge {
@@ -422,8 +435,7 @@ button:focus-visible {
   justify-content: center;
   align-items: flex-end;
   gap: 8px;
-  /* 기존 190px 레일 높이 안에서 하단 26px를 안내 전용 행으로 예약한다. */
-  padding: 2px 0 26px;
+  padding: 2px 0;
   isolation: isolate;
   transition:
     opacity 0.25s,
@@ -444,8 +456,8 @@ button:focus-visible {
   position: relative;
   width: 120px;
   flex: 0 0 120px;
-  height: 190px;
-  min-height: 190px;
+  height: 232px;
+  min-height: 232px;
   padding: 16px 8px 8px;
   margin-left: 0;
   background: linear-gradient(#353b4c, #242936 56%, #171a23);
@@ -463,10 +475,6 @@ button:focus-visible {
     transform 0.14s steps(3),
     opacity 0.25s,
     filter 0.25s;
-}
-
-.skill-card:first-child {
-  margin-left: 0;
 }
 
 /* 장전(.lifted)은 절제된 리프트+금테 상시 표식 — 확대·가로 겹침 없음. */
@@ -547,6 +555,7 @@ button:focus-visible {
 }
 
 .card-title {
+  position: relative;
   width: calc(100% + 16px);
   margin: -16px -8px 0;
   padding: 10px 4px 3px;
@@ -561,13 +570,161 @@ button:focus-visible {
   text-shadow: 1px 1px 0 rgba(255, 238, 175, 0.45);
 }
 
-.card-title:focus-visible {
-  outline: 3px solid #fdf3d0;
-  outline-offset: -3px;
+.execution-card-badge {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: #fff8d7;
+  background: #372458;
+  border: 2px solid #fff0a8;
+  border-radius: 50%;
+  font-style: normal;
+  font-size: 12px;
+  text-shadow: 1px 1px 0 #120c1c;
 }
 
-.card-title[aria-disabled="true"] {
+.execution-partial-badge {
+  display: block;
+  margin-top: 2px;
+  color: #5b2632;
+  font-style: normal;
+  font-size: 9px;
+  line-height: 1.1;
+}
+
+/* 장전 완료 카드만 나타나는 턴 단위 실행 레일. 카드/소켓 드래그와 분리해
+   순서 드래그가 장전 동전 교환을 가로채지 않는다. */
+.execution-rail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 4px 8px;
+  color: #f5ecd0;
+  background: rgba(20, 18, 29, 0.92);
+  border: 2px solid #755e37;
+  box-shadow: inset 0 1px 0 #a6874d;
+}
+
+.execution-rail > strong {
+  flex: none;
+  font-size: 11px;
+  color: #e9cd7b;
+}
+
+.execution-rail ol {
+  display: flex;
+  align-items: stretch;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.execution-rail li {
+  display: grid;
+  grid-template-columns: 24px minmax(64px, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  min-height: 38px;
+  padding: 2px 4px;
+  background: #2d3040;
+  border: 2px solid #6d7184;
+  cursor: grab;
+}
+
+.execution-rail li.current {
+  border-color: var(--gold-2);
+  box-shadow: 0 0 7px rgba(244, 207, 91, 0.55);
+}
+
+.execution-rail li.completed {
+  opacity: 0.58;
+  border-color: #54816a;
+}
+
+.execution-rail li.blocked {
+  border-color: #e26452;
+}
+
+.execution-number {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #1b1520;
+  background: var(--gold-2);
+  font-weight: 800;
+}
+
+.execution-name {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.execution-rail li > small {
+  color: #bfc7d8;
+  font-size: 9px;
+}
+
+.execution-order-controls {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 3px;
+}
+
+.execution-order-controls button,
+.execution-cancel,
+.execution-blocked button {
+  min-width: 44px;
+  min-height: 28px;
+  padding: 2px 7px;
+  color: #f2ead5;
+  background: #3a3e50;
+  border: 1px solid #858a9c;
+  font-size: 10px;
+}
+
+.execution-order-controls button:disabled {
+  opacity: 0.4;
+}
+
+.execution-rail.frozen li {
   cursor: default;
+}
+
+.execution-blocked {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #ffd1c9;
+  font-size: 10px;
+}
+
+.card-action {
+  width: calc(100% + 16px);
+  min-height: 44px;
+  flex: 0 0 44px;
+  margin: auto -8px -8px;
+  border: 0;
+  border-top: 3px solid var(--out);
+  color: #cdd3e3;
+  background: #20242f;
+  font-size: 11px;
+}
+
+.card-action.ready {
+  color: #17131b;
+  background: var(--gold-2);
 }
 
 /* 소켓은 카드 상단 모서리에 얹힘 — 제목은 아래쪽 패딩으로 분리 */
@@ -605,6 +762,40 @@ button:focus-visible {
   animation: socket-pulse 0.7s steps(2) infinite alternate;
 }
 
+/* 장전 동전 드래그 중에는 교환 가능한 상대만 청색 링과 ↔ 배지로 표시한다. */
+.socket.swap-accept {
+  z-index: 4;
+  box-shadow:
+    0 0 0 2px #8de1ff,
+    0 0 9px rgba(93, 205, 255, 0.9);
+  animation: swap-target-pulse 0.7s steps(2) infinite alternate;
+}
+
+.socket.swap-accept::after {
+  content: "↔";
+  position: absolute;
+  top: -18px;
+  right: -13px;
+  z-index: 3;
+  min-width: 19px;
+  height: 17px;
+  border: 2px solid var(--out);
+  border-radius: 9px;
+  background: #8de1ff;
+  color: #101824;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 13px;
+  pointer-events: none;
+}
+
+.socket.swap-over {
+  transform: scale(1.14);
+  box-shadow:
+    0 0 0 4px #f8e27b,
+    0 0 14px rgba(248, 226, 123, 0.95);
+}
+
 .socket.loaded {
   background: none;
 }
@@ -623,6 +814,15 @@ button:focus-visible {
   }
   to {
     box-shadow: 0 0 0 5px rgba(242, 207, 91, 0.25);
+  }
+}
+
+@keyframes swap-target-pulse {
+  from {
+    filter: brightness(1);
+  }
+  to {
+    filter: brightness(1.35);
   }
 }
 
@@ -671,6 +871,11 @@ button:focus-visible {
 
 .socket-coin.flipping {
   animation: coin-flip 0.6s steps(6);
+}
+
+.combat-shell[data-flip-speed="fast"] .socket-coin.flipping {
+  animation-duration: 0.24s;
+  animation-timing-function: steps(4);
 }
 
 /* 플립 결과 면 — 앞면(양각 금화·햇살)과 뒷면(음각 암청·초승달)은 색·명도·글리프 3중으로 구분 */
@@ -1418,24 +1623,51 @@ button:focus-visible {
   filter: saturate(0.4) brightness(0.75);
 }
 
-.seed-strip {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 4px 9px;
-  font-size: 12px;
-  letter-spacing: 1px;
-  background: rgba(28, 23, 36, 0.88);
-  border: 2px solid var(--out);
-  color: #cfe0ff;
-  z-index: 2;
+@media (max-width: 700px) {
+  .execution-rail {
+    justify-content: flex-start;
+    min-height: 52px;
+    overflow-x: auto;
+    padding: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .execution-rail > strong {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    align-self: stretch;
+    display: grid;
+    place-items: center;
+    max-width: 70px;
+    padding: 0 5px;
+    background: #14121d;
+  }
+
+  .execution-rail ol {
+    flex: none;
+  }
+
+  .execution-rail li {
+    min-width: 132px;
+  }
+
+  .execution-order-controls button,
+  .execution-cancel,
+  .execution-blocked button {
+    min-height: 44px;
+  }
+
+  .execution-blocked {
+    flex: none;
+    min-width: 280px;
+  }
 }
 
 /* P7 D6 — 점진 튜토리얼: 닫기 버튼이 있는 문맥 안내 (hint-strip 위층) */
 .tutorial-strip {
   position: absolute;
-  bottom: 26px;
+  bottom: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 4;
@@ -1450,6 +1682,7 @@ button:focus-visible {
   border: 2px solid #4f7a58;
   color: #d9f2dc;
   animation: hint-in 0.35s steps(4);
+  pointer-events: none;
 }
 
 .tutorial-strip .tutorial-dismiss {
@@ -1460,6 +1693,7 @@ button:focus-visible {
   color: #d9f2dc;
   border: 2px solid #4f7a58;
   cursor: pointer;
+  pointer-events: auto;
 }
 
 .tutorial-strip .tutorial-dismiss:focus-visible {
@@ -1471,26 +1705,6 @@ button:focus-visible {
   .tutorial-strip {
     animation: none;
   }
-}
-
-/* 문맥 힌트 — 동사를 한 번 수행하면 다음 단계로, 첫 스킬 사용 후 사라진다 */
-.hint-strip {
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 4;
-  min-height: 22px;
-  padding: 3px 12px;
-  font-size: 11px;
-  line-height: 1.25;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
-  background: #1c1724;
-  border: 2px solid #6b5938;
-  color: #fff1bf;
-  pointer-events: none;
-  animation: hint-in 0.35s steps(4);
 }
 
 @keyframes hint-in {
@@ -1820,7 +2034,11 @@ button:focus-visible {
   min-height: 210px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% 64%, rgba(217, 164, 65, 0.28), transparent 52%),
+    radial-gradient(
+      circle at 50% 64%,
+      rgba(217, 164, 65, 0.28),
+      transparent 52%
+    ),
     linear-gradient(#1b1f2b, #11141c);
   border: 2px solid #10131b;
   box-shadow:
@@ -2274,14 +2492,9 @@ button:focus-visible {
     margin-top: 22px;
   }
 
-  .hint-strip {
-    min-height: 25px;
-    padding: 4px 14px;
-    font-size: 12px;
-  }
 }
 
-@media (max-width: 1100px) {
+@media (min-width: 701px) and (max-width: 1100px) {
   .run-meta {
     width: 480px;
     min-width: 480px;
@@ -2309,9 +2522,9 @@ button:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .socket-coin.flipping,
   .socket.accept,
+  .socket.swap-accept,
   .float-text,
   .coin.drag-cancel,
-  .hint-strip,
   .pile-flow,
   .rejection-chip,
   .pouch-circle.receiving,
@@ -2333,7 +2546,13 @@ button:focus-visible {
 /* ---- P3.4 냉기/전기 시각 정체성 ---- */
 .coin.frost,
 .socket-coin.frost {
-  background: radial-gradient(circle at 34% 30%, #eaf7ff 0 22%, #bfe8ff 42%, #6fa3cc 78%, #3d6a8f 100%);
+  background: radial-gradient(
+    circle at 34% 30%,
+    #eaf7ff 0 22%,
+    #bfe8ff 42%,
+    #6fa3cc 78%,
+    #3d6a8f 100%
+  );
   border-color: #2b4a66;
 }
 
@@ -2368,6 +2587,64 @@ button:focus-visible {
   line-height: 1.25;
 }
 
+.turn-end-warning-backdrop {
+  position: fixed;
+  z-index: calc(var(--z-popover) - 1);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: rgba(12, 14, 20, 0.52);
+  border: 0;
+  border-radius: 0;
+  cursor: default;
+}
+
+.turn-end-warning {
+  z-index: calc(var(--z-popover) + 1);
+  align-items: stretch;
+  justify-content: space-between;
+}
+
+.turn-end-warning-remember {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  color: #f4ead5;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.turn-end-warning-remember input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--gold-2);
+}
+
+.turn-end-warning-discard {
+  color: #ffd8d1;
+  border-color: #9b4d43;
+  background: #4a2525;
+}
+
+.turn-end-warning > div:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.turn-end-warning-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+}
+
+.turn-end-warning-actions button {
+  min-height: 40px;
+}
+
 .preserve-placed {
   display: flex;
   gap: 5px;
@@ -2393,7 +2670,13 @@ button:focus-visible {
 }
 .coin.lightning,
 .socket-coin.lightning {
-  background: radial-gradient(circle at 34% 30%, #f2fbff 0 20%, #8fd0ff 40%, #3f7fc4 76%, #274d80 100%);
+  background: radial-gradient(
+    circle at 34% 30%,
+    #f2fbff 0 20%,
+    #8fd0ff 40%,
+    #3f7fc4 76%,
+    #274d80 100%
+  );
   border-color: #1f3a5e;
 }
 .frost-chip {
@@ -2676,8 +2959,10 @@ button:focus-visible {
   .combat-shell {
     min-height: 100svh;
     min-height: 100dvh;
-    padding: calc(6px + env(safe-area-inset-top)) calc(6px + env(safe-area-inset-right))
-      calc(10px + env(safe-area-inset-bottom)) calc(6px + env(safe-area-inset-left));
+    padding: calc(6px + env(safe-area-inset-top))
+      calc(6px + env(safe-area-inset-right))
+      calc(10px + env(safe-area-inset-bottom))
+      calc(6px + env(safe-area-inset-left));
     gap: 6px;
   }
   .run-meta {
@@ -2753,16 +3038,18 @@ button:focus-visible {
     -webkit-overflow-scrolling: touch;
     justify-content: flex-start;
     align-items: flex-start;
-    padding: 6px 4px 10px;
+    padding: 6px 28px 10px 4px;
     gap: 8px;
+    scroll-snap-type: x proximity;
   }
   .skill-row .skill-card {
     flex: 0 0 auto;
     min-width: 118px;
     max-width: 136px;
     height: auto;
-    min-height: 150px;
+    min-height: 194px;
     padding: 10px 8px 8px;
+    scroll-snap-align: start;
   }
   .card-art {
     width: 72px;
@@ -2779,7 +3066,17 @@ button:focus-visible {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     justify-content: flex-start;
-    padding: 4px;
+    padding: 4px 28px 4px 4px;
+  }
+  .turn-end-warning {
+    width: calc(100vw - 20px);
+    flex-direction: column;
+  }
+  .turn-end-warning-actions {
+    width: 100%;
+  }
+  .turn-end-warning-actions button {
+    flex: 1;
   }
   /* 패널류: 자체 세로 스크롤로 하단 제어 도달 보장 */
   .shop-screen,
@@ -2842,15 +3139,14 @@ button:focus-visible {
 }
 
 @media (max-height: 500px) {
-  /* 44px 터치 타깃 유지 + 메타 줄 높이 불변 (음수 마진으로 흡수) */
-  .run-meta .mute-toggle {
-    margin: -14px 0;
-  }
   .combat-shell {
-    min-height: 100svh;
-    min-height: 100dvh;
-    padding: calc(4px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
-      calc(8px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
+    height: 100svh;
+    height: 100dvh;
+    min-height: 0;
+    padding: calc(4px + env(safe-area-inset-top))
+      calc(10px + env(safe-area-inset-right))
+      calc(8px + env(safe-area-inset-bottom))
+      calc(10px + env(safe-area-inset-left));
     gap: 2px;
   }
   .run-meta {
@@ -2887,7 +3183,8 @@ button:focus-visible {
     -webkit-overflow-scrolling: touch;
     justify-content: flex-start;
     align-items: flex-start;
-    padding: 4px 4px 8px;
+    padding: 4px 28px 8px 4px;
+    scroll-snap-type: x proximity;
   }
   .skill-row .skill-card {
     flex: 0 0 auto;
@@ -2896,6 +3193,7 @@ button:focus-visible {
     height: auto;
     min-height: 0;
     padding: 8px 8px 6px;
+    scroll-snap-align: start;
   }
   .run-stage-shell {
     min-height: 100svh;
@@ -2962,7 +3260,6 @@ button:focus-visible {
     font-size: 11px;
     padding: 2px 5px;
   }
-  .hint-strip,
   .test-encounter-badge {
     display: none;
   }
@@ -2976,7 +3273,14 @@ button:focus-visible {
   .hand-tray {
     overflow-x: auto;
     justify-content: flex-start;
-    padding: 2px;
+    padding: 2px 28px 2px 2px;
+  }
+  .turn-end-warning {
+    width: calc(100vw - 24px);
+    padding: 7px 8px;
+  }
+  .turn-end-warning span {
+    display: none;
   }
   .shop-screen,
   .event-screen,
@@ -2988,7 +3292,6 @@ button:focus-visible {
   }
 }
 
-
 /* P5.1 감사: hover 의존 확장은 fine 포인터에서만 (터치는 .lifted/:focus-within 경로) */
 @media (hover: hover) and (pointer: fine) and (max-height: 500px) {
   .skill-card:hover .card-effects {
@@ -2999,6 +3302,9 @@ button:focus-visible {
 /* P5.1 감사: coarse 포인터 주요 타깃 44×44 보장 */
 @media (pointer: coarse) {
   .end-turn,
+  .card-action,
+  .targeting-prompt button,
+  .turn-end-warning-actions button,
   .shop-leave,
   .event-actions button,
   .result-panel button,
@@ -3009,26 +3315,10 @@ button:focus-visible {
     min-width: 44px;
   }
   .hand-tray .coin,
-  .socket,
-  .mute-toggle {
+  .socket {
     min-width: 44px;
     min-height: 44px;
   }
-}
-
-
-/* P5.2 음소거 토글 — 픽셀 폰트 안전 텍스트 버튼 */
-.mute-toggle {
-  padding: 3px 8px;
-  border: 2px solid var(--out);
-  background: #2a3247;
-  color: #d9e7ff;
-  font-size: 11px;
-}
-
-.mute-toggle[aria-pressed="true"] {
-  background: #3c5a35;
-  color: #d6f5c9;
 }
 
 /* P5.3 forced-colors (Windows 고대비) — 시스템 팔레트 존중, 경계 유지 */
@@ -3038,7 +3328,6 @@ button:focus-visible {
   .shop-item,
   .node-card,
   .event-pick,
-  .mute-toggle,
   .end-turn,
   .coin,
   .socket {
@@ -3054,6 +3343,460 @@ button:focus-visible {
   }
 }
 
+/* ── 전투 UX 완성: 도움말·설정·요약·기록·모바일 코인 탐색 ─────────── */
+.combat-preferences-host {
+  position: relative;
+}
+
+.combat-utility-button,
+.combat-help-open,
+.combat-preferences-panel button,
+.recommended-load-open,
+.recommended-load-preview button,
+.coin-rail-nav {
+  min-height: 44px;
+  padding: 4px 9px;
+  border: 2px solid var(--out);
+  background: #2a3247;
+  color: #f3e9d2;
+  font: inherit;
+}
+
+.combat-preferences-panel {
+  position: fixed;
+  top: 58px;
+  right: max(12px, env(safe-area-inset-right));
+  z-index: calc(var(--z-controls) - 1);
+  width: min(310px, calc(100vw - 24px));
+  max-height: calc(100dvh - 76px);
+  overflow-y: auto;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  white-space: normal;
+  background: #171a23;
+  border: 3px solid var(--gold);
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.45);
+}
+
+.combat-preferences-panel header,
+.combat-help-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--gold-2);
+}
+
+.combat-preferences-panel label {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--paper);
+  font-size: 13px;
+}
+
+.combat-preferences-panel select,
+.combat-preferences-panel input {
+  accent-color: var(--gold-2);
+}
+
+.combat-preferences-panel select {
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 2px solid #4c5268;
+  background: #202430;
+  color: var(--paper);
+  font: inherit;
+}
+
+.combat-help-host {
+  position: absolute;
+  top: 12px;
+  left: max(12px, env(safe-area-inset-left));
+  z-index: var(--z-controls);
+}
+
+.combat-help-open {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  color: var(--gold-2);
+  font-size: 20px;
+}
+
+.combat-help-panel {
+  position: fixed;
+  top: 64px;
+  left: max(12px, env(safe-area-inset-left));
+  z-index: calc(var(--z-controls) - 1);
+  width: min(460px, calc(100vw - 24px));
+  max-height: calc(100dvh - 84px);
+  overflow-y: auto;
+  padding: 14px;
+  background: #171a23;
+  border: 3px solid var(--gold);
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.45);
+}
+
+.combat-help-panel dl,
+.combat-help-panel dd {
+  margin: 0;
+}
+
+.combat-help-panel dl {
+  display: grid;
+  gap: 8px;
+}
+
+.combat-help-panel dl > div {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 8px;
+  padding-top: 7px;
+  border-top: 1px solid #3f4659;
+}
+
+.combat-help-panel dt {
+  color: var(--gold-2);
+}
+
+.combat-help-panel dd {
+  color: #d9e7ff;
+  font-size: calc(12px * var(--tooltip-font-scale, 1));
+  line-height: 1.45;
+}
+
+.turn-primary-controls {
+  flex: 0 0 auto;
+  min-width: 212px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.turn-resource-summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px 7px;
+  padding: 4px 7px;
+  color: #d9e7ff;
+  background: #171a23;
+  border: 2px solid #4c5268;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.turn-resource-summary span {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.turn-resource-summary .warn {
+  color: #ffcf96;
+}
+
+.recommended-load-open {
+  min-height: 32px;
+  color: #fff1bf;
+}
+
+@media (min-width: 701px) {
+  .turn-primary-controls {
+    min-width: min(430px, 42vw);
+    grid-template-columns: 90px minmax(180px, 1fr) minmax(120px, 1fr);
+    align-items: stretch;
+  }
+
+  .recommended-load-open,
+  .turn-resource-summary,
+  .turn-primary-controls .end-turn {
+    grid-row: 1;
+  }
+
+  .turn-resource-summary {
+    align-content: center;
+    padding-block: 2px;
+  }
+
+  .turn-primary-controls .end-turn {
+    padding: 6px 9px;
+    font-size: 14px;
+  }
+}
+
+@media (min-width: 701px) and (max-height: 760px) {
+  .skill-card {
+    height: 226px;
+    min-height: 226px;
+    padding-top: 13px;
+  }
+}
+
+.recommended-load-preview {
+  position: absolute;
+  z-index: calc(var(--z-controls) - 1);
+  right: max(16px, calc((100vw - 1280px) / 2 + 16px));
+  bottom: 126px;
+  width: min(390px, calc(100vw - 24px));
+  max-height: min(420px, calc(100dvh - 150px));
+  overflow-y: auto;
+  padding: 12px;
+  background: #171a23;
+  border: 3px solid var(--gold);
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.45);
+}
+
+.recommended-load-preview p {
+  margin: 7px 0;
+  color: #cdd7ee;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.recommended-load-preview ol {
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 8px 0;
+  padding-left: 26px;
+  font-size: 12px;
+}
+
+.recommended-load-preview > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.combat-history {
+  position: absolute;
+  right: 6px;
+  bottom: calc(100% + 7px);
+  z-index: calc(var(--z-controls) - 2);
+  width: min(270px, 34vw);
+  color: #d9e7ff;
+  background: rgba(23, 26, 35, 0.96);
+  border: 2px solid #4c5268;
+}
+
+.combat-history summary {
+  min-height: 34px;
+  padding: 8px;
+  color: #fff1bf;
+  cursor: pointer;
+}
+
+.combat-history ol {
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 8px 8px 28px;
+}
+
+.combat-history li {
+  padding: 5px 0;
+  border-top: 1px solid #353b4c;
+  font-size: 11px;
+}
+
+.combat-history li strong,
+.combat-history li span,
+.combat-history li small {
+  display: block;
+}
+
+.combat-history li small {
+  color: #aeb7cf;
+}
+
+.coin-rail {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.coin-rail .hand-tray {
+  width: 100%;
+}
+
+.coin-rail-nav,
+.coin-rail-position {
+  display: none;
+}
+
+.combat-shell[data-tooltip-size="large"] :is(.preview-tip, .kw-tip, .pile-pop) {
+  font-size: calc(1em * var(--tooltip-font-scale, 1));
+}
+
+.combat-shell[data-background-effects="reduced"] .backdrop-img {
+  filter: saturate(0.72) contrast(1.04);
+}
+
+.combat-shell[data-background-effects="reduced"] :is(.turn-buff-chip, .backdrop-img) {
+  animation: none !important;
+}
+
+.combat-shell[data-high-contrast="true"] {
+  --paper: #fffbea;
+  --gold: #f5c84c;
+  --gold-2: #ffe47a;
+  --out: #08090d;
+}
+
+.combat-shell[data-high-contrast="true"] :is(.run-meta, .bottom-hud, .execution-rail, .skill-card, .unit-plate) {
+  border-color: #fff1bf;
+  box-shadow: inset 0 0 0 2px #08090d, 0 4px 0 rgba(0, 0, 0, 0.8);
+}
+
+.combat-shell[data-high-contrast="true"] :is(.card-effects, .turn-resource-summary, .combat-history) {
+  color: #fffbea;
+}
+
+.combat-shell[data-reduced-motion="true"] *,
+.combat-shell[data-reduced-motion="true"] *::before,
+.combat-shell[data-reduced-motion="true"] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+@media (max-width: 700px), (max-height: 500px) {
+  .combat-help-host {
+    top: max(6px, env(safe-area-inset-top));
+    left: max(6px, env(safe-area-inset-left));
+  }
+  .combat-help-open {
+    width: 44px;
+    min-height: 44px;
+  }
+  .combat-preferences-panel,
+  .combat-help-panel {
+    top: calc(52px + env(safe-area-inset-top));
+  }
+  .combat-preferences-panel label,
+  .combat-preferences-panel select,
+  .combat-preferences-panel button,
+  .combat-help-panel button,
+  .recommended-load-preview button,
+  .coin-rail-nav {
+    min-height: 44px;
+  }
+  .combat-utility-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .coin-rail-nav {
+    display: block;
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    width: 44px;
+    padding: 0;
+    transform: translateY(-50%);
+    font-size: 24px;
+  }
+  .coin-rail-nav.previous { left: 2px; }
+  .coin-rail-nav.next { right: 2px; }
+  .coin-rail-nav:disabled { opacity: 0.34; cursor: default; }
+  .coin-rail-position {
+    display: block;
+    position: absolute;
+    right: 44px;
+    bottom: 2px;
+    z-index: 3;
+    padding: 1px 4px;
+    color: #fff1bf;
+    background: rgba(10, 12, 18, 0.82);
+    font-size: 9px;
+    pointer-events: none;
+  }
+  .coin-rail .hand-tray {
+    justify-content: flex-start;
+    padding-right: 54px;
+    padding-left: 44px;
+    scroll-snap-type: x mandatory;
+    scroll-padding-left: 44px;
+  }
+  .coin-rail .coin {
+    flex: 0 0 46px;
+    scroll-snap-align: start;
+  }
+  .turn-primary-controls {
+    min-width: 172px;
+  }
+  .turn-resource-summary {
+    font-size: 12px;
+  }
+  .recommended-load-preview {
+    right: 8px;
+    bottom: calc(116px + env(safe-area-inset-bottom));
+  }
+  .combat-history {
+    right: 4px;
+    width: min(250px, 68vw);
+  }
+}
+
+@media (max-width: 700px) and (min-height: 501px) {
+  .bottom-hud {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr) 72px;
+    align-items: center;
+    gap: 6px;
+  }
+  .pouch {
+    justify-content: center;
+  }
+  .pouch > span {
+    display: none;
+  }
+  .coin-rail {
+    min-width: 0;
+  }
+  .coin-rail .coin {
+    width: 56px;
+    height: 56px;
+    flex-basis: 56px;
+  }
+  .pile-counts {
+    min-width: 0;
+  }
+  .turn-primary-controls {
+    grid-column: 1 / -1;
+    flex: 1 0 100%;
+    grid-template-columns: minmax(88px, 0.72fr) minmax(112px, 1fr) minmax(118px, 1.15fr);
+    align-items: stretch;
+  }
+  .recommended-load-open,
+  .turn-primary-controls .end-turn {
+    min-height: 44px;
+    padding: 5px 7px;
+    font-size: 12px;
+  }
+  .turn-primary-controls .end-turn {
+    padding: 2px 4px;
+    font-size: 10px;
+    line-height: 1.1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .combat-shell *,
+  .combat-shell *::before,
+  .combat-shell *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
 
 /* P5.4 복구 화면 (런타임 오류·손상 저장) */
 .boot-recovery {
@@ -3081,7 +3824,6 @@ button:focus-visible {
   color: #f3e9d2;
   font-weight: 700;
 }
-
 
 /* P5.4 저장 실패 경고 배지 */
 .save-warning {

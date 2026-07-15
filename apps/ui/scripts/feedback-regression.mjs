@@ -55,7 +55,8 @@ const attachErrorCapture = (page) => {
 };
 
 const mergeErrors = (errors) => {
-  for (const kind of Object.keys(allErrors)) allErrors[kind].push(...errors[kind]);
+  for (const kind of Object.keys(allErrors))
+    allErrors[kind].push(...errors[kind]);
 };
 
 const installFakeAudio = async (page) => {
@@ -123,7 +124,9 @@ const waitForCombat = (page) =>
       document.querySelector(".end-turn:not(:disabled)") !== null &&
       document.querySelector(".float-text") === null,
     undefined,
-    { timeout: 15000 },
+    {
+      timeout: 15000,
+    },
   );
 
 const waitForVisualStability = async (page) => {
@@ -134,7 +137,9 @@ const waitForVisualStability = async (page) => {
   );
   await page.evaluate(async () => {
     await Promise.all(
-      [...document.images].map((image) => image.decode().catch(() => undefined)),
+      [...document.images].map((image) =>
+        image.decode().catch(() => undefined),
+      ),
     );
     await new Promise((resolveFrame) =>
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame)),
@@ -284,25 +289,23 @@ try {
     });
     await waitForCombat(page);
 
-    const muteToggle = page.locator('[data-testid="mute-toggle"]');
-    const mutedBefore = await muteToggle.innerText();
+    await page.getByTestId("combat-preferences-open").click();
+    const soundToggle = page.getByTestId("preference-sound");
+    const mutedBefore = !(await soundToggle.isChecked());
     const audioBefore = await readAudio(page);
     check(
       "sound defaults to muted without AudioContext construction",
-      /끔/.test(mutedBefore) && audioBefore.contexts === 0,
+      mutedBefore && audioBefore.contexts === 0,
       JSON.stringify({ audioBefore, mutedBefore }),
     );
-    await muteToggle.focus();
-    await page.keyboard.press("Enter");
+    await soundToggle.focus();
+    await page.keyboard.press("Space");
     const muteKeyboardToggle =
-      (await muteToggle.getAttribute("aria-pressed")) === "true" &&
+      (await soundToggle.isChecked()) &&
       (await page.evaluate(() =>
         localStorage.getItem("deckbuilding-roguelite.muted"),
       )) === "false";
-    check(
-      "sound toggle persists explicit unmute",
-      muteKeyboardToggle,
-    );
+    check("sound toggle persists explicit unmute", muteKeyboardToggle);
 
     const basicCoin = page.locator(
       ".hand-tray .coin:not(.fire):not(.mana):not(.frost):not(.lightning):not(.granted-fire)",
@@ -343,12 +346,14 @@ try {
     await basicCoin.first().click();
     await page.locator(".skill-card").first().locator(".socket").click();
 
-    await page.locator(".skill-card").first().locator(".card-title").click();
+    await page.locator(".skill-card").first().locator(".card-action").click();
     await page.locator(".unit.enemy.vfx-hit").waitFor({
       state: "visible",
       timeout: 10000,
     });
-    const visibleText = await page.locator(".unit.enemy .float-text").innerText();
+    const visibleText = await page
+      .locator(".unit.enemy .float-text")
+      .innerText();
     const vfxTarget = await page
       .locator(".unit.enemy.vfx-hit")
       .evaluate((element) => element.classList.contains("vfx-hit"));
@@ -372,10 +377,8 @@ try {
     const continueButton = page.locator('[data-testid="title-continue"]');
     if ((await continueButton.count()) > 0) await continueButton.click();
     await waitForCombat(page);
-    const persistedUnmute =
-      (await page.locator('[data-testid="mute-toggle"]').innerText()).includes(
-        "켬",
-      );
+    await page.getByTestId("combat-preferences-open").click();
+    const persistedUnmute = await page.getByTestId("preference-sound").isChecked();
     check("sound preference survives reload", persistedUnmute);
     manifest.combatFeedback = {
       audio: {
@@ -414,7 +417,7 @@ try {
     );
     await basicCoin.first().click();
     await page.locator(".skill-card").first().locator(".socket").click();
-    await page.locator(".skill-card").first().locator(".card-title").click();
+    await page.locator(".skill-card").first().locator(".card-action").click();
     await page.locator(".unit.enemy .float-text").waitFor({
       state: "visible",
       timeout: 10000,
@@ -451,10 +454,9 @@ try {
     const page = await context.newPage();
     await page.emulateMedia({ reducedMotion: "reduce" });
     const errors = attachErrorCapture(page);
-    await page.goto(
-      `${baseUrl}?seed=${seeds.summon}&character=arcanist`,
-      { waitUntil: "networkidle" },
-    );
+    await page.goto(`${baseUrl}?seed=${seeds.summon}&character=arcanist`, {
+      waitUntil: "networkidle",
+    });
     await waitForCombat(page);
     const summon = page.locator('[data-testid="summon-slot-0"]');
     const accessibleLabel = await summon.getAttribute("aria-label");
@@ -478,7 +480,9 @@ try {
     await context.close();
   }
 } catch (error) {
-  failures.push(error instanceof Error ? error.stack ?? error.message : String(error));
+  failures.push(
+    error instanceof Error ? (error.stack ?? error.message) : String(error),
+  );
 } finally {
   await browser.close();
   if (server !== null)

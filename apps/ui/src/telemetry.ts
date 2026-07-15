@@ -13,14 +13,24 @@ type RewardResolution = "selected" | "skipped" | "declined";
 export type TelemetryCommand =
   | { type: "placeCoin"; coin: number; slot: number }
   | { type: "unplaceCoin"; coin: number }
-  | { type: "useFlipSkill"; slot: number; target?: number; chosen?: number[]; chosenEquipment?: string; chosenSummon?: number }
+  | {
+      type: "useFlipSkill";
+      slot: number;
+      target?: number;
+      chosen?: number[];
+      desiredCoin?: string;
+      chosenEquipment?: string;
+      chosenSummon?: number;
+    }
   | {
       type: "useConsumeSkill";
       slot: number;
       coins: number[];
       target?: number;
+      desiredCoin?: string;
+      chosenSummon?: number;
     }
-  | { type: "endTurn" };
+  | { type: "endTurn"; preserve?: number[] };
 
 export interface HumanDamageFact {
   target: "player" | "enemy";
@@ -32,6 +42,7 @@ export interface HumanDamageFact {
 
 export interface HumanDecisionFact {
   turn: number;
+  source?: "manual" | "auto-turn-end";
   commands: TelemetryCommand[];
   skills: Array<{
     slot: number;
@@ -132,6 +143,7 @@ interface RecordHumanDecisionInput {
   commands: readonly Command[];
   after: CombatState;
   events: readonly CombatEvent[];
+  source?: "manual" | "auto-turn-end";
 }
 
 export interface RecordHumanRewardInput {
@@ -184,6 +196,8 @@ const commandFact = (command: Command): TelemetryCommand => {
     };
     if (command.target !== undefined) fact.target = command.target;
     if (command.chosen !== undefined) fact.chosen = command.chosen.map(Number);
+    if (command.desiredCoin !== undefined)
+      fact.desiredCoin = String(command.desiredCoin);
     if (command.chosenEquipment !== undefined)
       fact.chosenEquipment = String(command.chosenEquipment);
     if (command.chosenSummon !== undefined) fact.chosenSummon = command.chosenSummon;
@@ -195,11 +209,15 @@ const commandFact = (command: Command): TelemetryCommand => {
       slot: Number(command.slot),
       coins: command.coins.map(Number),
     };
-    return command.target === undefined
-      ? fact
-      : { ...fact, target: command.target };
+    if (command.target !== undefined) fact.target = command.target;
+    if (command.desiredCoin !== undefined)
+      fact.desiredCoin = String(command.desiredCoin);
+    if (command.chosenSummon !== undefined) fact.chosenSummon = command.chosenSummon;
+    return fact;
   }
-  return { type: "endTurn" };
+  return command.preserve === undefined
+    ? { type: "endTurn" }
+    : { type: "endTurn", preserve: command.preserve.map(Number) };
 };
 
 export const createHumanRunTrace = (
@@ -259,6 +277,7 @@ export const recordHumanDecision = (
 
   const fact: HumanDecisionFact = {
     turn: input.before.turn,
+    ...(input.source === undefined ? {} : { source: input.source }),
     commands: input.commands.map(commandFact),
     skills: input.events.flatMap((event) =>
       event.type === "skillUsed"
@@ -577,14 +596,21 @@ const sanitizeCommand = (value: unknown, label: string): TelemetryCommand => {
     return { type, coin: nonNegativeInteger(object, "coin", label) };
   }
   if (type === "useFlipSkill") {
+    const command: Extract<TelemetryCommand, { type: "useFlipSkill" }> = {
+      type,
+      slot: nonNegativeInteger(object, "slot", label),
+    };
     const target = optionalIndex(object, "target", label);
-    return target === undefined
-      ? { type, slot: nonNegativeInteger(object, "slot", label) }
-      : {
-          type,
-          slot: nonNegativeInteger(object, "slot", label),
-          target,
-        };
+    const chosenSummon = optionalIndex(object, "chosenSummon", label);
+    if (target !== undefined) command.target = target;
+    if (object.chosen !== undefined)
+      command.chosen = numberArray(object.chosen, `${label}.chosen`);
+    if (object.desiredCoin !== undefined)
+      command.desiredCoin = stringValue(object, "desiredCoin", label);
+    if (object.chosenEquipment !== undefined)
+      command.chosenEquipment = stringValue(object, "chosenEquipment", label);
+    if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
+    return command;
   }
   if (type === "useConsumeSkill") {
     const target = optionalIndex(object, "target", label);
@@ -593,9 +619,16 @@ const sanitizeCommand = (value: unknown, label: string): TelemetryCommand => {
       slot: nonNegativeInteger(object, "slot", label),
       coins: numberArray(object.coins, `${label}.coins`),
     };
-    return target === undefined ? command : { ...command, target };
+    const chosenSummon = optionalIndex(object, "chosenSummon", label);
+    if (target !== undefined) command.target = target;
+    if (object.desiredCoin !== undefined)
+      command.desiredCoin = stringValue(object, "desiredCoin", label);
+    if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
+    return command;
   }
-  return { type: "endTurn" };
+  return object.preserve === undefined
+    ? { type: "endTurn" }
+    : { type: "endTurn", preserve: numberArray(object.preserve, `${label}.preserve`) };
 };
 
 const sanitizeDecision = (value: unknown, label: string): HumanDecisionFact => {
@@ -615,6 +648,15 @@ const sanitizeDecision = (value: unknown, label: string): HumanDecisionFact => {
   const hp = objectValue(object.hp, `${label}.hp`);
   return {
     turn: nonNegativeInteger(object, "turn", label),
+    ...(object.source === undefined
+      ? {}
+      : {
+          source: literalValue(
+            object.source,
+            ["manual", "auto-turn-end"] as const,
+            `${label}.source`,
+          ),
+        }),
     commands: object.commands.map((command, index) =>
       sanitizeCommand(command, `${label}.commands[${index}]`),
     ),
