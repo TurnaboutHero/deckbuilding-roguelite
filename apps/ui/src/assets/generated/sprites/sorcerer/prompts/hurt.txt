@@ -3,11 +3,11 @@ Create a single horizontal sprite strip for the game character `sorcerer` in the
 If this is a pre-idle/simple run, the attached base image may be used as the canonical character design. In direction-anchor mode, do not use base images for final action rows; accepted idle/direction anchors own row identity. Use the attached accepted idle/direction anchor as the canonical character design for this row. If a state anchor is attached for a non-locomotion state, treat it as approved state vocabulary only. Use the attached layout guide image only for frame count, slot spacing, centering, and safe padding. If an additional generated row strip is attached, use it only as a motion reference, never as a replacement identity source. Do not simply copy the still reference pose. Generate distinct animation poses that create a readable cycle or action.
 
 Character: sorcerer.
-Style contract: match the accepted idle anchor exactly: crisp 16-bit-inspired pixel art, identical proportions, outline weight, detail density, palette, dark navy robe with lightning embroidery, spark-orb staff, silver-grey hair.
+Style contract: match the attached base/anchor reference image EXACTLY: same pixel density (logical pixel block size), same body proportions, same outline weight, same palette, same shading style, same level of detail. Do not restyle, do not change proportions, do not add or remove detail density. Avoid polished illustration, painterly rendering, anime key art, 3D render, vector app-icon polish, glossy lighting, soft gradients, and anti-aliased high-detail edges..
 
 Use this prompt as an authoritative sprite-production spec. Do not expand it into a polished illustration, painterly character image, anime key art, 3D render, vector mascot, glossy app icon, realistic portrait, or marketing artwork.
 
-Animation action: brief impact recoil: flinch backward pulling the staff close, stagger, regain footing, settle toward combat idle; no counterattack and no detached effects.
+Animation action: flinch back from a hit and recover, body-only reaction.
 
 Anchor lock:
 - Accepted idle/direction anchors own character identity, outfit details, colors, face design, asymmetric markings, and side-specific accessories for final action rows.

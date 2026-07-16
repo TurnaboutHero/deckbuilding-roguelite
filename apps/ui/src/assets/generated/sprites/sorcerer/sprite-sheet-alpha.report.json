@@ -24,7 +24,7 @@
     {
       "state": "idle",
       "frame": 0,
-      "nontransparent_pixels": 15872,
+      "nontransparent_pixels": 10360,
       "x": 0,
       "y": 0,
       "w": 256,
@@ -33,7 +33,7 @@
     {
       "state": "idle",
       "frame": 1,
-      "nontransparent_pixels": 16048,
+      "nontransparent_pixels": 9848,
       "x": 256,
       "y": 0,
       "w": 256,
@@ -42,7 +42,7 @@
     {
       "state": "idle",
       "frame": 2,
-      "nontransparent_pixels": 15408,
+      "nontransparent_pixels": 9624,
       "x": 512,
       "y": 0,
       "w": 256,
@@ -51,7 +51,7 @@
     {
       "state": "idle",
       "frame": 3,
-      "nontransparent_pixels": 15684,
+      "nontransparent_pixels": 9804,
       "x": 768,
       "y": 0,
       "w": 256,
@@ -60,7 +60,7 @@
     {
       "state": "attack",
       "frame": 0,
-      "nontransparent_pixels": 14324,
+      "nontransparent_pixels": 10320,
       "x": 0,
       "y": 256,
       "w": 256,
@@ -69,7 +69,7 @@
     {
       "state": "attack",
       "frame": 1,
-      "nontransparent_pixels": 13676,
+      "nontransparent_pixels": 8892,
       "x": 256,
       "y": 256,
       "w": 256,
@@ -78,7 +78,7 @@
     {
       "state": "attack",
       "frame": 2,
-      "nontransparent_pixels": 15700,
+      "nontransparent_pixels": 8572,
       "x": 512,
       "y": 256,
       "w": 256,
@@ -87,7 +87,7 @@
     {
       "state": "attack",
       "frame": 3,
-      "nontransparent_pixels": 15028,
+      "nontransparent_pixels": 9836,
       "x": 768,
       "y": 256,
       "w": 256,
@@ -96,7 +96,7 @@
     {
       "state": "hurt",
       "frame": 0,
-      "nontransparent_pixels": 13176,
+      "nontransparent_pixels": 10240,
       "x": 0,
       "y": 512,
       "w": 256,
@@ -105,7 +105,7 @@
     {
       "state": "hurt",
       "frame": 1,
-      "nontransparent_pixels": 14984,
+      "nontransparent_pixels": 10448,
       "x": 256,
       "y": 512,
       "w": 256,
@@ -114,7 +114,7 @@
     {
       "state": "hurt",
       "frame": 2,
-      "nontransparent_pixels": 14520,
+      "nontransparent_pixels": 9856,
       "x": 512,
       "y": 512,
       "w": 256,
@@ -123,7 +123,7 @@
     {
       "state": "hurt",
       "frame": 3,
-      "nontransparent_pixels": 15648,
+      "nontransparent_pixels": 9832,
       "x": 768,
       "y": 512,
       "w": 256,

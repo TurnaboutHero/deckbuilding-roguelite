@@ -82,14 +82,11 @@ const ATTACK_SKILL_PRIORITY = [
   "bulwark-charge",
   "arcane-command",
   "overload",
-  "aegis-surge",
   "flame-sword",
   "heart-of-flame",
   "ignite-sword",
   "burning-strike",
   "smash",
-  "shield-reprisal",
-  "warding-strike",
   "spark-strike",
   "chain-surge",
   "static-field",
@@ -139,20 +136,33 @@ export const M6_BUILD_POLICIES: Readonly<
 > = Object.freeze({
   "fire-build": Object.freeze({
     id: "fire-build",
-    coinRewardPriority: Object.freeze(["fire", "mana", "basic"]),
+    coinRewardPriority: Object.freeze([
+      "fire",
+      "mana",
+      "basic",
+      "lightning",
+      "frost",
+      "blood",
+    ]),
     skillRewardPriority: Object.freeze(REWARD_SKILL_PRIORITY),
     replacementPriority: Object.freeze(REPLACEMENT_PRIORITY),
   }),
   "mana-build": Object.freeze({
     id: "mana-build",
-    coinRewardPriority: Object.freeze(["mana", "basic", "fire"]),
+    coinRewardPriority: Object.freeze([
+      "mana",
+      "basic",
+      "fire",
+      "frost",
+      "lightning",
+      "blood",
+    ]),
     skillRewardPriority: Object.freeze([
-      "aegis-surge",
-      "mana-bulwark",
-      "mana-well",
-      "shield-reprisal",
-      "warding-strike",
-      "guard",
+      "arcane-command",
+      "shield-summon",
+      "weapon-tuning",
+      "twin-armory",
+      "arcane-charge",
       "slash",
       "smash",
       "fire-infusion",
@@ -176,6 +186,7 @@ export const M6_BUILD_POLICIES: Readonly<
       "mana",
       "fire",
       "lightning",
+      "blood",
     ]),
     skillRewardPriority: Object.freeze([
       "subzero-perfect-crime",
@@ -216,6 +227,7 @@ export const M6_BUILD_POLICIES: Readonly<
       "mana",
       "fire",
       "frost",
+      "blood",
     ]),
     skillRewardPriority: Object.freeze([
       "overload",
@@ -506,7 +518,7 @@ const playCombat = (initial: CombatState): CombatState => {
   return state;
 };
 
-const preferredCoinReward = (
+export const preferredCoinReward = (
   run: RunState,
   buildPolicy: M6BuildPolicyConfig,
 ): CoinDefId | null => {
@@ -615,7 +627,7 @@ const resolveRewardsDetailed = (
   };
 };
 
-// 보상 빌드 해석의 단일 정본 — 명시 지정 > 캐릭터 기본(guardian=mana-build,
+// 보상 빌드 해석의 단일 정본 — 명시 지정 > 캐릭터 기본(arcanist=mana-build,
 // sorcerer=lightning-build, frost-knight=frost-build) >
 // 레거시 variant 코인 우선순위(M6 baseline/basic-first 의미·바이트 보존; 감시자 회귀 지적).
 export const resolveBuildPolicy = (
@@ -624,7 +636,6 @@ export const resolveBuildPolicy = (
   buildPolicyId?: M6BuildPolicyId,
 ): M6BuildPolicyConfig => {
   if (buildPolicyId !== undefined) return M6_BUILD_POLICIES[buildPolicyId];
-  if (characterId === "guardian") return M6_BUILD_POLICIES["mana-build"];
   if (characterId === "arcanist") return M6_BUILD_POLICIES["mana-build"];
   if (characterId === "sorcerer") return M6_BUILD_POLICIES["lightning-build"];
   if (characterId === "frost-knight") return M6_BUILD_POLICIES["frost-build"];
@@ -639,8 +650,7 @@ const resolveRewards = (input: RunState): RunState =>
   resolveRewardsDetailed(
     input,
     resolveBuildPolicy(
-      String(input.character) === "guardian" ||
-        String(input.character) === "sorcerer" ||
+      String(input.character) === "sorcerer" ||
         String(input.character) === "frost-knight"
         ? (String(input.character) as SimCharacterId)
         : "warrior",

@@ -1,6 +1,6 @@
 import type { StatusId, ConsumeSkillDef, ContentDb, EffectAtom, FlipSkillDef, TargetRef } from '../../content-types';
 import { effectiveElements, skillCooldown } from '../../content-types';
-import type { Element, EquipmentDefId, CoinUid, Face, SlotId } from '../../ids';
+import type { Element, EquipmentDefId, CoinUid, Face, SkillId, SlotId } from '../../ids';
 import { rngFrom } from '../../rng';
 import { drawCards, drawSpecificCoin, HAND_LIMIT } from '../draw';
 import type { CombatEvent } from '../events';
@@ -24,6 +24,7 @@ interface ApplyEffectOptions {
   turnTriggerScope?: readonly TurnTriggerInstance[];
   // P7 D1 — reduceCooldown이 해결 중인 자기 슬롯을 제외하기 위한 출처 슬롯
   sourceSlot?: SlotId;
+  sourceSkill?: SkillId;
   desiredCoin?: import('../../ids').CoinDefId;
   consumedCount?: number;
 }
@@ -36,16 +37,18 @@ const isAliveEnemy = (state: CombatState, index: number): boolean => {
 const firstAliveEnemy = (state: CombatState): number | undefined =>
   state.enemies.findIndex((enemy) => enemy.hp > 0) >= 0 ? state.enemies.findIndex((enemy) => enemy.hp > 0) : undefined;
 
+const remiseTotal = (charges: number, amount: number): number => Math.min(3, Math.max(0, charges + amount));
+
 export const checkCombatEnd = (state: CombatState, events: CombatEvent[]): CombatState => {
   if (state.phase === 'victory' || state.phase === 'defeat') return state;
   if (state.player.hp <= 0) {
     events.push({ type: 'combatEnded', result: 'defeat', turns: state.turn });
-    return { ...state, phase: 'defeat' };
+    return { ...state, phase: 'defeat', player: { ...state.player, pendingOverheat: false } };
   }
   if (state.enemies.every((enemy) => enemy.hp <= 0)) {
     // M5 run settlement hook: remove temporary coins from all zones when combat finalization spans combats.
     events.push({ type: 'combatEnded', result: 'victory', turns: state.turn });
-    return { ...state, phase: 'victory' };
+    return { ...state, phase: 'victory', player: { ...state.player, pendingOverheat: false } };
   }
   return state;
 };
@@ -58,7 +61,11 @@ const modifiedDamage = (state: CombatState, target: TargetRef, amount: number, a
   const targetStatuses = statusCarrier(state, target)?.statuses;
   const frostbiteMultiplier = attackerStatuses !== undefined && statusTurns(attackerStatuses, 'frostbite') > 0 ? 0.75 : 1;
   const shockMultiplier = targetStatuses !== undefined && statusTurns(targetStatuses, 'shock') > 0 ? 1.5 : 1;
-  return Math.floor(amount * frostbiteMultiplier * shockMultiplier);
+  const windupMultiplier =
+    target.type === 'enemy' && state.enemies[target.index]?.windup !== undefined
+      ? (state.enemies[target.index]?.windup?.intent.vulnerableWhileWindup ?? 1)
+      : 1;
+  return Math.floor(amount * frostbiteMultiplier * shockMultiplier * windupMultiplier);
 };
 
 export const applyDamage = (
@@ -89,7 +96,11 @@ export const applyDamage = (
       block: state.player.block - blocked,
       hp: shouldBreathe ? Math.min(state.player.maxHp, nextHp + 3) : nextHp,
       firstDamageReducedThisTurn: state.player.firstDamageReducedThisTurn || canReduce,
-      combatBreathingUsed: state.player.combatBreathingUsed || shouldBreathe
+      combatBreathingUsed: state.player.combatBreathingUsed || shouldBreathe,
+      armorEchoAbsorbedThisEnemyTurn:
+        source === 'enemy' ? state.player.armorEchoAbsorbedThisEnemyTurn + blocked : state.player.armorEchoAbsorbedThisEnemyTurn,
+      precisionDefenseSatisfied:
+        state.player.precisionDefenseSatisfied || (source === 'enemy' && state.player.precisionDefenseArmed && blocked > 0 && state.player.block - blocked <= 2)
     };
     events.push({ type: 'damageDealt', target, amount: hpDamage, blocked, source });
     return checkCombatEnd({ ...state, player }, events);
@@ -99,11 +110,39 @@ export const applyDamage = (
   if (enemy === undefined || enemy.hp <= 0) return state;
   const blocked = source === 'burn' ? 0 : Math.min(enemy.block, finalAmount);
   const hpDamage = finalAmount - blocked;
+  const nextHp = Math.max(0, enemy.hp - hpDamage);
+  const shouldCancelWindup =
+    source === 'skill' &&
+    enemy.windup?.cancelThreshold !== undefined &&
+    Math.max(0, enemy.windup.startHp - nextHp) >= enemy.windup.cancelThreshold;
   const enemies = state.enemies.map((candidate, index) =>
-    index === target.index ? { ...candidate, block: candidate.block - blocked, hp: Math.max(0, candidate.hp - hpDamage) } : candidate
+    index === target.index
+      ? {
+          ...candidate,
+          block: candidate.block - blocked,
+          hp: nextHp,
+          windup: shouldCancelWindup ? undefined : candidate.windup,
+          cancelledWindupIntentId: shouldCancelWindup ? enemy.windup?.intent.id : candidate.cancelledWindupIntentId
+        }
+      : candidate
   );
   events.push({ type: 'damageDealt', target, amount: hpDamage, blocked, source });
+  if (shouldCancelWindup && enemy.windup !== undefined) {
+    events.push({ type: 'enemyWindupCancelled', enemy: target.index, intent: enemy.windup.intent });
+  }
   return checkCombatEnd({ ...state, enemies }, events);
+};
+
+const scheduleOverheat = (state: CombatState, events: CombatEvent[]): CombatState => {
+  if (state.player.overheat || state.player.pendingOverheat) return state;
+  events.push({ type: 'overheatScheduled' });
+  return { ...state, player: { ...state.player, pendingOverheat: true } };
+};
+
+const spendEcho = (state: CombatState, events: CombatEvent[], skill: SkillId | undefined): { state: CombatState; amount: number } => {
+  if (!state.player.armorEchoAvailable || state.player.armorEcho <= 0 || skill === undefined) return { state, amount: 0 };
+  events.push({ type: 'echoSpent', skill, amount: state.player.armorEcho });
+  return { state: { ...state, player: { ...state.player, armorEchoAvailable: false } }, amount: state.player.armorEcho };
 };
 
 export const applyBlock = (state: CombatState, target: TargetRef, amount: number, events: CombatEvent[]): CombatState => {
@@ -333,6 +372,8 @@ export const applyEffectAtom = (
       events.push({ type: 'overheatEntered' });
       return { ...state, player: { ...state.player, overheat: true } };
     }
+    case 'scheduleOverheat':
+      return scheduleOverheat(state, events);
     case 'applyStatus': {
       const statusTarget = atom.to === 'self' ? { type: 'player' as const } : target;
       if (statusTarget.type === 'enemy' && !isAliveEnemy(state, statusTarget.index)) return state;
@@ -443,6 +484,24 @@ export const applyEffectAtom = (
     case 'damagePlusBlock': {
       if (target.type !== 'enemy' || !isAliveEnemy(state, target.index)) return state;
       return applyDamage(state, target, atom.base + Math.min(atom.cap, state.player.block), 'skill', events, { type: 'player' });
+    }
+    case 'echoPreheat':
+      return { ...state, player: { ...state.player, echoPreheat: state.player.echoPreheat + atom.amount } };
+    case 'precisionDefenseArm':
+      return { ...state, player: { ...state.player, precisionDefenseArmed: true, precisionDefenseSatisfied: false } };
+    case 'damagePlusEcho': {
+      if (target.type !== 'enemy' || !isAliveEnemy(state, target.index)) return state;
+      const spent = spendEcho(state, events, options?.sourceSkill);
+      return applyDamage(spent.state, target, atom.base + spent.amount, 'skill', events, { type: 'player' });
+    }
+    case 'aoeDamagePlusEcho': {
+      const spent = spendEcho(state, events, options?.sourceSkill);
+      let next = spent.state;
+      for (let index = 0; index < next.enemies.length; index += 1) {
+        if ((next.enemies[index]?.hp ?? 0) <= 0) continue;
+        next = applyDamage(next, { type: 'enemy', index }, atom.base + spent.amount, 'skill', events, { type: 'player' });
+      }
+      return next;
     }
     case 'prepareNextAttackDamage':
       return { ...state, player: { ...state.player, nextAttackDamageBonus: state.player.nextAttackDamageBonus + atom.amount } };
@@ -555,8 +614,13 @@ export const applyEffectAtom = (
     }
     case 'damageIfReused':
       return options?.isReuse === true ? applyDamage(state, target, atom.amount, 'skill', events, { type: 'player' }) : state;
-    case 'readyRemise':
-      return { ...state, player: { ...state.player, remiseCharges: state.player.remiseCharges + (atom.amount ?? 1) } };
+    case 'readyRemise': {
+      const total = remiseTotal(state.player.remiseCharges, atom.amount ?? 1);
+      const amount = total - state.player.remiseCharges;
+      if (amount <= 0) return state;
+      events.push({ type: 'remiseGained', amount, total });
+      return { ...state, player: { ...state.player, remiseCharges: total } };
+    }
   }
 };
 
@@ -622,6 +686,7 @@ const isTargetEffect = (atom: EffectAtom): boolean =>
   atom.kind === 'damageByTargetFrostbite' ||
   atom.kind === 'damageByBloodSword' ||
   atom.kind === 'damagePerBlock' ||
+  atom.kind === 'damagePlusEcho' ||
   atom.kind === 'damagePlusBlock' ||
   (atom.kind === 'applyStatus' && atom.to === 'target');
 
@@ -634,6 +699,10 @@ export const targetsForSkillEffect = (state: CombatState, atom: EffectAtom, skil
     atom.kind === 'scheduleEndTurnBlockAoe' ||
     atom.kind === 'payHp' ||
     atom.kind === 'heal' ||
+    atom.kind === 'scheduleOverheat' ||
+    atom.kind === 'echoPreheat' ||
+    atom.kind === 'precisionDefenseArm' ||
+    atom.kind === 'aoeDamagePlusEcho' ||
     atom.kind === 'returnDiscardCoin' ||
     atom.kind === 'lifesteal' ||
     atom.kind === 'lifestealByConsumed' ||
@@ -660,7 +729,9 @@ export const applyPrimaryDamageBonus = (input: readonly EffectAtom[], bonus: num
         atom.kind === 'damageByConsumed' ||
         atom.kind === 'damageByTargetFrostbite' ||
         atom.kind === 'damageByBloodSword' ||
-        atom.kind === 'damagePlusBlock'
+        atom.kind === 'damagePlusBlock' ||
+        atom.kind === 'damagePlusEcho' ||
+        atom.kind === 'aoeDamagePlusEcho'
       ) {
         damageBoosted = true;
         return { ...atom, base: atom.base + bonus };
@@ -799,6 +870,40 @@ const collectEffects = (
   return combined;
 };
 
+const isRemiseRepeatAtom = (atom: EffectAtom): boolean =>
+  atom.kind === 'damage' ||
+  atom.kind === 'block' ||
+  atom.kind === 'selfDamage' ||
+  atom.kind === 'heal' ||
+  atom.kind === 'applyStatus' ||
+  atom.kind === 'damagePerTargetBurn' ||
+  atom.kind === 'damageByConsumed' ||
+  atom.kind === 'damageByTargetFrostbite' ||
+  atom.kind === 'lifesteal' ||
+  atom.kind === 'lifestealByConsumed' ||
+  atom.kind === 'damageByBloodSword' ||
+  atom.kind === 'damagePerBlock' ||
+  atom.kind === 'blockFromCurrent' ||
+  atom.kind === 'damagePlusBlock' ||
+  atom.kind === 'damagePlusEcho' ||
+  atom.kind === 'aoeDamagePlusEcho' ||
+  atom.kind === 'doubleTargetShock' ||
+  atom.kind === 'blockPerTargetShock' ||
+  atom.kind === 'executeOrDischargeShock' ||
+  atom.kind === 'damageIfTargetShocked' ||
+  atom.kind === 'damageIfReused';
+
+const repeatTargetForSkill = (state: CombatState, skill: FlipSkillDef, original: TargetRef): TargetRef | undefined => {
+  if (skill.targetType === 'self') return { type: 'player' };
+  if (skill.targetType === 'single-enemy') {
+    if (original.type === 'enemy' && isAliveEnemy(state, original.index)) return original;
+    const fallback = firstAliveEnemy(state);
+    return fallback === undefined ? undefined : { type: 'enemy', index: fallback };
+  }
+  const fallback = firstAliveEnemy(state);
+  return fallback === undefined ? undefined : { type: 'enemy', index: fallback };
+};
+
 export const resolveFlip = (
   input: CombatState,
   slot: SlotId,
@@ -836,7 +941,6 @@ export const resolveFlip = (
     })
   );
   const usedPreserved = placed.some((coin) => input.coins[Number(coin)]?.preserved === true);
-  let returnFirstCoinToHand = false;
   let retrievalCoin: CoinUid | undefined;
   const residualCoin =
     !input.player.residualChargeUsed && passiveMechanics.has('residualCharge')
@@ -848,7 +952,7 @@ export const resolveFlip = (
   // P7 D5 — 과열 강화 분기 보유 스킬이 성공 해결되면 해결 후 과열 소비 (finish 단일 경로)
   const consumesOverheat = input.player.overheat && (skill.overheatBonus?.length ?? 0) > 0;
   const finish = (finishedState: CombatState): ResolveResult => {
-    const handCoin = returnFirstCoinToHand ? placed[0] : undefined;
+    const handCoin = undefined;
     const returnElement = skill.returnUsedElementToDrawTop?.element;
     const minimumUsed = skill.returnUsedElementToDrawTop?.minimumUsed ?? 1;
     const canReturnUsedElement =
@@ -931,25 +1035,36 @@ export const resolveFlip = (
       : elements;
   });
   const usedPreservedCold = placed.some((coin, index) => state.coins[Number(coin)]?.preserved === true && coinElements[index]?.includes('frost') === true);
+  if (
+    skill.tags.includes('attack') &&
+    !state.player.overheat &&
+    !state.player.residualHeatUsed &&
+    passiveMechanics.has('residualHeat') &&
+    coinElements.some((elements) => elements.includes('fire'))
+  ) {
+    state = scheduleOverheat(state, events);
+    state = { ...state, player: { ...state.player, residualHeatUsed: true } };
+  }
   const applyResolution = (
     resolutionFaces: Face[],
     resolutionElements: readonly (readonly Element[])[],
     isReuse: boolean,
     includeBase = true,
     resolutionCoins: readonly CoinUid[] = placed,
-    effectSkill: FlipSkillDef = skill
+    effectSkill: FlipSkillDef = skill,
+    resolutionTarget: TargetRef = skillTarget
   ): boolean => {
     const tailsCount = resolutionFaces.filter((face) => face === 'tails').length;
     const headsCount = resolutionFaces.length - tailsCount;
     const resolutionSkill = includeBase ? effectSkill : { ...effectSkill, base: [] };
     let effects = collectEffects(resolutionSkill, resolutionFaces, resolutionElements, includeBase && input.player.overheat);
-    if (includeBase && usedPreserved) effects.push(...(skill.preservedBonus ?? []));
-    if (includeBase && usedPreserved && !state.player.maturedHandUsedThisTurn && passiveMechanics.has('maturedHand')) {
+    if (includeBase && !isReuse && usedPreserved) effects.push(...(effectSkill.preservedBonus ?? []));
+    if (includeBase && !isReuse && usedPreserved && !state.player.maturedHandUsedThisTurn && passiveMechanics.has('maturedHand')) {
       effects = applyMaturedHandBonus(effects);
       state = { ...state, player: { ...state.player, maturedHandUsedThisTurn: true } };
     }
-    if (includeBase && usedPreservedCold && !state.player.coldHandsUsedThisTurn && passiveMechanics.has('coldHands')) {
-      const coldTarget = currentEnemyTargetForPassive(state, skillTarget);
+    if (includeBase && !isReuse && usedPreservedCold && !state.player.coldHandsUsedThisTurn && passiveMechanics.has('coldHands')) {
+      const coldTarget = currentEnemyTargetForPassive(state, resolutionTarget);
       if (coldTarget !== undefined) {
         state = applyEffectAtom(state, { kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }, coldTarget, db, events);
       }
@@ -958,8 +1073,8 @@ export const resolveFlip = (
     if (
       includeBase &&
       skill.tags.includes('attack') &&
-      skillTarget.type === 'enemy' &&
-      statusTurns(state.enemies[skillTarget.index]?.statuses ?? {}, 'frostbite') > 0 &&
+      resolutionTarget.type === 'enemy' &&
+      statusTurns(state.enemies[resolutionTarget.index]?.statuses ?? {}, 'frostbite') > 0 &&
       !state.player.frostCompoundUsedThisTurn &&
       passiveMechanics.has('frostCompound')
     ) {
@@ -972,7 +1087,7 @@ export const resolveFlip = (
       effects.push({ kind: 'block', amount: 2 });
       state = { ...state, player: { ...state.player, smallChangeInsuranceUsed: true } };
     }
-    if (includeBase && sawHeads && sawTails && !state.player.doubleEntryUsedThisTurn && passiveMechanics.has('doubleEntry')) {
+    if (includeBase && !isReuse && sawHeads && sawTails && !state.player.doubleEntryUsedThisTurn && passiveMechanics.has('doubleEntry')) {
       const basic = Object.values(db.coins).find((coin) => coin.element === null)?.id;
       if (basic !== undefined) effects.push({ kind: 'drawSpecific', coins: [basic], count: 1 });
       state = { ...state, player: { ...state.player, doubleEntryUsedThisTurn: true } };
@@ -987,14 +1102,21 @@ export const resolveFlip = (
       }
       state = { ...state, player: { ...state.player, nextAttackDamageBonus: 0 } };
     }
-    if (includeBase && skill.tags.includes('defense') && passiveMechanics.has('shieldMastery') && effects.some((atom) => atom.kind === 'block')) {
+    if (
+      includeBase &&
+      skill.tags.includes('defense') &&
+      passiveMechanics.has('shieldMastery') &&
+      !state.player.shieldMasteryUsedThisTurn &&
+      effects.some((atom) => atom.kind === 'block')
+    ) {
       effects.push({ kind: 'block', amount: 1 });
+      state = { ...state, player: { ...state.player, shieldMasteryUsedThisTurn: true } };
     }
     if (includeBase && tailsCount >= 2 && !state.player.inverseGuardUsedThisTurn && passiveMechanics.has('inverseGuard')) {
       effects.push({ kind: 'block', amount: 3 });
       state = { ...state, player: { ...state.player, inverseGuardUsedThisTurn: true } };
     }
-    if (includeBase && tailsCount > 0 && headsCount > 0 && !state.player.crossCalculationUsedThisTurn && passiveMechanics.has('crossCalculation')) {
+    if (includeBase && !isReuse && tailsCount > 0 && headsCount > 0 && !state.player.crossCalculationUsedThisTurn && passiveMechanics.has('crossCalculation')) {
       const basic = Object.values(db.coins).find((coin) => coin.element === null)?.id;
       if (basic !== undefined) effects.push({ kind: 'addCoin', coin: basic, zone: 'hand', count: 1 });
       state = { ...state, player: { ...state.player, crossCalculationUsedThisTurn: true } };
@@ -1031,14 +1153,13 @@ export const resolveFlip = (
       isReuse &&
       skill.tags.includes('attack') &&
       !state.player.overcurrentUsed &&
-      passiveMechanics.has('overcurrent') &&
-      resolutionElements.some((elements) => elements.includes('lightning'))
+      passiveMechanics.has('overcurrent')
     ) {
       effects.push({ kind: 'damage', amount: 2 }, { kind: 'applyStatus', status: 'shock', stacks: 1, to: 'target' });
       state = { ...state, player: { ...state.player, overcurrentUsed: true } };
     }
     for (const atom of effects) {
-      for (const effectTarget of targetsForSkillEffect(state, atom, skill, skillTarget)) {
+      for (const effectTarget of targetsForSkillEffect(state, atom, skill, resolutionTarget)) {
         state = applyEffectAtom(state, atom, effectTarget, db, events, chosen, {
           turnTriggerScope,
           tailsCount,
@@ -1047,7 +1168,8 @@ export const resolveFlip = (
           chosenEquipment: summonChoice?.chosenEquipment,
           chosenSummon: summonChoice?.chosenSummon,
           desiredCoin: summonChoice?.desiredCoin,
-          sourceSlot: slot
+          sourceSlot: slot,
+          sourceSkill: skill.id
         });
         if (state.phase === 'victory' || state.phase === 'defeat') return false;
       }
@@ -1071,7 +1193,7 @@ export const resolveFlip = (
               : concentrated && atom.kind === 'block'
                 ? { ...atom, amount: atom.amount + 1 }
                 : atom;
-          for (const procTarget of targetsForElementProc(state, procAtom, skill, skillTarget, target)) {
+          for (const procTarget of targetsForElementProc(state, procAtom, skill, resolutionTarget, target)) {
             state = applyEffectAtom(state, procAtom, procTarget, db, events, undefined, { turnTriggerScope, isReuse });
             if (state.phase === 'victory' || state.phase === 'defeat') return false;
           }
@@ -1087,106 +1209,58 @@ export const resolveFlip = (
   };
 
   const character = db.characters[String(input.characterId)];
-  const canRemise = character?.trait.mechanic === 'remise' && input.player.remiseCharges > 0;
-  const fireAttackResolved = (): void => {
+  const canRemise = character?.trait.mechanic === 'remise' && input.player.remiseCharges > 0 && skill.tags.includes('attack') && placed.length > 0;
+  const fireAttackResolved = (targetRef: TargetRef): void => {
     if (state.phase !== 'victory' && state.phase !== 'defeat' && skill.tags.includes('attack')) {
-      state = fireTurnTriggers(state, 'onAttackSkillResolved', skillTarget, db, events, turnTriggerScope);
+      state = { ...state, player: { ...state.player, attackSkillUsedThisTurn: true } };
+      state = fireTurnTriggers(state, 'onAttackSkillResolved', targetRef, db, events, turnTriggerScope);
     }
   };
 
-  let reuseAfterPrimary = false;
-  if (!canRemise) {
-    if (!applyResolution(faces, coinElements, false)) return finish(state);
-    fireAttackResolved();
-  } else {
-    // Remise resolves the first physical coin before the rest of the skill:
-    // first face/proc -> immediate reflip face/proc -> base -> remaining coins.
-    // This keeps the reflip observable even when a later base/coin effect is lethal.
-    const appliedAnyFaces = new Set<Face>();
-    const applyInitialCoin = (index: number, face: Face, separateResolution = false): boolean => {
-      const section = face === 'heads' ? skill.heads : skill.tails;
-      const allowSection = section?.mode !== 'any' || separateResolution || !appliedAnyFaces.has(face);
-      if (!separateResolution && section?.mode === 'any') appliedAnyFaces.add(face);
-      const coinSkill: FlipSkillDef = {
-        ...skill,
-        base: [],
-        heads: face === 'heads' && allowSection ? skill.heads : undefined,
-        tails: face === 'tails' && allowSection ? skill.tails : undefined,
-        mixed: undefined,
-        overheatBonus: undefined
-      };
-      return applyResolution([face], [coinElements[index] ?? []], false, false, [placed[index]!], coinSkill);
-    };
-
+  const shouldRepeat = canRemise && faces[0] === 'heads';
+  if (canRemise) {
     state = { ...state, player: { ...state.player, remiseCharges: Math.max(0, state.player.remiseCharges - 1) } };
-    events.push({ type: 'remiseChecked', coin: placed[0]!, face: faces[0]! });
-    const firstContinues = applyInitialCoin(0, faces[0]!);
-    if (faces[0] === 'heads') {
-      const reflip = rng.flip();
-      events.push({ type: 'remiseReflipped', coin: placed[0]!, face: reflip });
-      events.push({ type: 'coinFlipped', coin: placed[0]!, face: reflip });
-      if (!state.player.retrievalHabitUsed && passiveMechanics.has('retrievalHabit')) retrievalCoin = placed[0];
-      state = { ...state, rng: { ...state.rng, flip: rng.snapshot() } };
-      reuseAfterPrimary = reflip === 'heads' || skill.remise?.reuseOnReflipTails === true;
-      if (firstContinues && !applyInitialCoin(0, reflip, true)) return finish(state);
-    }
-    if (!firstContinues || state.phase === 'victory' || state.phase === 'defeat') return finish(state);
-
-    const baseOnlySkill: FlipSkillDef = {
-      ...skill,
-      heads: undefined,
-      tails: undefined,
-      mixed: undefined
-    };
-    if (!applyResolution([], [], false, true, [], baseOnlySkill)) return finish(state);
-    for (let index = 1; index < faces.length; index += 1) {
-      if (!applyInitialCoin(index, faces[index]!)) return finish(state);
-    }
-    if (faces.includes('heads') && faces.includes('tails')) {
-      if (!state.player.balanceSenseUsed && passiveMechanics.has('balanceSense')) {
-        state = applyEffectAtom(state, { kind: 'block', amount: 3 }, { type: 'player' }, db, events);
-        state = { ...state, player: { ...state.player, balanceSenseUsed: true } };
-      }
-      for (const atom of skill.mixed?.effects ?? []) {
-        for (const effectTarget of targetsForSkillEffect(state, atom, skill, skillTarget)) {
-          state = applyEffectAtom(state, atom, effectTarget, db, events, chosen, {
-            turnTriggerScope,
-            tailsCount: faces.filter((face) => face === 'tails').length,
-            headsCount: faces.filter((face) => face === 'heads').length,
-            chosenEquipment: summonChoice?.chosenEquipment,
-            chosenSummon: summonChoice?.chosenSummon,
-            sourceSlot: slot
-          });
-          if (state.phase === 'victory' || state.phase === 'defeat') return finish(state);
-        }
-      }
-    }
-    fireAttackResolved();
+    events.push({ type: 'remiseSpent', skill: skill.id, firstFace: faces[0]!, repeat: shouldRepeat, remaining: state.player.remiseCharges });
   }
+  if (!applyResolution(faces, coinElements, false)) return finish(state);
+  fireAttackResolved(skillTarget);
 
-  if (reuseAfterPrimary && state.phase !== 'victory' && state.phase !== 'defeat') {
+  if (shouldRepeat && state.phase !== 'victory' && state.phase !== 'defeat') {
+    const repeatTarget = repeatTargetForSkill(state, skill, skillTarget);
+    if (repeatTarget === undefined) return finish(state);
     const reuseFaces = placed.map((coin) => {
       const face = rng.flip();
       events.push({ type: 'coinFlipped', coin, face });
       return face;
     });
-    events.push({ type: 'remiseReused', skill: skill.id });
     state = { ...state, rng: { ...state.rng, flip: rng.snapshot() } };
-    const reuseContinues = applyResolution(reuseFaces, coinElements, true);
-    fireAttackResolved();
-    if (!reuseContinues) return finish(state);
-    if (skill.remise?.returnFirstCoinOnReuse === true) returnFirstCoinToHand = true;
-    if ((skill.remise?.addLightningToHandAfterReuse ?? 0) > 0) {
-      const lightning = Object.values(db.coins).find((def) => def.element === 'lightning')?.id;
-      if (lightning !== undefined)
-        state = applyEffectAtom(
-          state,
-          { kind: 'addCoin', coin: lightning, zone: 'hand', count: skill.remise!.addLightningToHandAfterReuse! },
-          { type: 'player' },
-          db,
-          events
-        );
+    const repeatSkill: FlipSkillDef = {
+      ...skill,
+      base: skill.base.filter(isRemiseRepeatAtom),
+      heads: skill.heads === undefined ? undefined : { ...skill.heads, effects: skill.heads.effects.filter(isRemiseRepeatAtom) },
+      tails: skill.tails === undefined ? undefined : { ...skill.tails, effects: skill.tails.effects.filter(isRemiseRepeatAtom) },
+      mixed: skill.mixed === undefined ? undefined : { effects: skill.mixed.effects.filter(isRemiseRepeatAtom) },
+      overheatBonus: undefined,
+      preservedBonus: []
+    };
+    const repeatContinues = applyResolution(reuseFaces, coinElements, true, true, placed, repeatSkill, repeatTarget);
+    fireAttackResolved(repeatTarget);
+    if (repeatContinues) {
+      for (const atom of skill.remise?.onRepeatFinish ?? []) {
+        for (const effectTarget of targetsForSkillEffect(state, atom, skill, repeatTarget)) {
+          state = applyEffectAtom(state, atom, effectTarget, db, events, chosen, {
+            turnTriggerScope,
+            isReuse: true,
+            sourceSlot: slot
+          });
+          if (state.phase === 'victory' || state.phase === 'defeat') break;
+        }
+        if (state.phase === 'victory' || state.phase === 'defeat') break;
+      }
     }
+    events.push({ type: 'remiseRepeatResolved', skill: skill.id });
+    if (!repeatContinues) return finish(state);
+    if (!state.player.retrievalHabitUsed && passiveMechanics.has('retrievalHabit')) retrievalCoin = placed[0];
     if (!state.player.continuousMotionUsed && passiveMechanics.has('continuousMotion')) {
       const drawn = drawCards(state, 1);
       state = { ...drawn.state, player: { ...drawn.state.player, continuousMotionUsed: true } };

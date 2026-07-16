@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { CombatEvent } from "@game/core";
+import { contentDb } from "@game/content";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { feedbackCuesFor } from "./feedback-cues";
+import { RemiseSpendBadge, RemiseStackChip } from "./App";
 
 const keys = (event: CombatEvent) => feedbackCuesFor(event).map((item) => item.key);
 
@@ -13,6 +17,12 @@ describe("feedbackCuesFor", () => {
       "frostbite-enemy-1",
     ]);
     expect(keys({ type: "overheatEntered" })).toEqual([
+      "overheat-player",
+    ]);
+    expect(keys({ type: "overheatScheduled" })).toEqual([
+      "overheat-player",
+    ]);
+    expect(keys({ type: "overheatActivated" })).toEqual([
       "overheat-player",
     ]);
   });
@@ -36,14 +46,45 @@ describe("feedbackCuesFor", () => {
     ]);
   });
 
+  it("maps enemy telegraph feedback to the rendered enemy unit", () => {
+    const intent = { id: "charge", actions: [{ kind: "attack" as const, damage: 12 }] };
+    expect(keys({ type: "enemyWindupStarted", enemy: 1, intent, turnsLeft: 1, cancelThreshold: 8 })).toEqual([
+      "unit-enemy-1",
+    ]);
+    expect(keys({ type: "enemyWindupCancelled", enemy: 1, intent })).toEqual([
+      "unit-enemy-1",
+    ]);
+    expect(keys({ type: "enemyPhaseChanged", enemy: 1 })).toEqual([
+      "unit-enemy-1",
+    ]);
+    expect(keys({ type: "enemyGrew", enemy: 1, stacks: 2 })).toEqual([
+      "unit-enemy-1",
+    ]);
+    expect(keys({ type: "enemyHealFailed", enemy: 1, target: 0 })).toEqual([
+      "unit-enemy-1",
+    ]);
+  });
+
   it("maps Remise and weapon output feedback to the rendered player unit", () => {
-    expect(keys({ type: "remiseReflipped", coin: 4 as never, face: "heads" })).toEqual([
+    expect(keys({ type: "remiseGained", amount: 1, total: 2 })).toEqual([
       "unit-player",
     ]);
-    expect(keys({ type: "remiseReused", skill: "fente" as never })).toEqual([
+    expect(keys({ type: "remiseSpent", skill: "fente" as never, firstFace: "heads", repeat: true, remaining: 1 })).toEqual([
+      "unit-player",
+    ]);
+    expect(keys({ type: "remiseSpent", skill: "fente" as never, firstFace: "tails", repeat: false, remaining: 0 })).toEqual([
+      "unit-player",
+    ]);
+    expect(keys({ type: "remiseRepeatResolved", skill: "fente" as never })).toEqual([
       "unit-player",
     ]);
     expect(keys({ type: "weaponOutputChanged", amount: 1, value: 2 })).toEqual([
+      "unit-player",
+    ]);
+    expect(keys({ type: "echoComputed", base: 4, preheat: 2, precision: 4, total: 10 })).toEqual([
+      "unit-player",
+    ]);
+    expect(keys({ type: "echoSpent", skill: "armor-smash" as never, amount: 6 })).toEqual([
       "unit-player",
     ]);
   });
@@ -52,5 +93,36 @@ describe("feedbackCuesFor", () => {
     expect(keys({ type: "healed", target: { type: "player" }, amount: 0, hp: 5 })).toEqual([]);
     expect(keys({ type: "turnStarted", turn: 2 })).toEqual([]);
     expect(keys({ type: "coinCreated", coin: 9 as never, defId: "fire", zone: "discard" })).toEqual([]);
+  });
+
+  it("renders Remise stack and spend badges only for eligible Sorcerer attack cards", () => {
+    const stack = renderToStaticMarkup(createElement(RemiseStackChip, { charges: 2 }));
+    expect(stack).toContain("르미즈 스택 2/3");
+    expect(stack).toContain("르미즈 2/3");
+
+    const skill = contentDb.skills.fente;
+    const sorcererBadge = renderToStaticMarkup(
+      createElement(RemiseSpendBadge, {
+        displaySkillName: "팡트",
+        isSorcerer: true,
+        loaded: 1,
+        remiseCharges: 1,
+        skill,
+      }),
+    );
+    expect(sorcererBadge).toContain("르미즈 1 소비 예정");
+    expect(sorcererBadge).toContain("팡트 르미즈 1 소비 예정");
+
+    expect(
+      renderToStaticMarkup(
+        createElement(RemiseSpendBadge, {
+          displaySkillName: "팡트",
+          isSorcerer: false,
+          loaded: 1,
+          remiseCharges: 1,
+          skill,
+        }),
+      ),
+    ).toBe("");
   });
 });

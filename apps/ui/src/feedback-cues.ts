@@ -35,6 +35,8 @@ export const feedbackCuesFor = (event: CombatEvent): FeedbackCue[] => {
     case "cooldownReduced":
       return event.slots.map((slot) => cue(`cooldown-slot-${slot}`, 300));
     case "overheatEntered":
+    case "overheatActivated":
+    case "overheatScheduled":
       return [cue("overheat-player", 420)];
     case "overheatConsumed":
       return [cue("overheat-player", 420)];
@@ -45,12 +47,15 @@ export const feedbackCuesFor = (event: CombatEvent): FeedbackCue[] => {
       return [cue(`summon-${event.uid}`, 440)];
     case "summonActed":
       return [cue(`summon-${event.uid}`, 320)];
-    case "remiseChecked":
-    case "remiseReflipped":
-      return [cue("unit-player", 380)];
-    case "remiseReused":
-      return [cue("unit-player", 520)];
+    case "remiseGained":
+      return event.amount > 0 ? [cue("unit-player", 360)] : [];
+    case "remiseSpent":
+      return [cue("unit-player", event.repeat ? 520 : 300)];
+    case "remiseRepeatResolved":
+      return [cue("unit-player", 620)];
     case "weaponOutputChanged":
+    case "echoComputed":
+    case "echoSpent":
       return [cue("unit-player", 420)];
     case "summonAoeGranted":
       return [cue(`summon-${event.uid}`, 380)];
@@ -60,6 +65,17 @@ export const feedbackCuesFor = (event: CombatEvent): FeedbackCue[] => {
       return [cue(`coin-${Number(event.coin)}`, 360)];
     case "skillUsed":
       return [cue(`skill-slot-${Number(event.slot)}`, 260)];
+    case "enemyWindupStarted":
+    case "enemyWindupTicked":
+      return [cue(`unit-enemy-${event.enemy}`, 360)];
+    case "enemyWindupCancelled":
+      return [cue(`unit-enemy-${event.enemy}`, 520)];
+    case "enemyPhaseChanged":
+      return [cue(`unit-enemy-${event.enemy}`, 560)];
+    case "enemyGrew":
+      return [cue(`unit-enemy-${event.enemy}`, 420)];
+    case "enemyHealFailed":
+      return [cue(`unit-enemy-${event.enemy}`, 380)];
     case "coinFlipped":
     case "blockCleared":
     case "traitTriggered":

@@ -55,6 +55,9 @@ const requireEnemies = (db: ContentDb, encounter: readonly EnemyDefId[]): void =
   }
 };
 
+const hasEnemies = (db: ContentDb, encounter: readonly EnemyDefId[]): boolean =>
+  encounter.every((enemyId) => db.enemies[String(enemyId)] !== undefined);
+
 const SINGLE_POOL = [
   [enemy("raider")],
   [enemy("shaman")],
@@ -65,6 +68,17 @@ const TWO_POOL = [
   [enemy("thief"), enemy("goblin")],
 ] as const;
 const THREE_POOL = [[enemy("ghoul"), enemy("goblin"), enemy("slime")]] as const;
+const BATCH_A_TWO_POOL = [
+  [enemy("gate-pikeman"), enemy("black-hound")],
+  [enemy("red-lancer"), enemy("slime")],
+  [enemy("chained-berserker")],
+  [enemy("silverbell-healer"), enemy("gate-pikeman")],
+  [enemy("chalice-thrall"), enemy("goblin")],
+] as const;
+const BATCH_A_THREE_POOL = [
+  [enemy("gate-pikeman"), enemy("black-hound"), enemy("slime")],
+  [enemy("silverbell-healer"), enemy("red-lancer")],
+] as const;
 const ELITE_POOL = [[enemy("raider-plus")], [enemy("gatekeeper-plus")]] as const;
 
 // 막 보스 (P6 D1 — 재사용+수치 변형, balance-provisional):
@@ -76,10 +90,14 @@ const ACT_BOSSES = [
 ] as const;
 
 // 방문 깊이별 전투 조우 풀 — 막 내 방문 1~3 단일, 4~6 2체, 7~8 2~3체 혼합
-const combatPoolFor = (visit: number): readonly (readonly EnemyDefId[])[] => {
+const combatPoolFor = (act: number, visit: number): readonly (readonly EnemyDefId[])[] => {
   if (visit <= 2) return SINGLE_POOL;
-  if (visit <= 5) return TWO_POOL;
-  return [...TWO_POOL, ...THREE_POOL];
+  if (act === 0) {
+    if (visit <= 5) return TWO_POOL;
+    return [...TWO_POOL, ...THREE_POOL];
+  }
+  if (visit <= 5) return [...TWO_POOL, ...BATCH_A_TWO_POOL];
+  return [...TWO_POOL, ...BATCH_A_TWO_POOL, ...THREE_POOL, ...BATCH_A_THREE_POOL];
 };
 
 const rollKind = (
@@ -106,7 +124,8 @@ const candidateNode = (
   rng: Rng,
 ): RunNode => {
   if (kind === "combat") {
-    const pool = combatPoolFor(visit);
+    const pool = combatPoolFor(Math.floor(visit / VISITS_PER_ACT), visit % VISITS_PER_ACT).filter((encounter) => hasEnemies(db, encounter));
+    if (pool.length === 0) throw new Error("missing graph combat pool enemies");
     const encounter = pool[rng.int(pool.length)]!;
     requireEnemies(db, encounter);
     return { id, kind, encounter: [...encounter] };
@@ -145,7 +164,7 @@ export const generateRunGraph = (runSeed: string, db: ContentDb): RunGraph => {
       }
       if (act === 0 && visit === 0) {
         layers.push([
-          candidateNode(db, `${layerId}-c1`, "combat", visit, rng),
+          candidateNode(db, `${layerId}-c1`, "combat", act * VISITS_PER_ACT + visit, rng),
         ]);
         continue;
       }
@@ -158,7 +177,7 @@ export const generateRunGraph = (runSeed: string, db: ContentDb): RunGraph => {
             db,
             `${layerId}-c${candidate + 1}`,
             rollKind(rng, excludeElite),
-            visit,
+            act * VISITS_PER_ACT + visit,
             rng,
           ),
         );

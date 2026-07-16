@@ -34,6 +34,8 @@ export const sfxCuesFor = (event: CombatEvent): SfxKind[] => {
     case "cooldownReduced":
       return event.slots.length > 0 ? ["cooldown"] : [];
     case "overheatEntered":
+    case "overheatActivated":
+    case "overheatScheduled":
       return ["overheat-enter"];
     case "overheatConsumed":
       return ["overheat-consume"];
@@ -44,11 +46,15 @@ export const sfxCuesFor = (event: CombatEvent): SfxKind[] => {
       return ["summon-replace"];
     case "summonActed":
       return ["summon-act"];
-    case "remiseReflipped":
-      return [event.face === "heads" ? "flip-heads" : "flip-tails"];
-    case "remiseReused":
-      return ["skill"];
+    case "remiseGained":
+      return event.amount > 0 ? ["mana"] : [];
+    case "remiseSpent":
+      return [event.repeat ? "skill" : "flip-tails"];
+    case "remiseRepeatResolved":
+      return ["hit"];
     case "weaponOutputChanged":
+    case "echoComputed":
+    case "echoSpent":
     case "summonAoeGranted":
       return ["mana"];
     case "summonExpired":
@@ -63,13 +69,23 @@ export const sfxCuesFor = (event: CombatEvent): SfxKind[] => {
             : event.element === "lightning"
               ? ["shock"]
               : ["blood"];
+    case "enemyWindupStarted":
+    case "enemyWindupTicked":
+      return ["cooldown"];
+    case "enemyWindupCancelled":
+      return ["skill"];
+    case "enemyPhaseChanged":
+      return ["overheat-enter"];
+    case "enemyGrew":
+      return ["mana"];
+    case "enemyHealFailed":
+      return ["flip-tails"];
     case "coinsDrawn":
     case "coinsDiscarded":
     case "coinsPreserved":
     case "blockCleared":
     case "statusTicked":
     case "traitTriggered":
-    case "remiseChecked":
     case "passiveTriggered":
     case "turnTriggerAdded":
     case "turnTriggerFired":

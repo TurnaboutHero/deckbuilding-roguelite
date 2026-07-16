@@ -37,8 +37,8 @@ describe("P4 economy Monte Carlo report", () => {
     ).toEqual([
       "warrior/fight-first",
       "warrior/economy-first",
-      "guardian/fight-first",
-      "guardian/economy-first",
+      "arcanist/fight-first",
+      "arcanist/economy-first",
       "sorcerer/fight-first",
       "sorcerer/economy-first",
       "frost-knight/fight-first",

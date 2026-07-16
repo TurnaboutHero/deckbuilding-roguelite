@@ -7,7 +7,7 @@ Style contract: match the attached base/anchor reference image EXACTLY: same pix
 
 Use this prompt as an authoritative sprite-production spec. Do not expand it into a polished illustration, painterly character image, anime key art, 3D render, vector mascot, glossy app icon, realistic portrait, or marketing artwork.
 
-Animation action: subtle breathing while reading the open grimoire, combat-ready loop.
+Animation action: subtle breathing standing-ready loop, raised hand keeps a small mana point that stays touching the fingertips.
 
 Anchor lock:
 - Accepted idle/direction anchors own character identity, outfit details, colors, face design, asymmetric markings, and side-specific accessories for final action rows.

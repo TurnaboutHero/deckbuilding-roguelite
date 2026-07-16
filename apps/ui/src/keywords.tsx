@@ -20,7 +20,16 @@ export type KeywordTerm =
   | "elementCoin"
   | "cooldown"
   | "oncePerCombat"
-  | "overheat";
+  | "overheat"
+  | "pendingOverheat"
+  | "armorEcho"
+  | "echoPreheat"
+  | "precisionDefense"
+  | "echoAmplification"
+  | "windup"
+  | "vulnerable"
+  | "frenzy"
+  | "growth";
 
 export const KEYWORD_GLOSSARY: Record<KeywordTerm, { label: string; description: string }> = {
   burn: {
@@ -86,6 +95,47 @@ export const KEYWORD_GLOSSARY: Record<KeywordTerm, { label: string; description:
     label: "과열",
     description:
       "일부 화염 스킬로 진입한다. 하나만 유지되고 턴이 지나도 남는다. 과열 강화 스킬을 성공시키면 강화 효과가 적용된 뒤 과열이 사라진다.",
+  },
+  pendingOverheat: {
+    label: "과열 예약",
+    description:
+      "이번 턴에 조건을 만족해 다음 플레이어 턴 시작에 과열이 켜질 예정인 상태. 이미 과열 중이면 새로 쌓이지 않는다.",
+  },
+  armorEcho: {
+    label: "갑주 반향",
+    description:
+      "적 턴에 방어로 실제 흡수한 피해를 바탕으로 다음 플레이어 턴 동안 유지되는 마도기사 자원. 기본 반향은 최대 6, 보너스 포함 최종 최대 12.",
+  },
+  echoPreheat: {
+    label: "반향 예열",
+    description:
+      "다음 반향 계산에 더해지는 준비 보너스. 적 턴에 피해를 1 이상 흡수했을 때만 적용되고 반향 계산 후 사라진다.",
+  },
+  precisionDefense: {
+    label: "정밀 방어",
+    description:
+      "다음 적 턴에 피해를 1 이상 흡수하고 남은 방어가 2 이하이면 다음 갑주 반향에 +4를 더하는 조건.",
+  },
+  echoAmplification: {
+    label: "반향 증폭",
+    description:
+      "플레이어 턴당 1회, 피해 스킬에 현재 갑주 반향을 더한다. 반향 수치는 줄지 않지만 증폭 가능 여부는 소모된다.",
+  },
+  windup: {
+    label: "준비(예고)",
+    description: "적의 주요 행동이 해결되기 전 카운트다운이다. 남은 턴, 대상, 수치, 취소 조건을 미리 확인할 수 있다.",
+  },
+  vulnerable: {
+    label: "취약",
+    description: "준비 중인 적이 받는 피해 배수. 표시된 배수만큼 최종 피해가 늘어난다.",
+  },
+  frenzy: {
+    label: "광란(페이즈)",
+    description: "체력이 일정 기준 아래로 내려가 전환된 적 페이즈. 전환 뒤에는 다른 의도 표를 사용한다.",
+  },
+  growth: {
+    label: "성장",
+    description: "적의 성장 스택. 공격 피해에 더해지며, 조건을 놓치거나 막아내면 줄어들 수 있다.",
   },
 };
 

@@ -197,7 +197,9 @@ export const resolveConsume = (
     state = { ...state, player: { ...state.player, frostCompoundUsedThisTurn: true } };
   }
   if (skill.tags.includes('attack') && state.player.nextAttackDamageBonus > 0) {
-    const primaryDamageIndex = effects.findIndex((atom) => atom.kind === 'damage' || atom.kind === 'damagePlusBlock');
+      const primaryDamageIndex = effects.findIndex(
+        (atom) => atom.kind === 'damage' || atom.kind === 'damagePlusBlock' || atom.kind === 'damagePlusEcho' || atom.kind === 'aoeDamagePlusEcho'
+      );
     if (primaryDamageIndex >= 0) {
       effects = effects.map((atom, index) => {
         if (index !== primaryDamageIndex) return atom;
@@ -207,6 +209,9 @@ export const resolveConsume = (
         if (atom.kind === 'damagePlusBlock') {
           return { ...atom, base: atom.base + state.player.nextAttackDamageBonus };
         }
+        if (atom.kind === 'damagePlusEcho' || atom.kind === 'aoeDamagePlusEcho') {
+          return { ...atom, base: atom.base + state.player.nextAttackDamageBonus };
+        }
         return atom;
       });
     } else {
@@ -214,8 +219,14 @@ export const resolveConsume = (
     }
     state = { ...state, player: { ...state.player, nextAttackDamageBonus: 0 } };
   }
-  if (skill.tags.includes('defense') && passiveMechanics.has('shieldMastery') && effects.some((atom) => atom.kind === 'block')) {
+  if (
+    skill.tags.includes('defense') &&
+    passiveMechanics.has('shieldMastery') &&
+    !state.player.shieldMasteryUsedThisTurn &&
+    effects.some((atom) => atom.kind === 'block')
+  ) {
     effects.push({ kind: 'block', amount: 1 });
+    state = { ...state, player: { ...state.player, shieldMasteryUsedThisTurn: true } };
   }
   if (overheatBonus.length > 0) {
     if (overheatBonus.every((atom) => atom.kind === 'damage')) {
@@ -234,6 +245,7 @@ export const resolveConsume = (
       state = applyEffectAtom(state, atom, effectTarget, db, events, undefined, {
         turnTriggerScope,
         sourceSlot: slot,
+        sourceSkill: skill.id,
         chosenSummon,
         desiredCoin,
         consumedCount: coins.length
@@ -245,6 +257,7 @@ export const resolveConsume = (
   state = applyBloodSwordSkillResolved(state, skill, aliveBefore, db, events);
   state = checkCombatEnd(state, events);
   if (state.phase !== 'victory' && state.phase !== 'defeat' && skill.tags.includes('attack')) {
+    state = { ...state, player: { ...state.player, attackSkillUsedThisTurn: true } };
     state = fireTurnTriggers(state, 'onAttackSkillResolved', skillTarget, db, events, turnTriggerScope);
   }
   return finish(state);

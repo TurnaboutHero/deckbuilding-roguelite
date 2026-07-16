@@ -35,7 +35,7 @@ import {
   statusTurns,
   step,
 } from "@game/core";
-import type { CombatEvent, CombatState, Command } from "@game/core";
+import type { CombatEvent, CombatState, Command, SkillDef } from "@game/core";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, RefObject } from "react";
 
@@ -77,7 +77,7 @@ import {
   retryBlockedExecution,
 } from "./auto-turn-end";
 import type { AutoTurnEndState, ExecutionChoice, ExecutionOrder } from "./auto-turn-end";
-import { CardEffectRows, skillDisplayName, skillSummaryText } from "./card-effects";
+import { CardEffectRows, skillDisplayName } from "./card-effects";
 import { CharacterSelect } from "./character-select";
 import type { CharacterArt } from "./character-select";
 import { RunMenu } from "./run-menu";
@@ -156,10 +156,6 @@ import cardBurningStrike from "./assets/card-burning-strike.webp";
 import cardIgnite from "./assets/card-ignite.webp";
 import cardIgniteSword from "./assets/card-ignite-sword.webp";
 import cardFlameRampage from "./assets/card-flame-rampage.webp";
-import cardWardingStrike from "./assets/card-warding-strike.webp";
-import cardManaBulwark from "./assets/card-mana-bulwark.webp";
-import cardShieldReprisal from "./assets/card-shield-reprisal.webp";
-import cardManaWell from "./assets/card-mana-well.webp";
 import cardSmash from "./assets/card-smash.webp";
 import cardFireInfusion from "./assets/card-fire-infusion.webp";
 import cardFurnace from "./assets/card-furnace.webp";
@@ -175,7 +171,6 @@ import cardFrostSlash from "./assets/card-frost-slash.webp";
 import cardGlacialWall from "./assets/card-glacial-wall.webp";
 import cardChillingField from "./assets/card-chilling-field.webp";
 import cardGlacierStrike from "./assets/card-glacier-strike.webp";
-import cardAegisSurge from "./assets/card-aegis-surge.webp";
 import goblinAtlas from "./assets/generated/sprites/goblin/sprite-sheet-alpha.png";
 import goblinManifestJson from "./assets/generated/sprites/goblin/manifest.json";
 import thiefAtlas from "./assets/generated/sprites/thief/sprite-sheet-alpha.png";
@@ -196,8 +191,6 @@ import warriorAtlas from "./assets/generated/sprites/warrior/sprite-sheet-alpha.
 import warriorManifestJson from "./assets/generated/sprites/warrior/manifest.json";
 import arcanistAtlas from "./assets/generated/sprites/arcanist/sprite-sheet-alpha.png";
 import arcanistManifestJson from "./assets/generated/sprites/arcanist/manifest.json";
-import guardianAtlas from "./assets/generated/sprites/guardian/sprite-sheet-alpha.png";
-import guardianManifestJson from "./assets/generated/sprites/guardian/manifest.json";
 import sorcererAtlas from "./assets/generated/sprites/sorcerer/sprite-sheet-alpha.png";
 import sorcererManifestJson from "./assets/generated/sprites/sorcerer/manifest.json";
 import frostKnightAtlas from "./assets/generated/sprites/frost-knight/sprite-sheet-alpha.png";
@@ -270,10 +263,6 @@ const CARD_ART: Record<string, string> = {
   ignite: cardIgnite,
   "ignite-sword": cardIgniteSword,
   "flame-rampage": cardFlameRampage,
-  "warding-strike": cardWardingStrike,
-  "mana-bulwark": cardManaBulwark,
-  "shield-reprisal": cardShieldReprisal,
-  "mana-well": cardManaWell,
   smash: cardSmash,
   "fire-infusion": cardFireInfusion,
   furnace: cardFurnace,
@@ -297,7 +286,6 @@ const CARD_ART: Record<string, string> = {
   "trackless-raid": cardFrostSlash,
   "loot-swap": cardChillingField,
   "subzero-perfect-crime": cardGlacierStrike,
-  "aegis-surge": cardAegisSurge,
 };
 
 const WORDS = ["BRAVE", "EMBER", "IRON", "MOSS", "RIVER", "DUSK", "SPARK", "VALE"];
@@ -310,7 +298,6 @@ interface SpriteAsset {
 
 const SPRITES: Record<
   | "player"
-  | "guardian"
   | "sorcerer"
   | "frost-knight"
   | "arcanist"
@@ -331,10 +318,6 @@ const SPRITES: Record<
   arcanist: {
     atlasUrl: arcanistAtlas,
     manifest: arcanistManifestJson as SpriteManifest,
-  },
-  guardian: {
-    atlasUrl: guardianAtlas,
-    manifest: guardianManifestJson as SpriteManifest,
   },
   sorcerer: {
     atlasUrl: sorcererAtlas,
@@ -392,7 +375,6 @@ const enemySprite = (enemyId: string): SpriteAsset => {
 
 const playerSprite = (character: CharacterId): SpriteAsset => {
   if (String(character) === "arcanist") return SPRITES.arcanist;
-  if (String(character) === "guardian") return SPRITES.guardian;
   if (String(character) === "sorcerer") return SPRITES.sorcerer;
   if (String(character) === "frost-knight") return SPRITES["frost-knight"];
   return SPRITES.player;
@@ -470,46 +452,135 @@ const combatReducer = (_state: CombatState, action: CombatAction): CombatState =
   return action.state;
 };
 
-const IntentBadge = ({ enemy }: { enemy: CombatState["enemies"][number] }) => (
-  <div aria-label="다음 행동 의도" className="intent">
-    {enemy.intent.actions.map((action, index) =>
-      action.kind === "attack" ? (
-        <span key={index}>
-          <SwordIcon scale={1.6} />
-          {action.hits !== undefined && action.hits > 1 ? `${action.damage}×${action.hits}` : action.damage}
-        </span>
-      ) : action.kind === "block" ? (
-        <span key={index}>
-          <ShieldIcon scale={1.6} tone="steel" />
-          {action.amount}
-        </span>
-      ) : action.kind === "applyStatus" ? (
-        <span key={index} aria-label={`${statusKo(action.status)} ${action.stacks} 부여`}>
-          <Keyword term={action.status}>
-            {statusKo(action.status)} {action.stacks}
-          </Keyword>
-        </span>
-      ) : action.kind === "heal" ? (
-        <span key={index} aria-label={`자가 회복 ${action.amount}`}>
-          회복 {action.amount}
-        </span>
-      ) : action.kind === "buffNextAttack" ? (
-        // 충전 타입 없음(사용자 확정) — 버프 의도로 표시, 강공 예고는 패턴 순서가 담당
-        <span key={index} aria-label={`버프: 다음 공격 +${action.amount}`}>
-          <Keyword term="attack-buff">↑ 공격 +{action.amount}</Keyword>
-        </span>
-      ) : (
-        <span key={index} aria-label={`다음 드로우 ${action.amount} 감소`}>
-          <Keyword term="wither">위축 -{action.amount}</Keyword>
-        </span>
+export const enemyIntentDamageTotal = (enemies: readonly CombatState["enemies"][number][]): number =>
+  enemies.reduce(
+    (sum, enemy) =>
+      sum +
+      enemy.intent.actions.reduce(
+        (intentSum, action) =>
+          action.kind === "attack"
+            ? intentSum + action.damage * (action.hits ?? 1)
+            : action.kind === "conditionalAttack"
+              ? intentSum + action.damage + action.bonusDamage
+              : intentSum,
+        0,
       ),
-    )}
-  </div>
-);
+    0,
+  );
 
-const effectText = (skillId: string): string => {
-  const skill = contentDb.skills[skillId];
-  return skill === undefined ? "" : skillSummaryText(skill);
+export const armorEchoPreview = (
+  player: CombatState["player"],
+  intentDamage: number,
+): { absorbed: number; remainingBlock: number; precision: boolean; total: number } => {
+  const absorbed = Math.min(player.block, intentDamage);
+  const remainingBlock = Math.max(0, player.block - intentDamage);
+  const precision =
+    player.precisionDefenseSatisfied ||
+    (player.precisionDefenseArmed && absorbed > 0 && remainingBlock <= 2);
+  return {
+    absorbed,
+    remainingBlock,
+    precision,
+    total: Math.min(12, Math.min(absorbed, 6) + (absorbed > 0 ? player.echoPreheat : 0) + (precision ? 4 : 0)),
+  };
+};
+
+export const shouldShowArmorEchoHud = (character: CharacterId): boolean => String(character) === "arcanist";
+
+export const shouldShowOverheatBadges = (character: CharacterId): boolean => String(character) === "warrior";
+
+const enemyDisplayName = (enemy: CombatState["enemies"][number] | undefined): string =>
+  enemy === undefined ? "아군" : (contentDb.enemies[String(enemy.defId)]?.name ?? "아군");
+
+export const IntentBadge = ({
+  enemy,
+  enemies = [],
+}: {
+  enemy: CombatState["enemies"][number];
+  enemies?: readonly CombatState["enemies"][number][];
+}) => {
+  const windup = enemy.windup;
+  const intent = windup?.intent ?? enemy.intent;
+  const boundHealAlly = windup?.boundHealAlly ?? enemy.boundHealAlly;
+  const boundHealAllyName = boundHealAlly === undefined ? undefined : enemyDisplayName(enemies[boundHealAlly]);
+  return (
+    <div aria-label="다음 행동 의도" className="intent">
+      {windup !== undefined ? (
+        <>
+          <Keyword term="windup">
+            <span aria-label={`준비 ${windup.turnsLeft}턴 남음`}>준비 {windup.turnsLeft}턴</span>
+          </Keyword>
+          {windup.cancelThreshold !== undefined ? (
+            <Keyword term="windup">
+              <span aria-label={`${windup.cancelThreshold} 피해로 취소`}>
+                {windup.cancelThreshold} 피해로 취소
+              </span>
+            </Keyword>
+          ) : null}
+          {intent.vulnerableWhileWindup !== undefined ? (
+            <Keyword term="vulnerable">
+              <span aria-label={`준비 중 취약 배수 ${intent.vulnerableWhileWindup}배`}>
+                취약 ×{intent.vulnerableWhileWindup}
+              </span>
+            </Keyword>
+          ) : null}
+        </>
+      ) : null}
+      {intent.actions.map((action, index) =>
+        action.kind === "attack" ? (
+          <span key={index}>
+            <SwordIcon scale={1.6} />
+            {action.hits !== undefined && action.hits > 1 ? `${action.damage}×${action.hits}` : action.damage}
+          </span>
+        ) : action.kind === "block" ? (
+          <span key={index}>
+            <ShieldIcon scale={1.6} tone="steel" />
+            {action.amount}
+          </span>
+        ) : action.kind === "applyStatus" ? (
+          <span key={index} aria-label={`${statusKo(action.status)} ${action.stacks} 부여`}>
+            <Keyword term={action.status}>
+              {statusKo(action.status)} {action.stacks}
+            </Keyword>
+          </span>
+        ) : action.kind === "heal" ? (
+          <span key={index} aria-label={`자가 회복 ${action.amount}`}>
+            회복 {action.amount}
+          </span>
+        ) : action.kind === "buffNextAttack" ? (
+          // 충전 타입 없음(사용자 확정) — 버프 의도로 표시, 강공 예고는 패턴 순서가 담당
+          <span key={index} aria-label={`버프: 다음 공격 +${action.amount}`}>
+            <Keyword term="attack-buff">↑ 공격 +{action.amount}</Keyword>
+          </span>
+        ) : action.kind === "nextDrawPenalty" ? (
+          <span key={index} aria-label={`다음 드로우 ${action.amount} 감소`}>
+            <Keyword term="wither">위축 -{action.amount}</Keyword>
+          </span>
+        ) : action.kind === "conditionalAttack" ? (
+          <span key={index} aria-label={`조건부 공격 ${action.damage}+${action.bonusDamage}`}>
+            <SwordIcon scale={1.6} />
+            {action.damage}+{action.bonusDamage}
+          </span>
+        ) : action.kind === "growOnUnblockedDamage" ? (
+          <span key={index} aria-label={`성장 ${action.amount}`}>
+            성장 {action.amount}
+          </span>
+        ) : (
+          <span
+            key={index}
+            aria-label={
+              boundHealAllyName === undefined
+                ? `아군 회복 ${action.amount}`
+                : `아군 회복 ${action.amount}, 대상 ${boundHealAllyName}`
+            }
+          >
+            회복 {action.amount}
+            {boundHealAllyName === undefined ? "" : ` → ${boundHealAllyName}`}
+          </span>
+        ),
+      )}
+    </div>
+  );
 };
 
 const ELEMENT_KO: Record<string, string> = {
@@ -520,6 +591,115 @@ const ELEMENT_KO: Record<string, string> = {
   blood: "혈액",
 };
 const elementKo = (value: string): string => ELEMENT_KO[value] ?? value;
+
+const REMISE_MAX_STACKS = 3;
+
+const faceKo = (face: Face): string => (face === "heads" ? "앞" : "뒤");
+
+const clampRemiseCharges = (charges: number): number => Math.min(Math.max(charges, 0), REMISE_MAX_STACKS);
+
+export const shouldShowRemiseSpendBadge = (
+  skill: SkillDef | undefined,
+  loaded: number,
+  remiseCharges: number,
+  isSorcerer: boolean,
+): boolean =>
+  isSorcerer &&
+  remiseCharges > 0 &&
+  skill?.type === "flip" &&
+  skill.tags.includes("attack") &&
+  loaded >= skill.cost;
+
+export const RemiseStackChip = ({ charges }: { charges: number }): JSX.Element => {
+  const safeCharges = clampRemiseCharges(charges);
+  return (
+    <em aria-label={`르미즈 스택 ${safeCharges}/${REMISE_MAX_STACKS}`} className="passive-chip">
+      르미즈 {safeCharges}/{REMISE_MAX_STACKS}
+    </em>
+  );
+};
+
+export const RemiseSpendBadge = ({
+  displaySkillName,
+  isSorcerer,
+  loaded,
+  remiseCharges,
+  shifted = false,
+  skill,
+  testId,
+}: {
+  displaySkillName: string;
+  isSorcerer: boolean;
+  loaded: number;
+  remiseCharges: number;
+  shifted?: boolean;
+  skill: SkillDef | undefined;
+  testId?: string;
+}): JSX.Element | null =>
+  shouldShowRemiseSpendBadge(skill, loaded, remiseCharges, isSorcerer) ? (
+    <span
+      aria-label={`${displaySkillName} 르미즈 1 소비 예정, 현재 ${clampRemiseCharges(remiseCharges)}/${REMISE_MAX_STACKS}`}
+      className="once-badge"
+      data-testid={testId}
+      style={shifted ? { top: 43 } : undefined}
+      title="르미즈 — 첫 면이 앞이면 이 공격 스킬을 한 번 반복"
+    >
+      르미즈 1 소비 예정
+    </span>
+  ) : null;
+
+const remiseResolutionLines = (events: readonly CombatEvent[]): string[] =>
+  events.flatMap((event) => {
+    if (event.type === "remiseGained" && event.amount > 0)
+      return [`르미즈 +${event.amount} — 스택 ${clampRemiseCharges(event.total)}/${REMISE_MAX_STACKS}`];
+    if (event.type === "remiseSpent")
+      return [
+        `르미즈 ${event.repeat ? "성공" : "불발"} — 첫 면 ${faceKo(event.firstFace)}, 잔여 ${clampRemiseCharges(event.remaining)}/${REMISE_MAX_STACKS}`,
+      ];
+    if (event.type === "remiseRepeatResolved") return ["르미즈 반복 해결"];
+    return [];
+  });
+
+const combatEventResolutionLines = (events: readonly CombatEvent[]): string[] =>
+  events.flatMap((event) => {
+    if (event.type === "overheatScheduled") return ["과열 예약 — 다음 플레이어 턴 과열 예정"];
+    if (event.type === "overheatActivated") return ["과열 활성 — 예약된 과열 시작"];
+    if (event.type === "echoComputed")
+      return [
+        `갑주 반향 계산 — 기본 ${event.base}, 예열 ${event.preheat}, 정밀 ${event.precision}, 총 ${event.total}`,
+      ];
+    if (event.type === "echoSpent") return [`반향 증폭 — +${event.amount}`];
+    if (event.type === "enemyWindupStarted")
+      return [
+        `적 ${event.enemy + 1} 준비 시작 — ${event.turnsLeft}턴 남음${event.cancelThreshold === undefined ? "" : `, ${event.cancelThreshold} 피해로 취소`}`,
+      ];
+    if (event.type === "enemyWindupTicked") return [`적 ${event.enemy + 1} 준비 카운트 — ${event.turnsLeft}턴 남음`];
+    if (event.type === "enemyWindupCancelled") return [`적 ${event.enemy + 1} 준비 취소`];
+    if (event.type === "enemyPhaseChanged") return [`적 ${event.enemy + 1} 페이즈 전환 — 광란`];
+    if (event.type === "enemyGrew") return [`적 ${event.enemy + 1} 성장 — 스택 ${event.stacks}`];
+    if (event.type === "enemyHealFailed") return [`적 ${event.enemy + 1} 치유 실패 — 대상 ${event.target + 1}`];
+    return [];
+  });
+
+const withCombatEventResolutionLines = (
+  summary: ResolutionSummary,
+  events: readonly CombatEvent[],
+): ResolutionSummary => {
+  const lines = [...remiseResolutionLines(events), ...combatEventResolutionLines(events)];
+  if (lines.length === 0) return summary;
+  const spent = events.reduce<Extract<CombatEvent, { type: "remiseSpent" }> | undefined>(
+    (latest, event) => (event.type === "remiseSpent" ? event : latest),
+    undefined,
+  );
+  return {
+    ...summary,
+    triggerLines: [...summary.triggerLines, ...lines],
+    totalLine:
+      spent === undefined
+        ? summary.totalLine
+        : `${summary.totalLine} · 르미즈 ${spent.repeat ? "성공" : "불발"}(잔여 ${clampRemiseCharges(spent.remaining)})`,
+  };
+};
 
 const coinLabel = (state: CombatState, coin: CoinUid): string => {
   const instance = state.coins[Number(coin)];
@@ -661,7 +841,7 @@ interface RunSession {
 type BootState =
   | { mode: "title"; save: TitleSaveSummary | null }
   | { mode: "select"; seed: string | null }
-  | { mode: "corrupt-save" }
+  | { mode: "corrupt-save"; reason: "invalid" | "retired-character" }
   | { mode: "run"; session: RunSession };
 
 const replaceUrlSeed = (seed: string, character?: CharacterId): void => {
@@ -699,19 +879,23 @@ const testEncounterFromUrl = (): readonly EnemyDefId[] | null => {
   // 테스트 전용 전투 표면: 정식 런 encounter 테이블을 건드리지 않고 UI에서만 적 배열을 바꾼다.
   // 'raider' 단일은 S10 패배 산술(고정 패턴 11·4×2·11)의 결정론 앵커 — 그래프 세대에서
   // 1전투 적이 시드 롤이 되면서 필요해졌다.
-  return encounter === "duo-raiders"
-    ? (["raider" as EnemyDefId, "raider" as EnemyDefId] as const)
-    : encounter === "trio-ghoul-goblin-slime"
-      ? (["ghoul" as EnemyDefId, "goblin" as EnemyDefId, "slime" as EnemyDefId] as const)
-      : encounter === "raider"
-        ? (["raider" as EnemyDefId] as const)
-        : encounter === "slime"
-          ? // 자동 실행 승리 단축 회귀용 저체력 단일 적
-            (["slime" as EnemyDefId] as const)
-        : encounter === "ghoul"
-          ? // S32 몬스터 패시브 앵커 — 구울 '썩은 육체' 결정론 검증용
-            (["ghoul" as EnemyDefId] as const)
-          : null;
+  if (encounter === "duo-raiders") return ["raider" as EnemyDefId, "raider" as EnemyDefId] as const;
+  if (encounter === "trio-ghoul-goblin-slime")
+    return ["ghoul" as EnemyDefId, "goblin" as EnemyDefId, "slime" as EnemyDefId] as const;
+  if (encounter === "quad-ghoul-goblin-slime-thief")
+    return ["ghoul" as EnemyDefId, "goblin" as EnemyDefId, "slime" as EnemyDefId, "thief" as EnemyDefId] as const;
+  if (encounter === "quint-ghoul-goblin-slime-thief-mage")
+    return [
+      "ghoul" as EnemyDefId,
+      "goblin" as EnemyDefId,
+      "slime" as EnemyDefId,
+      "thief" as EnemyDefId,
+      "mage" as EnemyDefId,
+    ] as const;
+  if (encounter === "raider") return ["raider" as EnemyDefId] as const;
+  if (encounter === "slime") return ["slime" as EnemyDefId] as const; // 자동 실행 승리 단축 회귀용 저체력 단일 적
+  if (encounter === "ghoul") return ["ghoul" as EnemyDefId] as const; // S32 몬스터 패시브 앵커
+  return null;
 };
 
 const testSkillsFromUrl = (fallback: RunState["equippedSkills"]): RunState["equippedSkills"] | null => {
@@ -783,6 +967,42 @@ const savedSession = (saved: RunState): RunSession => {
   return { run: started.run, combat: started.combat };
 };
 
+const testShopSessionFromUrl = (): RunSession | null => {
+  if (new URL(window.location.href).searchParams.get("testShop") !== "p13") return null;
+  const created = createRun(
+    {
+      contentVersion: CONTENT_VERSION,
+      runSeed: "P13-SHOP",
+      character: "warrior" as CharacterId,
+    },
+    contentDb,
+  );
+  return {
+    run: {
+      ...created,
+      phase: "shop",
+      combatIndex: 3,
+      gold: 999,
+      nodeChoices: [0, 0, 0, 0, 0],
+      pendingShop: {
+        coinOptions: ["basic" as CoinDefId, "fire" as CoinDefId, "mana" as CoinDefId],
+        coinPrices: [25, 50, 70],
+        skillOptions: [
+          "smash" as SkillId,
+          "fire-infusion" as SkillId,
+          "furnace" as SkillId,
+          "conflagration" as SkillId,
+          "ignite" as SkillId,
+        ],
+        skillPrices: [50, 80, 80, 120, 50],
+        passiveOptions: [],
+        passivePrices: [],
+      },
+    },
+    combat: null,
+  };
+};
+
 const titleSaveSummary = (run: RunState): TitleSaveSummary => {
   const acts = run.graph.acts;
   const act = actOfLayer(run.graph, run.combatIndex);
@@ -806,6 +1026,8 @@ const bootState = (): BootState => {
   const testCharacter = characterFromUrl();
   const hasSeed = urlSeed !== null && urlSeed.trim().length > 0;
   const hasTestBoot = testEncounterFromUrl() !== null || url.searchParams.has("skills") || testCharacter !== null;
+  const testShopSession = testShopSessionFromUrl();
+  if (testShopSession !== null) return { mode: "run", session: testShopSession };
   if (url.searchParams.get("select") === "1") {
     return { mode: "select", seed: hasSeed ? urlSeed : null };
   }
@@ -823,7 +1045,9 @@ const bootState = (): BootState => {
       window.dispatchEvent(new CustomEvent("run-save-status", { detail: { ok: false } }));
     }, 0);
   }
-  if (detailed.status === "corrupt" || detailed.status === "unsupported") return { mode: "corrupt-save" };
+  if (detailed.status === "corrupt" || detailed.status === "unsupported")
+    return { mode: "corrupt-save", reason: "invalid" };
+  if (detailed.status === "retired-character") return { mode: "corrupt-save", reason: "retired-character" };
   const saved = detailed.save;
   if (saved === null && hasSeed) {
     return {
@@ -845,6 +1069,9 @@ const skillRarityName = (skill: SkillId): string => {
   const rarity = contentDb.skills[String(skill)]?.rarity;
   return rarity === "rare" ? "희귀" : rarity === "advanced" ? "고급" : "일반";
 };
+
+const bloodSwordPowerForInvestment = (investment: number): number =>
+  investment >= 30 ? 5 : investment >= 25 ? 4 : investment >= 15 ? 3 : investment >= 10 ? 2 : investment >= 5 ? 1 : 0;
 
 const SkillRewardMark = ({ skill, scale = 3.2 }: { skill: SkillId; scale?: number }) => {
   const tags = contentDb.skills[String(skill)]?.tags ?? [];
@@ -1066,6 +1293,8 @@ const RunGame = ({ initialSession, onExitToTitle, onLoadSaved, onStartNewRun }: 
   };
   const rewardStage = rewardViewStage(run);
   const isCoinStage = rewardStage === "coin" || rewardStage === "fallback-coin";
+  const runBloodSwordPower =
+    run.character === "blood-spellblade" ? bloodSwordPowerForInvestment(run.bloodSwordInvestment ?? 0) : 0;
 
   useEffect(() => persistRun(run), [run]);
 
@@ -1450,25 +1679,40 @@ const RunGame = ({ initialSession, onExitToTitle, onLoadSaved, onStartNewRun }: 
                       <>
                         <p>새 스킬을 고르면 교체할 슬롯을 선택합니다.</p>
                         <div className="reward-grid skill-rewards">
-                          {pending.skillOptions.map((skill, index) => (
-                            <button
-                              className="reward-choice skill-choice"
-                              data-testid={`skill-reward-${String(skill)}`}
-                              key={String(skill)}
-                              ref={index === 0 ? primaryRef : undefined}
-                              type="button"
-                              onClick={() => setSelectedSkill(skill)}
-                            >
-                              <span className="skill-reward-mark" aria-hidden="true">
-                                <SkillRewardMark skill={skill} />
-                              </span>
-                              <em className={`rarity rarity-${contentDb.skills[String(skill)]?.rarity ?? "common"}`}>
-                                {skillRarityName(skill)}
-                              </em>
-                              <strong>{contentDb.skills[String(skill)]?.name ?? String(skill)}</strong>
-                              <small>{effectText(String(skill))}</small>
-                            </button>
-                          ))}
+                          {pending.skillOptions.map((skill, index) => {
+                            const skillDef = contentDb.skills[String(skill)];
+                            return (
+                              <div
+                                className="reward-choice skill-choice"
+                                data-testid={`skill-reward-${String(skill)}`}
+                                key={String(skill)}
+                                style={{ alignItems: "stretch", justifyContent: "flex-start", textAlign: "center" }}
+                              >
+                                <span className="skill-reward-mark" aria-hidden="true">
+                                  <SkillRewardMark skill={skill} />
+                                </span>
+                                <em className={`rarity rarity-${skillDef?.rarity ?? "common"}`}>
+                                  {skillRarityName(skill)}
+                                </em>
+                                <strong>{skillDef?.name ?? String(skill)}</strong>
+                                {skillDef === undefined ? null : (
+                                  <CardEffectRows
+                                    bloodSwordPower={runBloodSwordPower}
+                                    displayName={skillDisplayName(skillDef, runBloodSwordPower)}
+                                    skill={skillDef}
+                                  />
+                                )}
+                                <button
+                                  className="secondary-action"
+                                  ref={index === 0 ? primaryRef : undefined}
+                                  type="button"
+                                  onClick={() => setSelectedSkill(skill)}
+                                >
+                                  선택
+                                </button>
+                              </div>
+                            );
+                          })}
                         </div>
                         <button
                           className="secondary-action"
@@ -1494,39 +1738,51 @@ const RunGame = ({ initialSession, onExitToTitle, onLoadSaved, onStartNewRun }: 
                           교체할 슬롯을 고르세요.
                         </p>
                         <div aria-label="교체할 스킬 슬롯" className="replacement-list">
-                          {run.equippedSkills.map((skill, index) => (
-                            <button
-                              aria-label={`슬롯 ${index + 1} ${skill !== null ? `${contentDb.skills[String(skill)]?.name ?? String(skill)} ${isLockedSkill(contentDb, skill) ? "고유 스킬, 교체 불가" : "교체"}` : "빈 슬롯 장착"}`}
-                              data-testid={`replace-slot-${index}`}
-                              disabled={isLockedSkill(contentDb, skill)}
-                              key={`${String(skill)}-${index}`}
-                              ref={index === 0 ? primaryRef : undefined}
-                              type="button"
-                              onClick={() =>
-                                commitReward(chooseSkillReward(run, selectedSkill, index, contentDb), {
-                                  combatIndex: run.combatIndex - 1,
-                                  stage: "skill",
-                                  options: pending.skillOptions.map(String),
-                                  choice: String(selectedSkill),
-                                  resolution: "selected",
-                                  replacedSlot: index,
-                                })
-                              }
-                            >
-                              <span aria-hidden="true" className="replacement-mark">
-                                {skill !== null ? <SkillRewardMark scale={2.6} skill={skill} /> : null}
-                              </span>
-                              <span className="replacement-copy">
-                                <small>
-                                  슬롯 {index + 1} · {skill !== null ? skillRarityName(skill) : "빈 슬롯"}
-                                  {isLockedSkill(contentDb, skill) ? " · 고유 스킬 · 교체 불가" : ""}
-                                </small>
-                                <strong>
-                                  {skill !== null ? (contentDb.skills[String(skill)]?.name ?? String(skill)) : "장착"}
-                                </strong>
-                              </span>
-                            </button>
-                          ))}
+                          {run.equippedSkills.map((skill, index) => {
+                            const skillDef = skill === null ? undefined : contentDb.skills[String(skill)];
+                            return (
+                              <div
+                                key={`${String(skill)}-${index}`}
+                                style={{ display: "flex", minWidth: 0, flexDirection: "column", gap: 6 }}
+                              >
+                                <button
+                                  aria-label={`슬롯 ${index + 1} ${skill !== null ? `${skillDef?.name ?? String(skill)} ${isLockedSkill(contentDb, skill) ? "고유 스킬, 교체 불가" : "교체"}` : "빈 슬롯 장착"}`}
+                                  data-testid={`replace-slot-${index}`}
+                                  disabled={isLockedSkill(contentDb, skill)}
+                                  ref={index === 0 ? primaryRef : undefined}
+                                  type="button"
+                                  onClick={() =>
+                                    commitReward(chooseSkillReward(run, selectedSkill, index, contentDb), {
+                                      combatIndex: run.combatIndex - 1,
+                                      stage: "skill",
+                                      options: pending.skillOptions.map(String),
+                                      choice: String(selectedSkill),
+                                      resolution: "selected",
+                                      replacedSlot: index,
+                                    })
+                                  }
+                                >
+                                  <span aria-hidden="true" className="replacement-mark">
+                                    {skill !== null ? <SkillRewardMark scale={2.6} skill={skill} /> : null}
+                                  </span>
+                                  <span className="replacement-copy">
+                                    <small>
+                                      슬롯 {index + 1} · {skill !== null ? skillRarityName(skill) : "빈 슬롯"}
+                                      {isLockedSkill(contentDb, skill) ? " · 고유 스킬 · 교체 불가" : ""}
+                                    </small>
+                                    <strong>{skillDef?.name ?? (skill !== null ? String(skill) : "장착")}</strong>
+                                  </span>
+                                </button>
+                                {skillDef === undefined ? null : (
+                                  <CardEffectRows
+                                    bloodSwordPower={runBloodSwordPower}
+                                    displayName={skillDisplayName(skillDef, runBloodSwordPower)}
+                                    skill={skillDef}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                         <div className="reward-actions">
                           <button
@@ -1845,13 +2101,24 @@ const RunGame = ({ initialSession, onExitToTitle, onLoadSaved, onStartNewRun }: 
                   price: run.pendingShop?.coinPrices[index] ?? 0,
                   visualClass: String(contentDb.coins[String(coin)]?.element ?? ""),
                 }))}
-                skillOffers={run.pendingShop.skillOptions.map((skill, index) => ({
-                  id: String(skill),
-                  name: contentDb.skills[String(skill)]?.name ?? String(skill),
-                  price: run.pendingShop?.skillPrices[index] ?? 0,
-                  rarityName: skillRarityName(skill),
-                  card: <SkillRewardMark scale={2.6} skill={skill} />,
-                }))}
+                skillOffers={run.pendingShop.skillOptions.map((skill, index) => {
+                  const skillDef = contentDb.skills[String(skill)];
+                  return {
+                    id: String(skill),
+                    name: skillDef?.name ?? String(skill),
+                    price: run.pendingShop?.skillPrices[index] ?? 0,
+                    rarityName: skillRarityName(skill),
+                    card: <SkillRewardMark scale={2.6} skill={skill} />,
+                    effects:
+                      skillDef === undefined ? null : (
+                        <CardEffectRows
+                          bloodSwordPower={runBloodSwordPower}
+                          displayName={skillDisplayName(skillDef, runBloodSwordPower)}
+                          skill={skillDef}
+                        />
+                      ),
+                  };
+                })}
                 passiveOffers={(run.pendingShop.passiveOptions ?? []).map((passiveId, index) => ({
                   id: String(passiveId),
                   name: (contentDb.passives ?? {})[String(passiveId)]?.name ?? String(passiveId),
@@ -1965,7 +2232,11 @@ export const App = () => {
   const loadSavedRun = () => {
     const detailed = loadRunDetailed(window.localStorage, CONTENT_VERSION, contentDb);
     if (detailed.status === "corrupt" || detailed.status === "unsupported") {
-      setBoot({ mode: "corrupt-save" });
+      setBoot({ mode: "corrupt-save", reason: "invalid" });
+      return;
+    }
+    if (detailed.status === "retired-character") {
+      setBoot({ mode: "corrupt-save", reason: "retired-character" });
       return;
     }
     if (detailed.save === null) {
@@ -2005,8 +2276,12 @@ export const App = () => {
           <img alt="" className="backdrop-img" src={bgForest} />
         </div>
         <section className="boot-recovery" role="alert">
-          <h1>저장 데이터를 읽을 수 없습니다</h1>
-          <p>저장이 손상되었거나 알 수 없는 형식입니다. 기존 저장은 이어할 수 없으며, 새 런을 시작하면 삭제됩니다.</p>
+          <h1>{boot.reason === "retired-character" ? "이어할 수 없는 런입니다" : "저장 데이터를 읽을 수 없습니다"}</h1>
+          <p>
+            {boot.reason === "retired-character"
+              ? "수호자는 로스터에서 제외되어 이 런을 이어갈 수 없습니다. 새 런을 시작하면 기존 저장은 삭제됩니다."
+              : "저장이 손상되었거나 알 수 없는 형식입니다. 기존 저장은 이어할 수 없으며, 새 런을 시작하면 삭제됩니다."}
+          </p>
           <button
             data-testid="corrupt-save-restart"
             type="button"
@@ -2200,7 +2475,7 @@ const CombatBoard = ({
   const showResolutionTicket = (pending: PendingResolution) => {
     const skill = contentDb.skills[String(pending.skillId)];
     if (skill === undefined) return;
-    const summary = buildResolutionSummary(skill, pending.events);
+    const summary = withCombatEventResolutionLines(buildResolutionSummary(skill, pending.events), pending.events);
     clearResolutionTicket();
     setResolutionTicket(summary);
     setResolutionHistory((entries) => [...entries, summary].slice(-20));
@@ -3128,6 +3403,36 @@ const CombatBoard = ({
     } else if (event?.type === "coinCreated") {
       showFloat("임시 코인", "player", "coin");
       delay = 320;
+    } else if (event?.type === "overheatScheduled") {
+      showFloat("과열 예약", "player", "status");
+      delay = 360;
+    } else if (event?.type === "overheatActivated") {
+      showFloat("과열", "player", "status");
+      delay = 420;
+    } else if (event?.type === "echoComputed") {
+      if (event.total > 0) showFloat(`반향 ${event.total}`, "player", "block");
+      delay = 380;
+    } else if (event?.type === "echoSpent") {
+      showFloat(`증폭 +${event.amount}`, "player", "damage");
+      delay = 420;
+    } else if (event?.type === "enemyWindupStarted") {
+      showFloat(`준비 ${event.turnsLeft}턴`, "enemy", "status", event.enemy);
+      delay = 360;
+    } else if (event?.type === "enemyWindupTicked") {
+      showFloat(`준비 ${event.turnsLeft}턴`, "enemy", "status", event.enemy);
+      delay = 360;
+    } else if (event?.type === "enemyWindupCancelled") {
+      showFloat("준비 취소", "enemy", "status", event.enemy);
+      delay = 420;
+    } else if (event?.type === "enemyPhaseChanged") {
+      showFloat("광란", "enemy", "status", event.enemy);
+      delay = 460;
+    } else if (event?.type === "enemyGrew") {
+      showFloat(`성장 ${event.stacks}`, "enemy", "status", event.enemy);
+      delay = 380;
+    } else if (event?.type === "enemyHealFailed") {
+      showFloat("치유 실패", "enemy", "status", event.enemy);
+      delay = 380;
     } else if (event?.type === "turnTriggerAdded") {
       for (const trigger of state.turnTriggers) {
         if (trigger.trigger.id === event.trigger) triggerVfx(`turn-trigger-${trigger.uid}`, 320);
@@ -3342,6 +3647,7 @@ const CombatBoard = ({
   const ended = state.phase === "victory" || state.phase === "defeat";
   const showResult = ended && !locked && queue.length === 0 && resolving === null && floats.length === 0;
   const activeEvent = queue[0];
+  const totalIntentDamage = enemyIntentDamageTotal(state.enemies);
   const discardReceiving =
     activeEvent?.type === "coinsDiscarded" || (activeEvent?.type === "coinCreated" && activeEvent.zone === "discard");
   const exhaustReceiving = activeEvent?.type === "coinsConsumed";
@@ -3493,7 +3799,20 @@ const CombatBoard = ({
           maxHp={state.player.maxHp}
           block={state.player.block}
           statuses={state.player.statuses}
-          overheat={state.player.overheat}
+          pendingOverheat={shouldShowOverheatBadges(run.character) ? state.player.pendingOverheat : false}
+          overheat={shouldShowOverheatBadges(run.character) ? state.player.overheat : false}
+          armorEchoHud={
+            shouldShowArmorEchoHud(run.character)
+              ? {
+                  current: state.player.armorEcho,
+                  available: state.player.armorEchoAvailable,
+                  armed: state.player.precisionDefenseArmed,
+                  preview: armorEchoPreview(state.player, totalIntentDamage),
+                  preheat: state.player.echoPreheat,
+                  totalIntentDamage,
+                }
+              : undefined
+          }
           weaponOutput={run.character === "arcanist" ? state.player.weaponOutput : undefined}
           remiseCharges={run.character === "sorcerer" ? state.player.remiseCharges : undefined}
           bloodSwordPower={run.character === "blood-spellblade" ? state.player.bloodSwordPower : undefined}
@@ -3548,7 +3867,7 @@ const CombatBoard = ({
             })}
           </div>
         ) : null}
-        <div className="enemy-line" aria-label="적 목록">
+        <div className="enemy-line" aria-label="적 목록" data-enemy-count={state.enemies.length}>
           {state.enemies.map((enemy, index) => {
             const targetLegal = targeting?.legalTargets.includes(index) === true;
             const targetSelected = targeting?.selected === index;
@@ -3568,7 +3887,7 @@ const CombatBoard = ({
                 maxHp={enemy.maxHp}
                 block={enemy.block}
                 statuses={enemy.statuses}
-                intent={<IntentBadge enemy={enemy} />}
+                intent={<IntentBadge enemies={state.enemies} enemy={enemy} />}
                 floats={floats}
                 motion={enemyMotion}
                 playKey={enemyMotion === "idle" ? 0 : spritePlayKey}
@@ -3579,6 +3898,8 @@ const CombatBoard = ({
                 onTarget={targetLegal ? () => confirmTargeting(index) : undefined}
                 attackBuff={enemy.nextAttackBonus}
                 passive={contentDb.enemies[String(enemy.defId)]?.passive}
+                phaseIndex={enemy.phaseIndex}
+                growthStacks={enemy.growthStacks}
               />
             );
           })}
@@ -4009,6 +4330,15 @@ const CombatBoard = ({
               {slotState.cooldownRemaining > 0 ? (
                 <span className="spent-label">쿨 {slotState.cooldownRemaining}</span>
               ) : null}
+              <RemiseSpendBadge
+                displaySkillName={displaySkillName}
+                isSorcerer={run.character === "sorcerer"}
+                loaded={placed.length}
+                remiseCharges={state.player.remiseCharges}
+                shifted={skill?.oncePerCombat === true}
+                skill={skill}
+                testId={`remise-spend-badge-${index}`}
+              />
               {skill !== undefined && skillCooldown(skill) === 0 ? (
                 <span className="repeat-label" title="반복 — 같은 턴에 코인이 남는 한 계속 사용">
                   반복
@@ -4396,13 +4726,61 @@ interface UnitPanelProps {
   attackBuff?: number;
   passive?: { name: string; description: string };
   overheat?: boolean;
+  pendingOverheat?: boolean;
+  armorEchoHud?: {
+    current: number;
+    available: boolean;
+    armed: boolean;
+    preheat: number;
+    totalIntentDamage: number;
+    preview: ReturnType<typeof armorEchoPreview>;
+  };
   weaponOutput?: number;
   remiseCharges?: number;
   bloodSwordPower?: number;
   bloodSwordInvestment?: number;
+  phaseIndex?: number;
+  growthStacks?: number;
 }
 
-const UnitPanel = ({
+export const ArmorEchoHud = ({
+  hud,
+}: {
+  hud: {
+    current: number;
+    available: boolean;
+    armed: boolean;
+    preheat: number;
+    totalIntentDamage: number;
+    preview: ReturnType<typeof armorEchoPreview>;
+  };
+}): JSX.Element => (
+  <span
+    aria-label={`갑주 반향 ${hud.current}, 반향 증폭 ${hud.available ? "가능" : "불가"}, 적 의도 피해 ${hud.totalIntentDamage}, 예상 잔여 방어 ${hud.preview.remainingBlock}, 반향 미리보기 ${hud.preview.total}, 정밀 방어 ${hud.preview.precision ? "성립" : "미성립"}`}
+    className="chip-keyword"
+    data-testid="armor-echo-hud"
+  >
+    <Keyword term="armorEcho">
+      <em className="passive-chip">반향 {hud.current}</em>
+    </Keyword>
+    <Keyword term="echoAmplification">
+      <em className="passive-chip">증폭 {hud.available ? "가능" : "불가"}</em>
+    </Keyword>
+    <Keyword term="precisionDefense">
+      <em className="passive-chip">정밀 {hud.preview.precision ? "성립" : hud.armed ? "대기" : "미성립"}</em>
+    </Keyword>
+    {hud.preheat > 0 ? (
+      <Keyword term="echoPreheat">
+        <em className="passive-chip">예열 +{hud.preheat}</em>
+      </Keyword>
+    ) : null}
+    <em className="passive-chip">
+      의도 {hud.totalIntentDamage} · 잔여 {hud.preview.remainingBlock} · 예상 반향 {hud.preview.total}
+    </em>
+  </span>
+);
+
+export const UnitPanel = ({
   side,
   unitKey,
   sprite,
@@ -4423,10 +4801,14 @@ const UnitPanel = ({
   attackBuff = 0,
   passive,
   overheat = false,
+  pendingOverheat = false,
+  armorEchoHud,
   weaponOutput,
   remiseCharges,
   bloodSwordPower,
   bloodSwordInvestment,
+  phaseIndex,
+  growthStacks,
 }: UnitPanelProps) => (
   <div
     className={`unit ${side} ${vfx.has(`unit-${unitKey}`) ? "vfx-hit" : ""} ${targeting ? "targetable" : ""} ${targetSelected ? "target-selected" : ""}`}
@@ -4450,6 +4832,20 @@ const UnitPanel = ({
           >
             <em aria-label={`패시브: ${passive.name} — ${passive.description}`} className="passive-chip">
               ★ {passive.name}
+            </em>
+          </Keyword>
+        ) : null}
+        {side === "enemy" && phaseIndex !== undefined ? (
+          <Keyword className="chip-keyword" term="frenzy">
+            <em aria-label={`광란 페이즈 ${phaseIndex + 1}`} className="passive-chip">
+              광란 {phaseIndex + 1}
+            </em>
+          </Keyword>
+        ) : null}
+        {side === "enemy" && growthStacks !== undefined && growthStacks > 0 ? (
+          <Keyword className="chip-keyword" term="growth">
+            <em aria-label={`성장 스택 ${growthStacks}`} className="passive-chip">
+              성장 {growthStacks}
             </em>
           </Keyword>
         ) : null}
@@ -4493,16 +4889,20 @@ const UnitPanel = ({
             </em>
           </Keyword>
         ) : null}
+        {!overheat && pendingOverheat ? (
+          <Keyword className="chip-keyword" term="pendingOverheat">
+            <em aria-label="과열 예약: 다음 턴 과열 예정" className="overheat-chip">
+              과열 예약
+            </em>
+          </Keyword>
+        ) : null}
+        {armorEchoHud !== undefined ? <ArmorEchoHud hud={armorEchoHud} /> : null}
         {weaponOutput !== undefined ? (
           <em aria-label={`병기 출력 ${weaponOutput}/5`} className="passive-chip">
             병기 출력 {weaponOutput}/5
           </em>
         ) : null}
-        {remiseCharges !== undefined ? (
-          <em aria-label={remiseCharges > 0 ? "르미즈 사용 가능" : "르미즈 사용됨"} className="passive-chip">
-            {remiseCharges > 0 ? "르미즈 준비" : "르미즈 사용됨"}
-          </em>
-        ) : null}
+        {remiseCharges !== undefined ? <RemiseStackChip charges={remiseCharges} /> : null}
         {bloodSwordPower !== undefined && bloodSwordInvestment !== undefined ? (
           <em aria-label={`혈마검 ${bloodSwordPower}단계, 투자 ${bloodSwordInvestment}/30`} className="passive-chip">
             혈마검 {bloodSwordPower}단계 · {bloodSwordInvestment}/30

@@ -1,7 +1,7 @@
 {
   "ok": true,
   "engine": "component-row",
-  "run_dir": "/mnt/d/Documents/GitHub/deckbuilding-roguelite/apps/ui/src/assets/generated/sprites/sorcerer",
+  "run_dir": "/tmp/claude-1000/-mnt-d-Documents-GitHub-deckbuilding-roguelite/b2d7fb2e-5721-4fce-b85f-a6a0b764b111/scratchpad/sprites/staging/sorcerer",
   "cell": {
     "shape": "square",
     "width": 256,
@@ -19,54 +19,7 @@
       255,
       0
     ],
-    "selection": "auto",
-    "score": 213.92,
-    "min_subject_distance": 209.11,
-    "background": {
-      "mode": "flat",
-      "hex": "#11E81D",
-      "rgb": [
-        17,
-        232,
-        29
-      ],
-      "opaque_border_fraction": 1.0,
-      "border_coverage": 1.0,
-      "enclosed_background_pixels": 83,
-      "enclosed_material_pixels": 0,
-      "subject_pixels": 6211
-    },
-    "candidates": [
-      {
-        "name": "magenta",
-        "hex": "#FF00FF",
-        "score": 203.7,
-        "min_subject_distance": 200.68,
-        "clears_erase_radius": true
-      },
-      {
-        "name": "green",
-        "hex": "#00FF00",
-        "score": 213.92,
-        "min_subject_distance": 209.11,
-        "clears_erase_radius": true
-      },
-      {
-        "name": "cyan",
-        "hex": "#00FFFF",
-        "score": 129.33,
-        "min_subject_distance": 79.42,
-        "clears_erase_radius": false
-      },
-      {
-        "name": "blue",
-        "hex": "#004DFF",
-        "score": 98.77,
-        "min_subject_distance": 21.26,
-        "clears_erase_radius": false
-      }
-    ],
-    "selection_reason": "highest 1st-percentile subject distance among the 2 candidate(s) clearing the 96 erase radius"
+    "selection": "manual"
   },
   "rows": [
     {
@@ -82,35 +35,35 @@
       "frame_records": [
         {
           "index": 0,
-          "nontransparent_pixels": 15872,
+          "nontransparent_pixels": 10360,
           "bbox": [
-            36,
+            62,
             60,
-            220,
+            256,
             232
           ],
-          "edge_pixels": 0,
+          "edge_pixels": 8,
           "chroma_adjacent_pixels": 0
         },
         {
           "index": 1,
-          "nontransparent_pixels": 16048,
+          "nontransparent_pixels": 9848,
           "bbox": [
-            36,
-            60,
-            220,
+            62,
+            68,
+            256,
             232
           ],
-          "edge_pixels": 0,
+          "edge_pixels": 8,
           "chroma_adjacent_pixels": 0
         },
         {
           "index": 2,
-          "nontransparent_pixels": 15408,
+          "nontransparent_pixels": 9624,
           "bbox": [
-            42,
-            60,
-            220,
+            64,
+            72,
+            250,
             232
           ],
           "edge_pixels": 0,
@@ -118,11 +71,11 @@
         },
         {
           "index": 3,
-          "nontransparent_pixels": 15684,
+          "nontransparent_pixels": 9804,
           "bbox": [
-            38,
-            60,
-            220,
+            62,
+            66,
+            254,
             232
           ],
           "edge_pixels": 0,
@@ -150,11 +103,11 @@
       "frame_records": [
         {
           "index": 0,
-          "nontransparent_pixels": 14324,
+          "nontransparent_pixels": 10320,
           "bbox": [
-            42,
+            46,
             60,
-            190,
+            240,
             232
           ],
           "edge_pixels": 0,
@@ -162,11 +115,11 @@
         },
         {
           "index": 1,
-          "nontransparent_pixels": 13676,
+          "nontransparent_pixels": 8892,
           "bbox": [
-            20,
-            76,
-            244,
+            38,
+            78,
+            214,
             232
           ],
           "edge_pixels": 0,
@@ -174,23 +127,23 @@
         },
         {
           "index": 2,
-          "nontransparent_pixels": 15700,
+          "nontransparent_pixels": 8572,
           "bbox": [
-            12,
-            60,
-            234,
+            18,
+            98,
+            256,
             232
           ],
-          "edge_pixels": 0,
+          "edge_pixels": 4,
           "chroma_adjacent_pixels": 0
         },
         {
           "index": 3,
-          "nontransparent_pixels": 15028,
+          "nontransparent_pixels": 9836,
           "bbox": [
-            52,
+            50,
             60,
-            212,
+            230,
             232
           ],
           "edge_pixels": 0,
@@ -218,23 +171,23 @@
       "frame_records": [
         {
           "index": 0,
-          "nontransparent_pixels": 13176,
+          "nontransparent_pixels": 10240,
           "bbox": [
-            86,
-            62,
-            198,
+            54,
+            60,
+            256,
             232
           ],
-          "edge_pixels": 0,
+          "edge_pixels": 4,
           "chroma_adjacent_pixels": 0
         },
         {
           "index": 1,
-          "nontransparent_pixels": 14984,
+          "nontransparent_pixels": 10448,
           "bbox": [
-            44,
-            70,
-            212,
+            42,
+            64,
+            250,
             232
           ],
           "edge_pixels": 0,
@@ -242,11 +195,11 @@
         },
         {
           "index": 2,
-          "nontransparent_pixels": 14520,
+          "nontransparent_pixels": 9856,
           "bbox": [
-            54,
+            56,
             68,
-            202,
+            250,
             232
           ],
           "edge_pixels": 0,
@@ -254,11 +207,11 @@
         },
         {
           "index": 3,
-          "nontransparent_pixels": 15648,
+          "nontransparent_pixels": 9832,
           "bbox": [
-            50,
-            60,
-            212,
+            54,
+            66,
+            248,
             232
           ],
           "edge_pixels": 0,

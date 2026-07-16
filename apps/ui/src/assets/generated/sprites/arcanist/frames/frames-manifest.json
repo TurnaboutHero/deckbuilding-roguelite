@@ -1,7 +1,7 @@
 {
   "ok": true,
   "engine": "component-row",
-  "run_dir": "/mnt/d/Documents/GitHub/deckbuilding-roguelite/apps/ui/src/assets/generated/sprites/arcanist",
+  "run_dir": "/tmp/claude-1000/-mnt-d-Documents-GitHub-deckbuilding-roguelite/b2d7fb2e-5721-4fce-b85f-a6a0b764b111/scratchpad/sprites/staging/arcanist",
   "cell": {
     "shape": "square",
     "width": 256,
@@ -19,8 +19,7 @@
       0,
       255
     ],
-    "selection": "explicit",
-    "selection_reason": "base background is flat magenta; navy/blue subject — magenta pinned (P6 D7 chroma gate)"
+    "selection": "manual"
   },
   "rows": [
     {
@@ -36,11 +35,11 @@
       "frame_records": [
         {
           "index": 0,
-          "nontransparent_pixels": 7184,
+          "nontransparent_pixels": 5872,
           "bbox": [
-            90,
-            62,
-            176,
+            98,
+            60,
+            164,
             232
           ],
           "edge_pixels": 0,
@@ -48,11 +47,11 @@
         },
         {
           "index": 1,
-          "nontransparent_pixels": 7456,
+          "nontransparent_pixels": 6076,
           "bbox": [
-            88,
+            96,
             60,
-            176,
+            164,
             232
           ],
           "edge_pixels": 0,
@@ -60,11 +59,11 @@
         },
         {
           "index": 2,
-          "nontransparent_pixels": 7136,
+          "nontransparent_pixels": 6332,
           "bbox": [
-            90,
-            64,
-            174,
+            92,
+            60,
+            164,
             232
           ],
           "edge_pixels": 0,
@@ -72,11 +71,11 @@
         },
         {
           "index": 3,
-          "nontransparent_pixels": 7124,
+          "nontransparent_pixels": 5892,
           "bbox": [
-            90,
-            62,
-            176,
+            98,
+            60,
+            164,
             232
           ],
           "edge_pixels": 0,
@@ -104,11 +103,11 @@
       "frame_records": [
         {
           "index": 0,
-          "nontransparent_pixels": 7396,
+          "nontransparent_pixels": 6152,
           "bbox": [
-            88,
+            98,
             60,
-            176,
+            166,
             232
           ],
           "edge_pixels": 0,
@@ -116,11 +115,11 @@
         },
         {
           "index": 1,
-          "nontransparent_pixels": 7708,
+          "nontransparent_pixels": 6508,
           "bbox": [
-            84,
-            60,
-            180,
+            74,
+            70,
+            164,
             232
           ],
           "edge_pixels": 0,
@@ -128,11 +127,11 @@
         },
         {
           "index": 2,
-          "nontransparent_pixels": 7648,
+          "nontransparent_pixels": 6836,
           "bbox": [
-            82,
-            64,
-            192,
+            70,
+            74,
+            202,
             232
           ],
           "edge_pixels": 0,
@@ -140,11 +139,11 @@
         },
         {
           "index": 3,
-          "nontransparent_pixels": 7240,
+          "nontransparent_pixels": 6164,
           "bbox": [
-            88,
+            98,
             60,
-            174,
+            166,
             232
           ],
           "edge_pixels": 0,
@@ -172,11 +171,11 @@
       "frame_records": [
         {
           "index": 0,
-          "nontransparent_pixels": 7272,
+          "nontransparent_pixels": 6820,
           "bbox": [
-            94,
-            62,
-            168,
+            88,
+            60,
+            172,
             232
           ],
           "edge_pixels": 0,
@@ -184,11 +183,11 @@
         },
         {
           "index": 1,
-          "nontransparent_pixels": 6984,
+          "nontransparent_pixels": 6684,
           "bbox": [
-            90,
-            84,
-            168,
+            88,
+            72,
+            180,
             232
           ],
           "edge_pixels": 0,
@@ -196,11 +195,11 @@
         },
         {
           "index": 2,
-          "nontransparent_pixels": 6988,
+          "nontransparent_pixels": 6416,
           "bbox": [
-            94,
-            66,
-            168,
+            86,
+            76,
+            164,
             232
           ],
           "edge_pixels": 0,
@@ -208,11 +207,11 @@
         },
         {
           "index": 3,
-          "nontransparent_pixels": 6896,
+          "nontransparent_pixels": 6160,
           "bbox": [
-            96,
-            60,
-            160,
+            88,
+            68,
+            168,
             232
           ],
           "edge_pixels": 0,

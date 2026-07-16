@@ -45,7 +45,7 @@ const testDb = (): ContentDb => ({
     },
     slash: {
       id: id<SkillId>("slash"),
-      name: "베기",
+      name: "공격",
       type: "flip",
       rarity: "common",
       tags: ["attack"],

@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type { ContentDb, PassiveDef, SkillDef } from "../content-types";
-import type { CharacterId, CoinDefId, CoinUid, EnemyDefId, PassiveId, SkillId } from "../ids";
+import type { ContentDb, FlipSkillDef, PassiveDef, SkillDef } from "../content-types";
+import type {
+  CharacterId,
+  CoinDefId,
+  CoinUid,
+  EnemyDefId,
+  PassiveId,
+  SkillId,
+} from "../ids";
 import type { CombatState } from "../combat/state";
 import { derive, rngFrom, seedFromString } from "../rng";
 import { actOfLayer, generateRunGraph, nodeGoldReward } from "./graph";
@@ -62,7 +69,9 @@ const enemyDef = (value: string) => ({
 
 const testDb = (): ContentDb => {
   const skillIds = ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9"];
-  const skills = Object.fromEntries(skillIds.map((skill) => [skill, simpleSkill(skill)])) as Record<string, SkillDef>;
+  const skills = Object.fromEntries(
+    skillIds.map((skill) => [skill, simpleSkill(skill)]),
+  ) as Record<string, SkillDef>;
   // P6 D3 — s1만 강화 정의를 갖는다 (강화 미정의 슬롯 거부 검증용으로 s2~s9는 비워둔다)
   skills["s1"] = {
     ...skills["s1"]!,
@@ -80,7 +89,9 @@ const testDb = (): ContentDb => {
         id: id<CoinDefId>("fire"),
         element: "fire",
         procs: {
-          heads: [{ kind: "applyStatus", status: "burn", stacks: 1, to: "target" }],
+          heads: [
+            { kind: "applyStatus", status: "burn", stacks: 1, to: "target" },
+          ],
           tails: [{ kind: "damage", amount: 1 }],
         },
       },
@@ -123,8 +134,15 @@ const testDb = (): ContentDb => {
         id: id<CharacterId>("warrior"),
         name: "warrior",
         maxHp: 70,
-        startingBag: [id<CoinDefId>("basic"), id<CoinDefId>("basic"), id<CoinDefId>("fire"), id<CoinDefId>("fire")],
-        startingSkills: ["s1", "s2", "s3", "s4", "s5", "s6"].map((skill) => id<SkillId>(skill)),
+        startingBag: [
+          id<CoinDefId>("basic"),
+          id<CoinDefId>("basic"),
+          id<CoinDefId>("fire"),
+          id<CoinDefId>("fire"),
+        ],
+        startingSkills: ["s1", "s2", "s3", "s4", "s5", "s6"].map((skill) =>
+          id<SkillId>(skill),
+        ),
         trait: {
           id: "ember-pouch",
           name: "ember pouch",
@@ -160,7 +178,9 @@ const exhaustedSkillDb = (): ContentDb => {
   return {
     ...db,
     skills: Object.fromEntries(
-      Object.entries(db.skills).filter(([skill]) => ["s1", "s2", "s3", "s4", "s5", "s6"].includes(skill)),
+      Object.entries(db.skills).filter(([skill]) =>
+        ["s1", "s2", "s3", "s4", "s5", "s6"].includes(skill),
+      ),
     ),
   };
 };
@@ -175,7 +195,11 @@ const newRun = (seed = "M5-RUN-GOLDEN", db = testDb()): RunState =>
     db,
   );
 
-const endedCombat = (combat: CombatState, phase: "victory" | "defeat", hp = combat.player.hp): CombatState => ({
+const endedCombat = (
+  combat: CombatState,
+  phase: "victory" | "defeat",
+  hp = combat.player.hp,
+): CombatState => ({
   ...combat,
   phase,
   player: { ...combat.player, hp },
@@ -210,12 +234,21 @@ const advanceStep = (run: RunState, db = testDb()): RunState => {
   switch (run.phase) {
     case "choose-node": {
       const layer = run.graph.layers[run.combatIndex] ?? [];
-      const fight = layer.findIndex((node) => node.kind === "combat" || node.kind === "elite" || node.kind === "boss");
+      const fight = layer.findIndex(
+        (node) =>
+          node.kind === "combat" ||
+          node.kind === "elite" ||
+          node.kind === "boss",
+      );
       return chooseRunNode(run, fight < 0 ? 0 : fight, db);
     }
     case "ready": {
       const started = startRunCombat(run, db);
-      return settleRunCombat(started.run, endedCombat(started.combat, "victory"), db);
+      return settleRunCombat(
+        started.run,
+        endedCombat(started.combat, "victory"),
+        db,
+      );
     }
     case "rewards":
       return resolveAllRewards(run, db);
@@ -263,27 +296,39 @@ const eliteRewardState = (db = testDb(), seed = "ELITE-REWARD"): RunState => {
     nodeChoices: [0, 0],
   };
   const started = startRunCombat(run, db);
-  return settleRunCombat(started.run, endedCombat(started.combat, "victory"), db);
+  return settleRunCombat(
+    started.run,
+    endedCombat(started.combat, "victory"),
+    db,
+  );
 };
 
 // 레거시 v5 fallback 경로 (acts 없는 그래프 + coinRemovalResolved:false 저장):
 // P6 신스펙 보상은 제거 단계를 만들지 않으므로, v5 저장이 실릴 때만 도달한다.
 // coinOptions는 v5 보상이 저장했을 reward 스트림 셔플로 재구성한다.
-const REWARD_COIN_IDS = ["basic", "fire", "mana"].map((coin) => id<CoinDefId>(coin));
+const REWARD_COIN_IDS = ["basic", "fire", "mana"].map((coin) =>
+  id<CoinDefId>(coin),
+);
 const legacyFallbackState = (seed: string, attempt = 0): RunState => {
   const db = exhaustedSkillDb();
   const base = newRun(seed, db);
   return {
     ...base,
     graph: {
-      layers: [[combatNode("l0", "raider")], [combatNode("l1", "shaman")], [combatNode("l2", "gatekeeper")]],
+      layers: [
+        [combatNode("l0", "raider")],
+        [combatNode("l1", "shaman")],
+        [combatNode("l2", "gatekeeper")],
+      ],
     },
     nodeChoices: [0, 0, 0],
     combatIndex: 2,
     attempt,
     phase: "rewards",
     pendingRewards: {
-      coinOptions: rngFrom(derive(seedFromString(seed), "reward", 1)).shuffle(REWARD_COIN_IDS),
+      coinOptions: rngFrom(derive(seedFromString(seed), "reward", 1)).shuffle(
+        REWARD_COIN_IDS,
+      ),
       coinChoiceResolved: false,
       coinRemovalResolved: false,
       skillOptions: [],
@@ -309,14 +354,21 @@ const replayRun = (seed: string) => {
   const db = testDb();
   let run = newRun(seed);
   const encounters: string[][] = [];
-  const rewards: { coins: string[]; skills: string[]; passives: string[] }[] = [];
+  const rewards: { coins: string[]; skills: string[]; passives: string[] }[] =
+    [];
   let guard = 0;
   while (run.phase !== "victory" && run.phase !== "defeat") {
     if (++guard > 500) throw new Error("replay did not terminate");
     if (run.phase === "ready") {
       const started = startRunCombat(run, db);
-      encounters.push(started.combat.enemies.map((enemy) => String(enemy.defId)));
-      run = settleRunCombat(started.run, endedCombat(started.combat, "victory"), db);
+      encounters.push(
+        started.combat.enemies.map((enemy) => String(enemy.defId)),
+      );
+      run = settleRunCombat(
+        started.run,
+        endedCombat(started.combat, "victory"),
+        db,
+      );
       if (run.phase === "rewards" && run.pendingRewards !== undefined) {
         rewards.push({
           coins: run.pendingRewards.coinOptions.map(String),
@@ -370,19 +422,25 @@ describe("run progression", () => {
     // 최종(3막) 보스는 보상 없이 victory — 전투 26회 중 25회만 보상을 만든다
     expect(first.rewards).toHaveLength(25);
     for (const reward of first.rewards) {
-      expect(new Set(reward.coins)).toEqual(new Set(["basic", "fire"]));
-      expect(reward.coins).toHaveLength(2);
+      expect(new Set(reward.coins)).toEqual(new Set(["basic", "fire", "mana"]));
+      expect(reward.coins).toHaveLength(3);
       // P6 신스펙: 스킬은 엘리트 1 제안, 패시브는 보스 3중1택 — 그 외 0
       expect([0, 1]).toContain(reward.skills.length);
       expect([0, 3]).toContain(reward.passives.length);
     }
     // 1·2막 보스 보상만 패시브 3중1택을 낸다 (passive-<layer> 스트림 골든)
-    expect(first.rewards.filter((reward) => reward.passives.length === 3).map((r) => r.passives)).toEqual([
+    expect(
+      first.rewards
+        .filter((reward) => reward.passives.length === 3)
+        .map((r) => r.passives),
+    ).toEqual([
       ["p3", "p2", "p1"],
       ["p2", "p3", "p1"],
     ]);
     // 엘리트 3회(전투 우선 경로) — 각 스킬 1 제안
-    expect(first.rewards.filter((reward) => reward.skills.length === 1)).toHaveLength(3);
+    expect(
+      first.rewards.filter((reward) => reward.skills.length === 1),
+    ).toHaveLength(3);
     expect(first.run.phase).toBe("victory");
     expect(first.run.combatIndex).toBe(29);
     expect(first.run.gold).toBe(1210);
@@ -397,9 +455,15 @@ describe("run progression", () => {
     expect(run.shopRemovals).toBe(0);
     expect(run.shopPurchasedCoins).toBe(0);
     expect(run.shopPurchasedSkills).toBe(0);
-    expect(run.graph.acts).toEqual([{ start: 0 }, { start: 10 }, { start: 20 }]);
+    expect(run.graph.acts).toEqual([
+      { start: 0 },
+      { start: 10 },
+      { start: 20 },
+    ]);
     // 시드 골든: 30레이어 kind 배열 전체 (그래프 스트림 회귀 검출)
-    expect(run.graph.layers.map((layer) => layer.map((node) => node.kind))).toEqual([
+    expect(
+      run.graph.layers.map((layer) => layer.map((node) => node.kind)),
+    ).toEqual([
       ["combat"],
       ["shop", "combat", "event"],
       ["elite", "combat"],
@@ -436,9 +500,16 @@ describe("run progression", () => {
       expect(run.graph.layers[restIndex]).toHaveLength(1);
       expect(run.graph.layers[restIndex]![0]!.kind).toBe("rest");
     }
-    expect(run.graph.layers[9]![0]!.encounter?.map(String)).toEqual(["gatekeeper-plus"]);
-    expect(run.graph.layers[19]![0]!.encounter?.map(String)).toEqual(["raider-plus", "gatekeeper-plus"]);
-    expect(run.graph.layers[29]![0]!.encounter?.map(String)).toEqual(["ember-archmage"]);
+    expect(run.graph.layers[9]![0]!.encounter?.map(String)).toEqual([
+      "gatekeeper-plus",
+    ]);
+    expect(run.graph.layers[19]![0]!.encounter?.map(String)).toEqual([
+      "raider-plus",
+      "gatekeeper-plus",
+    ]);
+    expect(run.graph.layers[29]![0]!.encounter?.map(String)).toEqual([
+      "ember-archmage",
+    ]);
     // 분기 방문 후보 2~3개, 1막 방문1~2 후보에서 elite 제외 (가드레일)
     for (const [index, layer] of run.graph.layers.entries()) {
       if (![0, 8, 9, 18, 19, 28, 29].includes(index)) {
@@ -446,7 +517,9 @@ describe("run progression", () => {
         expect(layer.length).toBeLessThanOrEqual(3);
       }
     }
-    expect(run.graph.layers[1]!.some((node) => node.kind === "elite")).toBe(false);
+    expect(run.graph.layers[1]!.some((node) => node.kind === "elite")).toBe(
+      false,
+    );
 
     const started = startRunCombat(
       {
@@ -466,7 +539,9 @@ describe("run progression", () => {
       },
       db,
     );
-    expect(started.combat.enemies.map((enemy) => String(enemy.defId))).toEqual(["gatekeeper"]);
+    expect(started.combat.enemies.map((enemy) => String(enemy.defId))).toEqual([
+      "gatekeeper",
+    ]);
   });
 
   it("guards graph invariants at every public entry point (P4.1 통합 감사)", () => {
@@ -504,12 +579,12 @@ describe("run progression", () => {
     // 정상 내부 흐름(start를 거친 run) 가정으로 검증을 우회하지 않는다.
     const started = startRunCombat(run, db);
     const ended = endedCombat(started.combat, "victory");
-    expect(() => settleRunCombat({ ...started.run, gold: -1 }, ended, db)).toThrow(
-      "gold must be a non-negative integer",
-    );
-    expect(() => settleRunCombat({ ...started.run, nodeChoices: [0] }, ended, db)).toThrow(
-      "node choices must cover every layer",
-    );
+    expect(() =>
+      settleRunCombat({ ...started.run, gold: -1 }, ended, db),
+    ).toThrow("gold must be a non-negative integer");
+    expect(() =>
+      settleRunCombat({ ...started.run, nodeChoices: [0] }, ended, db),
+    ).toThrow("node choices must cover every layer");
 
     // 미래 레이어 손상도 거부 (감사 3차) — 빈 미래 층 / 범위 밖 미래 선택
     const futureEmpty = {
@@ -528,7 +603,9 @@ describe("run progression", () => {
       },
       nodeChoices: [0, 0],
     };
-    expect(() => startRunCombat(futureEmpty, db)).toThrow("run graph layer 1 is empty");
+    expect(() => startRunCombat(futureEmpty, db)).toThrow(
+      "run graph layer 1 is empty",
+    );
     const futureOutOfRange = {
       ...started.run,
       nodeChoices: started.run.nodeChoices.map((choice, index) =>
@@ -552,7 +629,8 @@ describe("run progression", () => {
     expect(nodeGoldReward("rest")).toBe(0);
     // 불변식: 최종 골드 = 방문한 노드 kind별 고정 보상의 합 (경로 무관 검산)
     const visitedGold = replay.run.graph.layers.reduce(
-      (sum, layer, index) => sum + nodeGoldReward(layer[replay.run.nodeChoices[index] ?? 0]!.kind),
+      (sum, layer, index) =>
+        sum + nodeGoldReward(layer[replay.run.nodeChoices[index] ?? 0]!.kind),
       0,
     );
     expect(replay.run.gold).toBe(visitedGold);
@@ -562,8 +640,15 @@ describe("run progression", () => {
   it("carries lost HP into the next combat without healing", () => {
     const db = testDb();
     const first = startRunCombat(newRun(), db);
-    const settled = settleRunCombat(first.run, endedCombat(first.combat, "victory", 61), db);
-    const next = startRunCombat(advanceUntilReady(resolveAllRewards(settled, db), db), db);
+    const settled = settleRunCombat(
+      first.run,
+      endedCombat(first.combat, "victory", 61),
+      db,
+    );
+    const next = startRunCombat(
+      advanceUntilReady(resolveAllRewards(settled, db), db),
+      db,
+    );
 
     expect(next.run.currentHp).toBe(61);
     expect(next.combat.player).toMatchObject({ hp: 61, maxHp: 70 });
@@ -589,7 +674,11 @@ describe("run progression", () => {
         discard: [...first.combat.zones.discard, temporaryUid],
       },
     };
-    let run = settleRunCombat(first.run, endedCombat(withTemporary, "victory"), db);
+    let run = settleRunCombat(
+      first.run,
+      endedCombat(withTemporary, "victory"),
+      db,
+    );
     run = chooseCoinReward(run, id<CoinDefId>("fire"), db);
     const next = startRunCombat(advanceUntilReady(run, db), db);
     const permanent = Object.values(next.combat.coins)
@@ -600,7 +689,11 @@ describe("run progression", () => {
     expect(run.bag.map(String)).toContain("fire");
     expect(run.bag.map(String)).not.toContain("ash");
     expect(permanent).toEqual(run.bag.map(String).sort());
-    expect(Object.values(next.combat.coins).some((coin) => String(coin.defId) === "ash")).toBe(false);
+    expect(
+      Object.values(next.combat.coins).some(
+        (coin) => String(coin.defId) === "ash",
+      ),
+    ).toBe(false);
   });
 
   // P3.2 명시적 풀 경계: exclusiveTo 스킬은 다른 캐릭터의 보상 풀·셔플에 존재 자체가 개입하지 않는다
@@ -634,8 +727,16 @@ describe("run progression", () => {
       exclusiveTo: id<CharacterId>("guardian"),
     };
     const owned = db.characters["warrior"]!.startingSkills;
-    const guardianPool = rewardEligibleSkillIds(db.skills, id<CharacterId>("guardian"), owned).map(String);
-    const warriorPool = rewardEligibleSkillIds(db.skills, id<CharacterId>("warrior"), owned).map(String);
+    const guardianPool = rewardEligibleSkillIds(
+      db.skills,
+      id<CharacterId>("guardian"),
+      owned,
+    ).map(String);
+    const warriorPool = rewardEligibleSkillIds(
+      db.skills,
+      id<CharacterId>("warrior"),
+      owned,
+    ).map(String);
 
     expect(guardianPool).toContain("gx");
     expect(warriorPool).not.toContain("gx");
@@ -648,14 +749,22 @@ describe("run progression", () => {
 
   it("keeps the default test pool at 3 coins so legacy goldens stay on the legacy path", () => {
     // ash가 다시 db에 들어오면 이 테스트가 §825 경계 침범을 즉시 알린다
-    expect(Object.keys(testDb().coins).sort()).toEqual(["basic", "fire", "mana"]);
+    expect(Object.keys(testDb().coins).sort()).toEqual([
+      "basic",
+      "fire",
+      "mana",
+    ]);
   });
 
   it("resolves a normal combat reward as a single coin pick without removal or skill stages", () => {
     // P6 D1 신스펙: 일반 전투 보상 = 동전 3중1택뿐, 제거 단계는 상점 전용으로 회귀
     const db = testDb();
     const started = startRunCombat(newRun(), db);
-    const rewards = settleRunCombat(started.run, endedCombat(started.combat, "victory"), db);
+    const rewards = settleRunCombat(
+      started.run,
+      endedCombat(started.combat, "victory"),
+      db,
+    );
 
     expect(rewards.pendingRewards).toMatchObject({
       coinChoiceResolved: false,
@@ -665,7 +774,7 @@ describe("run progression", () => {
       passiveOptions: [],
       passiveChoiceResolved: true,
     });
-    expect(rewards.pendingRewards?.coinOptions).toHaveLength(2);
+    expect(rewards.pendingRewards?.coinOptions).toHaveLength(3);
     expect(rewards.gold).toBe(35);
 
     const chosen = chooseCoinReward(rewards, id<CoinDefId>("fire"), db);
@@ -692,12 +801,18 @@ describe("run progression", () => {
 
     const afterCoin = chooseCoinReward(rewards, null, db);
     // 신스펙 보상에 제거 단계는 존재하지 않는다 (저장 호환 필드만 true 고정)
-    expect(() => resolveCoinRemoval(afterCoin, 0, db)).toThrow("coin removal is already resolved");
+    expect(() => resolveCoinRemoval(afterCoin, 0, db)).toThrow(
+      "coin removal is already resolved",
+    );
 
     const skill = afterCoin.pendingRewards?.skillOptions[0];
     if (skill === undefined) throw new Error("missing skill reward");
-    expect(() => chooseSkillReward(afterCoin, skill, 8, db)).toThrow("replacement slot is out of range");
-    expect(() => chooseSkillReward(afterCoin, skill, -1, db)).toThrow("replacement slot is out of range");
+    expect(() => chooseSkillReward(afterCoin, skill, 8, db)).toThrow(
+      "replacement slot is out of range",
+    );
+    expect(() => chooseSkillReward(afterCoin, skill, -1, db)).toThrow(
+      "replacement slot is out of range",
+    );
 
     // replaceSlot 생략 → 첫 빈 슬롯(6)에 자동 장착
     const autoFilled = chooseSkillReward(afterCoin, skill, undefined, db);
@@ -718,7 +833,9 @@ describe("run progression", () => {
     // 만석이면 replaceSlot 필수
     const full = {
       ...afterCoin,
-      equippedSkills: afterCoin.equippedSkills.map((slotSkill, index) => slotSkill ?? id<SkillId>(`filler-${index}`)),
+      equippedSkills: afterCoin.equippedSkills.map(
+        (slotSkill, index) => slotSkill ?? id<SkillId>(`filler-${index}`),
+      ),
     };
     expect(() => chooseSkillReward(full, skill, undefined, db)).toThrow(
       "replaceSlot is required when all slots are filled",
@@ -754,8 +871,10 @@ describe("run progression", () => {
         skillChoiceResolved: true,
       },
     });
-    expect(options).toHaveLength(2);
-    expect(new Set(options?.map(String))).toEqual(new Set(["basic", "fire"]));
+    expect(options).toHaveLength(3);
+    expect(new Set(options?.map(String))).toEqual(
+      new Set(["basic", "fire", "mana"]),
+    );
 
     const selected = options?.[0];
     if (selected === undefined) throw new Error("missing fallback coin option");
@@ -794,16 +913,32 @@ describe("run progression", () => {
     const skill = rewards.pendingRewards?.skillOptions[0];
     if (skill === undefined) throw new Error("missing skill reward");
 
-    expect(() => chooseCoinReward(ready, null, db)).toThrow("run is not resolving rewards");
-    expect(() => resolveCoinRemoval(rewards, null, db)).toThrow("coin reward must be resolved first");
-    expect(() => chooseSkillReward(rewards, skill, 0, db)).toThrow("coin reward must be resolved first");
-    expect(() => skipSkillReward(rewards)).toThrow("coin reward must be resolved first");
-    expect(() => choosePassiveReward(rewards, null)).toThrow("coin reward must be resolved first");
+    expect(() => chooseCoinReward(ready, null, db)).toThrow(
+      "run is not resolving rewards",
+    );
+    expect(() => resolveCoinRemoval(rewards, null, db)).toThrow(
+      "coin reward must be resolved first",
+    );
+    expect(() => chooseSkillReward(rewards, skill, 0, db)).toThrow(
+      "coin reward must be resolved first",
+    );
+    expect(() => skipSkillReward(rewards)).toThrow(
+      "coin reward must be resolved first",
+    );
+    expect(() => choosePassiveReward(rewards, null)).toThrow(
+      "coin reward must be resolved first",
+    );
     const afterCoin = chooseCoinReward(rewards, null, db);
     // 엘리트 보상에 패시브 단계는 없다 — 해결 상태로 생성되어 재해결이 거부된다
-    expect(() => choosePassiveReward(afterCoin, null)).toThrow("passive reward is already resolved");
+    expect(() => choosePassiveReward(afterCoin, null)).toThrow(
+      "passive reward is already resolved",
+    );
     // 레거시 v5 저장의 제거 단계 순서 가드도 유지된다
-    const legacy = chooseCoinReward(legacyFallbackState("B2-ORDER"), null, exhaustedSkillDb());
+    const legacy = chooseCoinReward(
+      legacyFallbackState("B2-ORDER"),
+      null,
+      exhaustedSkillDb(),
+    );
     const legacySkillPending = {
       ...legacy,
       pendingRewards: {
@@ -812,28 +947,50 @@ describe("run progression", () => {
         skillChoiceResolved: false,
       },
     };
-    expect(() => chooseSkillReward(legacySkillPending, id<SkillId>("s7"), 0, db)).toThrow(
+    expect(() =>
+      chooseSkillReward(legacySkillPending, id<SkillId>("s7"), 0, db),
+    ).toThrow("coin removal must be resolved first");
+    expect(() => skipSkillReward(legacySkillPending)).toThrow(
       "coin removal must be resolved first",
     );
-    expect(() => skipSkillReward(legacySkillPending)).toThrow("coin removal must be resolved first");
-    expect(() => resumeAbandonedCombat(ready)).toThrow("run has no abandoned combat");
-    expect(() => startRunCombat(started.run, db)).toThrow("run is not ready to start combat");
-    expect(() => settleRunCombat(ready, started.combat, db)).toThrow("run is not in combat");
-    expect(() => settleRunCombat(started.run, started.combat, db)).toThrow("combat has not ended");
+    expect(() => resumeAbandonedCombat(ready)).toThrow(
+      "run has no abandoned combat",
+    );
+    expect(() => startRunCombat(started.run, db)).toThrow(
+      "run is not ready to start combat",
+    );
+    expect(() => settleRunCombat(ready, started.combat, db)).toThrow(
+      "run is not in combat",
+    );
+    expect(() => settleRunCombat(started.run, started.combat, db)).toThrow(
+      "combat has not ended",
+    );
   });
 
   it("rejects unoffered rewards, invalid removals, and repeated resolutions", () => {
     const db = testDb();
     const rewards = eliteRewardState(db);
-    expect(() => chooseCoinReward(rewards, id<CoinDefId>("ash"), db)).toThrow("coin is not an offered reward");
+    expect(() => chooseCoinReward(rewards, id<CoinDefId>("ash"), db)).toThrow(
+      "coin is not an offered reward",
+    );
 
     const afterCoin = chooseCoinReward(rewards, null, db);
-    expect(() => chooseCoinReward(afterCoin, null, db)).toThrow("coin reward is already resolved");
-    expect(() => chooseSkillReward(afterCoin, id<SkillId>("s1"), 0, db)).toThrow("skill is not an offered reward");
+    expect(() => chooseCoinReward(afterCoin, null, db)).toThrow(
+      "coin reward is already resolved",
+    );
+    expect(() =>
+      chooseSkillReward(afterCoin, id<SkillId>("s1"), 0, db),
+    ).toThrow("skill is not an offered reward");
 
     // 레거시 v5 제거 단계의 인덱스·중복 해결 가드
-    const legacyAfterCoin = chooseCoinReward(legacyFallbackState("B2-INVALID"), null, exhaustedSkillDb());
-    expect(() => resolveCoinRemoval(legacyAfterCoin, -1, exhaustedSkillDb())).toThrow("bag index is out of range");
+    const legacyAfterCoin = chooseCoinReward(
+      legacyFallbackState("B2-INVALID"),
+      null,
+      exhaustedSkillDb(),
+    );
+    expect(() =>
+      resolveCoinRemoval(legacyAfterCoin, -1, exhaustedSkillDb()),
+    ).toThrow("bag index is out of range");
   });
 
   // ── P6 D1 — 휴식: 최대HP 30% 회복(내림·상한) 또는 강화 정의 스킬 1회 강화 택1 ──
@@ -842,7 +999,10 @@ describe("run progression", () => {
     const restState = (currentHp: number): RunState => ({
       ...newRun("REST-NODE"),
       graph: {
-        layers: [[{ id: "r0", kind: "rest" as const }], [combatNode("c1", "raider")]],
+        layers: [
+          [{ id: "r0", kind: "rest" as const }],
+          [combatNode("c1", "raider")],
+        ],
         acts: [{ start: 0 }],
       },
       nodeChoices: [0, 0],
@@ -857,7 +1017,9 @@ describe("run progression", () => {
     expect(healed.phase).toBe("ready");
     expect(healed.combatIndex).toBe(1);
     expect(restHeal(restState(55), db).currentHp).toBe(70);
-    expect(() => restHeal(newRun("REST-NODE"), db)).toThrow("run is not resting");
+    expect(() => restHeal(newRun("REST-NODE"), db)).toThrow(
+      "run is not resting",
+    );
   });
 
   it("upgrades only skills with a defined upgrade, once per slot, at rest nodes", () => {
@@ -865,23 +1027,50 @@ describe("run progression", () => {
     const restState = (upgraded = false): RunState => ({
       ...newRun("REST-UPGRADE"),
       graph: {
-        layers: [[{ id: "r0", kind: "rest" as const }], [combatNode("c1", "raider")]],
+        layers: [
+          [{ id: "r0", kind: "rest" as const }],
+          [combatNode("c1", "raider")],
+        ],
         acts: [{ start: 0 }],
       },
       nodeChoices: [0, 0],
       phase: "rest",
       // P7 D2 — 슬롯 8 고정 (equippedSkills와 길이 일치 불변식)
-      upgradedSlots: [upgraded, false, false, false, false, false, false, false] as UpgradedSlots,
+      upgradedSlots: [
+        upgraded,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+      ] as UpgradedSlots,
     });
 
     const upgraded = restUpgrade(restState(), 0, db);
-    expect(upgraded.upgradedSlots).toEqual([true, false, false, false, false, false, false, false]);
+    expect(upgraded.upgradedSlots).toEqual([
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
     expect(upgraded.restUpgrades).toBe(1);
     expect(upgraded.phase).toBe("ready");
     // 강화 미정의(s2)·이미 강화된 슬롯·범위 밖 슬롯 거부
-    expect(() => restUpgrade(restState(), 1, db)).toThrow("skill has no upgrade");
-    expect(() => restUpgrade(restState(true), 0, db)).toThrow("slot is already upgraded");
-    expect(() => restUpgrade(restState(), 9, db)).toThrow("upgrade slot is out of range");
+    expect(() => restUpgrade(restState(), 1, db)).toThrow(
+      "skill has no upgrade",
+    );
+    expect(() => restUpgrade(restState(true), 0, db)).toThrow(
+      "slot is already upgraded",
+    );
+    expect(() => restUpgrade(restState(), 9, db)).toThrow(
+      "upgrade slot is out of range",
+    );
 
     // D3 — 순수 강화 적용: patch(baseAmount +1)가 파생 def에만 반영, 원본 불변
     const derived = deriveUpgradedSkill(db.skills["s1"]!);
@@ -905,13 +1094,62 @@ describe("run progression", () => {
     expect(upgradedContentDb(restState(), db)).toBe(db);
   });
 
+  it("replaces remise repeat finish effects in upgraded overlays without mutating the base skill", () => {
+    const db = testDb();
+    db.skills["s1"] = {
+      ...(simpleSkill("s1") as FlipSkillDef),
+      remise: {
+        onRepeatFinish: [
+          { kind: "applyStatus", status: "shock", stacks: 1, to: "target" },
+        ],
+      },
+      upgrade: {
+        name: "s1+",
+        description: "반복 종료 감전 1 → 2",
+        patch: {
+          kind: "replaceEffect",
+          section: "onRepeatFinish",
+          index: 0,
+          effect: {
+            kind: "applyStatus",
+            status: "shock",
+            stacks: 2,
+            to: "target",
+          },
+        },
+      },
+    };
+    const run = {
+      ...newRun("REMISE-UPGRADE"),
+      upgradedSlots: [true, false, false, false, false, false, false, false],
+    } as RunState;
+
+    const derived = deriveUpgradedSkill(db.skills["s1"]!);
+    expect(derived.type === "flip" && derived.remise?.onRepeatFinish).toEqual([
+      { kind: "applyStatus", status: "shock", stacks: 2, to: "target" },
+    ]);
+    expect(
+      db.skills["s1"]!.type === "flip" &&
+        db.skills["s1"]!.remise?.onRepeatFinish,
+    ).toEqual([
+      { kind: "applyStatus", status: "shock", stacks: 1, to: "target" },
+    ]);
+    const overlayS1 = upgradedContentDb(run, db).skills["s1"]!;
+    expect(overlayS1.type === "flip" && overlayS1.remise?.onRepeatFinish).toEqual([
+      { kind: "applyStatus", status: "shock", stacks: 2, to: "target" },
+    ]);
+  });
+
   // ── P6 D1 — 보물: 금화 100 + 결정론 패시브 1 부여, 풀 소진 시 금화만 ──
   it("grants 100 gold plus a rolled passive at treasure nodes, or gold only when exhausted", () => {
     const db = testDb();
     const treasureChoiceState = (acquired: string[] = []): RunState => ({
       ...newRun("TREASURE-NODE"),
       graph: {
-        layers: [[{ id: "t0", kind: "treasure" as const }, combatNode("c0", "raider")], [combatNode("c1", "raider")]],
+        layers: [
+          [{ id: "t0", kind: "treasure" as const }, combatNode("c0", "raider")],
+          [combatNode("c1", "raider")],
+        ],
         acts: [{ start: 0 }],
       },
       nodeChoices: [0, 0],
@@ -924,7 +1162,9 @@ describe("run progression", () => {
     // passive-<layer> 스트림 결정론 롤 — warrior 적격 풀(p1~p3)에서만 나온다
     const rolled = entered.pendingTreasure?.passiveOption;
     expect(["p1", "p2", "p3"]).toContain(String(rolled));
-    expect(chooseRunNode(treasureChoiceState(), 0, db).pendingTreasure).toEqual(entered.pendingTreasure);
+    expect(chooseRunNode(treasureChoiceState(), 0, db).pendingTreasure).toEqual(
+      entered.pendingTreasure,
+    );
 
     const claimed = claimTreasure(entered, db);
     expect(claimed.gold).toBe(entered.gold + 100);
@@ -934,11 +1174,19 @@ describe("run progression", () => {
     expect(claimed.pendingTreasure).toBeUndefined();
 
     // 풀 소진(전 패시브 보유): 패시브 없이 금화만
-    const exhausted = chooseRunNode(treasureChoiceState(["p1", "p2", "p3"]), 0, db);
+    const exhausted = chooseRunNode(
+      treasureChoiceState(["p1", "p2", "p3"]),
+      0,
+      db,
+    );
     expect(exhausted.pendingTreasure).toEqual({ passiveOption: null });
     const claimedExhausted = claimTreasure(exhausted, db);
     expect(claimedExhausted.gold).toBe(exhausted.gold + 100);
-    expect(claimedExhausted.acquiredPassives.map(String)).toEqual(["p1", "p2", "p3"]);
+    expect(claimedExhausted.acquiredPassives.map(String)).toEqual([
+      "p1",
+      "p2",
+      "p3",
+    ]);
   });
 
   // ── P6 D1/D2 — 막 전환·보스 패시브 3중1택·막별 적 스케일 ──
@@ -953,10 +1201,16 @@ describe("run progression", () => {
     }
     const boss = startRunCombat(run, db);
     // 1막 스케일 ×1.0 — 정의 수치 그대로
-    expect(boss.combat.enemies.map((enemy) => String(enemy.defId))).toEqual(["gatekeeper-plus"]);
+    expect(boss.combat.enemies.map((enemy) => String(enemy.defId))).toEqual([
+      "gatekeeper-plus",
+    ]);
     expect(boss.combat.enemies[0]!.maxHp).toBe(10);
 
-    const settled = settleRunCombat(boss.run, endedCombat(boss.combat, "victory"), db);
+    const settled = settleRunCombat(
+      boss.run,
+      endedCombat(boss.combat, "victory"),
+      db,
+    );
     // 보스 보상: 금화 100 + 동전 3택 + 패시브 3중1택 (제거 단계 없음)
     expect(settled.gold).toBe(run.gold + 100);
     expect(settled.pendingRewards).toMatchObject({
@@ -966,11 +1220,15 @@ describe("run progression", () => {
       passiveChoiceResolved: false,
     });
     expect(settled.pendingRewards?.passiveOptions).toHaveLength(3);
-    expect(new Set(settled.pendingRewards?.passiveOptions?.map(String))).toEqual(new Set(["p1", "p2", "p3"]));
+    expect(
+      new Set(settled.pendingRewards?.passiveOptions?.map(String)),
+    ).toEqual(new Set(["p1", "p2", "p3"]));
 
     const afterCoin = chooseCoinReward(settled, null, db);
     expect(afterCoin.phase).toBe("rewards");
-    expect(() => choosePassiveReward(afterCoin, id<PassiveId>("p9"), db)).toThrow("passive is not an offered reward");
+    expect(() =>
+      choosePassiveReward(afterCoin, id<PassiveId>("p9"), db),
+    ).toThrow("passive is not an offered reward");
 
     // 스킵: 획득 없이 막 전환
     const skipped = choosePassiveReward(afterCoin, null, db);
@@ -1005,8 +1263,16 @@ describe("run progression", () => {
     expect(retried.run.attempt).toBe(1);
     expect(retried.combat.rng).not.toEqual(first.combat.rng);
 
-    const firstRewards = settleRunCombat(first.run, endedCombat(first.combat, "victory", 64), db);
-    const retryRewards = settleRunCombat(retried.run, endedCombat(retried.combat, "victory", 64), db);
+    const firstRewards = settleRunCombat(
+      first.run,
+      endedCombat(first.combat, "victory", 64),
+      db,
+    );
+    const retryRewards = settleRunCombat(
+      retried.run,
+      endedCombat(retried.combat, "victory", 64),
+      db,
+    );
     expect(retryRewards.pendingRewards).toEqual(firstRewards.pendingRewards);
     expect(retryRewards.attempt).toBe(0);
   });
@@ -1014,7 +1280,11 @@ describe("run progression", () => {
   it("preserves every run-boundary field through a JSON save round trip", () => {
     const db = testDb();
     const started = startRunCombat(newRun("SAVE-ROUND-TRIP"), db);
-    const rewards = settleRunCombat(started.run, endedCombat(started.combat, "victory", 63), db);
+    const rewards = settleRunCombat(
+      started.run,
+      endedCombat(started.combat, "victory", 63),
+      db,
+    );
     const save: RunSave = rewards;
     const parsed = JSON.parse(JSON.stringify(save)) as RunSave;
 
@@ -1048,7 +1318,11 @@ describe("run progression", () => {
     const db = testDb();
     const first = startRunCombat(newRun("DEFEAT"), db);
     const retried = startRunCombat(resumeAbandonedCombat(first.run), db);
-    const defeated = settleRunCombat(retried.run, endedCombat(retried.combat, "defeat", 0), db);
+    const defeated = settleRunCombat(
+      retried.run,
+      endedCombat(retried.combat, "defeat", 0),
+      db,
+    );
 
     expect(defeated).toMatchObject({
       phase: "defeat",

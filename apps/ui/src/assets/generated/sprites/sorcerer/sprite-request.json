@@ -24,80 +24,31 @@
       255,
       0
     ],
-    "selection": "auto",
-    "score": 213.92,
-    "min_subject_distance": 209.11,
-    "background": {
-      "mode": "flat",
-      "hex": "#11E81D",
-      "rgb": [
-        17,
-        232,
-        29
-      ],
-      "opaque_border_fraction": 1.0,
-      "border_coverage": 1.0,
-      "enclosed_background_pixels": 83,
-      "enclosed_material_pixels": 0,
-      "subject_pixels": 6211
-    },
-    "candidates": [
-      {
-        "name": "magenta",
-        "hex": "#FF00FF",
-        "score": 203.7,
-        "min_subject_distance": 200.68,
-        "clears_erase_radius": true
-      },
-      {
-        "name": "green",
-        "hex": "#00FF00",
-        "score": 213.92,
-        "min_subject_distance": 209.11,
-        "clears_erase_radius": true
-      },
-      {
-        "name": "cyan",
-        "hex": "#00FFFF",
-        "score": 129.33,
-        "min_subject_distance": 79.42,
-        "clears_erase_radius": false
-      },
-      {
-        "name": "blue",
-        "hex": "#004DFF",
-        "score": 98.77,
-        "min_subject_distance": 21.26,
-        "clears_erase_radius": false
-      }
-    ],
-    "selection_reason": "highest 1st-percentile subject distance among the 2 candidate(s) clearing the 96 erase radius"
+    "selection": "manual"
   },
   "states": {
     "idle": {
       "frames": 4,
       "fps": 4,
       "loop": true,
-      "action": "near-static combat idle loop: frame 4 must be a visually identical duplicate of frame 1, with the exact same planted feet, staff orb coordinate, staff length and angle, robe silhouette, guard, hand, cape silhouette, body height, and pose; frame 2 changes only the eyes for one blink, frame 3 changes only the chest by one subtle breathing step; never resize or reposition the weapon"
+      "action": "subtle fencing en-garde breathing loop, rapier tip stays forward, petite duelist stance"
     },
     "attack": {
       "frames": 4,
       "fps": 8,
       "loop": false,
-      "action": "readable staff cast: compact windup raising the staff, forward thrust of the spark orb, brief casting hold, recovery toward combat idle; body and staff only, no detached effects"
+      "action": "fencing lunge sequence: en-garde, step-in windup, straight rapier thrust, recover to en-garde - body and rapier motion only, sparks stay attached to the blade"
     },
     "hurt": {
       "frames": 4,
       "fps": 8,
       "loop": false,
-      "action": "brief impact recoil: flinch backward pulling the staff close, stagger, regain footing, settle toward combat idle; no counterattack and no detached effects"
+      "action": "flinch back from a hit and recover, body-only reaction"
     }
   },
-  "style": "match the accepted idle anchor exactly: crisp 16-bit-inspired pixel art, identical proportions, outline weight, detail density, palette, dark navy robe with lightning embroidery, spark-orb staff, silver-grey hair",
+  "style": "match the attached base/anchor reference image EXACTLY: same pixel density (logical pixel block size), same body proportions, same outline weight, same palette, same shading style, same level of detail. Do not restyle, do not change proportions, do not add or remove detail density. Avoid polished illustration, painterly rendering, anime key art, 3D render, vector app-icon polish, glossy lighting, soft gradients, and anti-aliased high-detail edges.",
   "motion_phase_guides": false,
   "fit": {
-    "align_x": "bbox-center",
-    "align_y": "bottom",
     "pixel_perfect": true,
     "logical_height": 86,
     "palette_size": 32

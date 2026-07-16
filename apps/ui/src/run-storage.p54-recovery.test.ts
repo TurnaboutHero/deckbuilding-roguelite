@@ -121,6 +121,25 @@ describe("P5.4 저장 복구 계약", () => {
     expect(storage.values.get(RUN_SAVE_QUARANTINE_KEY)).toBe(future);
   });
 
+  it("retired guardian 저장은 retired-character로 판별하고 원문을 격리한다", () => {
+    const storage = new MemoryStorage();
+    const retired = JSON.stringify({
+      ...JSON.parse(serializeRunSave(freshSave(), contentDb)),
+      version: 8,
+      contentVersion: "1.6.0-blood",
+      character: "guardian",
+      maxHp: 70,
+      currentHp: 70,
+      bag: ["basic", "basic", "basic", "basic", "basic", "basic", "basic", "basic", "mana", "mana"],
+      equippedSkills: ["slash", "guard", "warding-strike", "mana-bulwark", null, null, null, null],
+    });
+    storage.values.set(RUN_SAVE_KEY, retired);
+    const result = loadRunDetailed(storage, CONTENT_VERSION, contentDb);
+    expect(result.status).toBe("retired-character");
+    expect(result.save).toBeNull();
+    expect(storage.values.get(RUN_SAVE_QUARANTINE_KEY)).toBe(retired);
+  });
+
   it("clearRun은 주+백업을 정리하되 격리 원문은 보존한다", () => {
     const storage = new MemoryStorage();
     saveRun(storage, freshSave(), contentDb);

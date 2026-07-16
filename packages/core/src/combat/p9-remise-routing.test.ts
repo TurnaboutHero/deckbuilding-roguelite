@@ -24,64 +24,62 @@ const scriptedFlips = (faces: readonly Face[]): Rng => {
   };
 };
 
-const dbFor = (skill: FlipSkillDef): ContentDb => ({
+const skill: FlipSkillDef = {
+  id: id<SkillId>('test-remise'),
+  name: 'test-remise',
+  type: 'flip',
+  rarity: 'common',
+  tags: ['attack'],
+  targetType: 'single-enemy',
+  cost: 2,
+  base: [{ kind: 'damage', amount: 1 }]
+};
+
+const db: ContentDb = {
   coins: {
     basic: { id: id<CoinDefId>('basic'), element: null },
-    lightning: { id: id<CoinDefId>('lightning'), element: 'lightning' }
+    lightning: { id: id<CoinDefId>('lightning'), element: 'lightning', procs: { heads: [{ kind: 'damage', amount: 1 }], tails: [{ kind: 'block', amount: 1 }] } }
   },
   skills: { [String(skill.id)]: skill },
-  enemies: {
-    dummy: { id: id<EnemyDefId>('dummy'), name: '허수아비', maxHp: 99, intents: [{ id: 'idle', actions: [] }] }
-  },
+  enemies: { dummy: { id: id<EnemyDefId>('dummy'), name: 'dummy', maxHp: 99, intents: [{ id: 'idle', actions: [] }] } },
   characters: {
     duelist: {
-      id: id<CharacterId>('duelist'), name: '결투사', maxHp: 40,
+      id: id<CharacterId>('duelist'),
+      name: 'duelist',
+      maxHp: 40,
       startingBag: [id<CoinDefId>('basic'), id<CoinDefId>('lightning')],
       startingSkills: [skill.id],
-      trait: { id: 'remise', name: '르미즈', hook: 'combatStart', effects: [], mechanic: 'remise' }
+      trait: { id: 'remise', name: 'remise', hook: 'combatStart', effects: [], mechanic: 'remise' }
     }
   },
   passives: {
-    retrieval: {
-      id: id<PassiveId>('retrieval'), name: '회수 습관', description: '', hook: 'combatStart',
-      effects: [], mechanic: 'retrievalHabit', element: null, price: 0
-    },
-    residual: {
-      id: id<PassiveId>('residual'), name: '잔류 전하', description: '', hook: 'combatStart',
-      effects: [], mechanic: 'residualCharge', element: 'lightning', price: 0
-    }
+    retrieval: { id: id<PassiveId>('retrieval'), name: 'retrieval', description: 'x', hook: 'combatStart', effects: [], mechanic: 'retrievalHabit', element: null, price: 1 },
+    residual: { id: id<PassiveId>('residual'), name: 'residual', description: 'x', hook: 'combatStart', effects: [], mechanic: 'residualCharge', element: 'lightning', price: 1 }
   },
   validate: () => []
-});
+};
 
-const combat = (skill: FlipSkillDef, faces: readonly Face[]): CombatState => {
-  const db = dbFor(skill);
-  const created = createCombat(
+const combat = (faces: readonly Face[]): CombatState => {
+  const state = createCombat(
     {
-      character: id<CharacterId>('duelist'), enemies: [id<EnemyDefId>('dummy')],
+      character: id<CharacterId>('duelist'),
+      enemies: [id<EnemyDefId>('dummy')],
       bag: [id<CoinDefId>('basic'), id<CoinDefId>('lightning')],
       passives: [id<PassiveId>('retrieval'), id<PassiveId>('residual')]
     },
     db,
     'p9-remise-routing'
   );
-  const [first, second] = created.zones.hand;
-  if (first === undefined || second === undefined) throw new Error('expected two coins');
   return {
-    ...created,
-    coins: {
-      ...created.coins,
-      [Number(first)]: { ...created.coins[Number(first)]!, defId: id<CoinDefId>('basic') },
-      [Number(second)]: { ...created.coins[Number(second)]!, defId: id<CoinDefId>('lightning') }
-    },
-    zones: { ...created.zones, hand: [first, second], draw: [], discard: [] },
-    rngImpl: { ...created.rngImpl, flip: scriptedFlips(faces) }
+    ...state,
+    zones: { ...state.zones, hand: [1 as CoinUid, 2 as CoinUid], draw: [], discard: [] },
+    rngImpl: { ...state.rngImpl, flip: scriptedFlips(faces) }
   };
 };
 
-const resolve = (state: CombatState, db: ContentDb, coins: readonly CoinUid[]) => {
+const resolve = (state: CombatState) => {
   let current = state;
-  for (const coin of coins) {
+  for (const coin of state.zones.hand) {
     const placed = step(current, { type: 'placeCoin', coin, slot: slot(0) }, db);
     if (!placed.ok) throw new Error(placed.error);
     current = placed.state;
@@ -91,74 +89,26 @@ const resolve = (state: CombatState, db: ContentDb, coins: readonly CoinUid[]) =
   return result;
 };
 
-const testSkill = (returnFirstCoinOnReuse = false): FlipSkillDef => ({
-  id: id<SkillId>('test-remise'), name: '테스트 르미즈', type: 'flip', rarity: 'common',
-  tags: ['attack'], targetType: 'single-enemy', cost: 2, base: [{ kind: 'damage', amount: 1 }],
-  remise: { returnFirstCoinOnReuse }
-});
+describe('P9 Remise stack routing', () => {
+  it('routes retrieval and residual coins after a successful stack repeat without hand return', () => {
+    const result = resolve(combat(['heads', 'tails', 'tails', 'heads']));
 
-describe('P9 Remise coin routing', () => {
-  it('emits coinFlipped for the reflip and every free-reuse coin, then routes different passive coins', () => {
-    const skill = testSkill();
-    const db = dbFor(skill);
-    const state = combat(skill, ['heads', 'tails', 'heads', 'tails', 'tails']);
-    const coins = [...state.zones.hand];
-    const result = resolve(state, db, coins);
-
-    expect(result.events.filter((event) => event.type === 'coinFlipped')).toHaveLength(5);
-    expect(result.state.zones.draw.slice(0, 2)).toEqual(coins);
+    expect(result.events.filter((event) => event.type === 'coinFlipped')).toHaveLength(4);
+    expect(result.events).toContainEqual({ type: 'remiseSpent', skill: skill.id, firstFace: 'heads', repeat: true, remaining: 0 });
+    expect(result.events).toContainEqual({ type: 'remiseRepeatResolved', skill: skill.id });
+    expect(result.state.zones.draw.slice(0, 2)).toEqual([1 as CoinUid, 2 as CoinUid]);
+    expect(result.state.zones.hand).toEqual([]);
     expect(result.state.zones.discard).toEqual([]);
   });
 
-  it('gives a Fente-style hand return precedence only for that coin', () => {
-    const skill = testSkill(true);
-    const db = dbFor(skill);
-    const state = combat(skill, ['heads', 'tails', 'heads', 'tails', 'tails']);
-    const [first, second] = state.zones.hand;
-    if (first === undefined || second === undefined) throw new Error('expected two coins');
-    const result = resolve(state, db, [first, second]);
-
-    expect(result.state.zones.hand).toEqual([first]);
-    expect(result.state.zones.draw[0]).toBe(second);
-    expect(result.state.zones.discard).toEqual([]);
-  });
-
-  it('resolves the first face before its immediate reflip and still checks Remise before lethal base damage', () => {
-    const skill: FlipSkillDef = {
-      ...testSkill(),
-      cost: 1,
-      base: [{ kind: 'damage', amount: 200 }],
-      heads: { mode: 'any', effects: [{ kind: 'damage', amount: 1 }] }
-    };
-    const db = dbFor(skill);
-    const state = combat(skill, ['heads', 'tails']);
-    const first = state.zones.hand[0];
-    if (first === undefined) throw new Error('expected a coin');
-    const result = resolve(state, db, [first]);
-    const damageIndices = result.events.flatMap((event, index) => event.type === 'damageDealt' ? [index] : []);
-    const firstDamage = damageIndices[0] ?? -1;
-    const reflip = result.events.findIndex((event) => event.type === 'remiseReflipped');
-    const lethalDamage = damageIndices.at(-1) ?? -1;
-
-    expect(firstDamage).toBeGreaterThanOrEqual(0);
-    expect(reflip).toBeGreaterThan(firstDamage);
-    expect(lethalDamage).toBeGreaterThan(reflip);
-    expect(result.state.phase).toBe('victory');
-  });
-
-  it('fires onAttackSkillResolved once for the original and once for a free reuse', () => {
-    const skill = testSkill();
-    const db = dbFor(skill);
-    const created = combat(skill, ['heads', 'tails', 'heads', 'tails', 'tails']);
+  it('fires onAttackSkillResolved once for the original and once for the repeat', () => {
     const state: CombatState = {
-      ...created,
-      turnTriggers: [
-        { uid: 1, trigger: { id: 'twice', hook: 'onAttackSkillResolved', effects: [{ kind: 'block', amount: 1 }] } }
-      ]
+      ...combat(['heads', 'tails', 'tails', 'heads']),
+      turnTriggers: [{ uid: 1, trigger: { id: 'twice', hook: 'onAttackSkillResolved', effects: [{ kind: 'block', amount: 1 }] } }]
     };
-    const result = resolve(state, db, state.zones.hand);
+    const result = resolve(state);
 
     expect(result.events.filter((event) => event.type === 'turnTriggerFired' && event.trigger === 'twice')).toHaveLength(2);
-    expect(result.state.player.block).toBe(2);
+    expect(result.state.player.block).toBe(3);
   });
 });

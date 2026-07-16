@@ -128,3 +128,9 @@ goal-command.md 규약 "요구사항이 충돌하면 자체 수정을 멈추고 
 - 시작 시각: 2026-07-10T02:35:26+09:00
 - 사용 CLI: claude_code
 - 컴팩트 후 본문 길이: 975자
+
+## P13 설계 개정 캠페인 (2026-07-16)
+
+- 설계 정본: [P13_REVISION_DESIGN_SYNC.md](./P13_REVISION_DESIGN_SYNC.md) · 계획: [P13_IMPLEMENTATION_PLAN.md](./P13_IMPLEMENTATION_PLAN.md)
+- 구현 완료: 기본기 표시명 공격/방어 통일, 전속성 가중 동전 보상·상점, 상점 스킬 효과 표기, 3~5적 레이아웃, 스택형 르미즈, 과열 예약+안티터틀, 갑주 반향, 몬스터 배치 A 6종, warrior 유지·sorcerer/arcanist 스프라이트 재생성, 수호자 삭제(저장 v9 retired-character), 콘텐츠 1.7.0-revision
+- 몬스터 배치 B~F는 미구현 — 진입 조건은 설계 정본 §6.4

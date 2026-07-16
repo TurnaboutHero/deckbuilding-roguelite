@@ -99,6 +99,9 @@ const atomSegment = (atom: EffectAtom): { text: string; term?: KeywordTerm } => 
   if (atom.kind === "enterOverheat") {
     return { text: "과열 진입", term: "overheat" };
   }
+  if (atom.kind === "scheduleOverheat") {
+    return { text: "다음 턴 과열", term: "pendingOverheat" };
+  }
   if (atom.kind === "damagePerBlock") {
     return { text: `현재 방어 1당 피해 ${atom.amountPerBlock}`, term: "block" };
   }
@@ -130,6 +133,11 @@ const atomSegment = (atom: EffectAtom): { text: string; term?: KeywordTerm } => 
       term: "block",
     };
   }
+  if (atom.kind === "echoPreheat") return { text: `반향 예열 +${atom.amount}`, term: "echoPreheat" };
+  if (atom.kind === "precisionDefenseArm") return { text: "정밀 방어 예약", term: "precisionDefense" };
+  if (atom.kind === "damagePlusEcho") return { text: `피해 ${atom.base} + 반향`, term: "echoAmplification" };
+  if (atom.kind === "aoeDamagePlusEcho")
+    return { text: `모든 적 피해 ${atom.base} + 반향`, term: "echoAmplification" };
   if (atom.kind === "prepareNextAttackDamage") {
     return { text: `이번 턴 다음 공격 피해 +${atom.amount}` };
   }
@@ -172,8 +180,8 @@ const atomSegment = (atom: EffectAtom): { text: string; term?: KeywordTerm } => 
       term: "shock",
     };
   if (atom.kind === "damageIfTargetShocked") return { text: `감전 대상 피해 +${atom.amount}`, term: "shock" };
-  if (atom.kind === "damageIfReused") return { text: `무료 재사용 시 피해 +${atom.amount}` };
-  if (atom.kind === "readyRemise") return { text: `이번 턴 르미즈 기회 +${atom.amount ?? 1}` };
+  if (atom.kind === "damageIfReused") return { text: `반복 시 피해 +${atom.amount}` };
+  if (atom.kind === "readyRemise") return { text: `르미즈 +${atom.amount ?? 1}` };
   return { text: "효과" };
 };
 
@@ -340,6 +348,16 @@ export function skillEffectRows(skill: SkillDef, bloodSwordPower = 0): EffectRow
           text: `보존 기본 코인을 ${elementKo(skill.treatPreservedBasicAsElement)} 코인으로 취급`,
         },
       ],
+    });
+  }
+  if (skill.remise?.onRepeatFinish !== undefined && skill.remise.onRepeatFinish.length > 0) {
+    rows.push({
+      kind: "rule",
+      badge: "르미즈",
+      segments: atomSegments(skill.remise.onRepeatFinish).map((segment) => ({
+        ...segment,
+        text: `반복 후 ${segment.text}`,
+      })),
     });
   }
 

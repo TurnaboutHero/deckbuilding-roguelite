@@ -42,6 +42,7 @@ export interface PlayerState extends UnitState {
   nextDrawBonus: number;
   // P7 D5 — 과열: 비중첩 불리언, 턴 넘어 지속, 과열 강화 스킬 해결 후 소비
   overheat: boolean;
+  pendingOverheat: boolean;
   weaponOutput: number;
   nextAttackDamageBonus: number;
   endTurnBlockAoeCap: number;
@@ -74,6 +75,8 @@ export interface PlayerState extends UnitState {
   coldHandsUsedThisTurn: boolean;
   frostCompoundUsedThisTurn: boolean;
   refrozenLootUsedThisTurn: boolean;
+  shieldMasteryUsedThisTurn: boolean;
+  attackSkillUsedThisTurn: boolean;
   bloodSwordInvestment: number;
   bloodSwordPower: number;
   bloodSwordReleaseBonus: number;
@@ -82,6 +85,13 @@ export interface PlayerState extends UnitState {
   bloodSwordDiscountUsedThisTurn: boolean;
   concentratedBloodUsedThisTurn: boolean;
   redRefluxUsedThisTurn: boolean;
+  residualHeatUsed: boolean;
+  armorEcho: number;
+  armorEchoAvailable: boolean;
+  armorEchoAbsorbedThisEnemyTurn: number;
+  echoPreheat: number;
+  precisionDefenseArmed: boolean;
+  precisionDefenseSatisfied: boolean;
 }
 
 export interface EnemyState extends UnitState {
@@ -89,6 +99,17 @@ export interface EnemyState extends UnitState {
   intent: EnemyIntent;
   intentIndex: number;
   nextAttackBonus: number;
+  windup?: {
+    intent: EnemyIntent;
+    turnsLeft: number;
+    startHp: number;
+    cancelThreshold?: number;
+    boundHealAlly?: number;
+  };
+  phaseIndex?: number;
+  growthStacks?: number;
+  boundHealAlly?: number;
+  cancelledWindupIntentId?: string;
 }
 
 // P7 D1/D2 — usedThisTurn(턴당 1회) 폐지 → cooldownRemaining(0=가용, 턴 시작 감소).
@@ -158,7 +179,11 @@ export const clonePlaced = (placed: Record<SlotId, CoinUid[]>): Record<SlotId, C
 export const cloneState = (state: CombatState): CombatState => ({
   ...state,
   player: { ...state.player, statuses: { ...state.player.statuses } },
-  enemies: state.enemies.map((enemy) => ({ ...enemy, statuses: { ...enemy.statuses } })),
+  enemies: state.enemies.map((enemy) => ({
+    ...enemy,
+    statuses: { ...enemy.statuses },
+    windup: enemy.windup === undefined ? undefined : { ...enemy.windup }
+  })),
   coins: Object.fromEntries(Object.entries(state.coins).map(([uid, coin]) => [uid, { ...coin, grants: [...coin.grants] }])),
   zones: {
     draw: [...state.zones.draw],

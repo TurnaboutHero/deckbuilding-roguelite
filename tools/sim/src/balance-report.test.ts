@@ -151,7 +151,7 @@ describe("M6 balance report aggregation", () => {
     expect(
       aggregatePolicyEnemyCharacterRows([
         traces[0] as M6RunTrace,
-        { ...(traces[1] as M6RunTrace), characterId: "guardian" },
+        { ...(traces[1] as M6RunTrace), characterId: "arcanist" },
       ]),
     ).toEqual([
       {
@@ -168,7 +168,7 @@ describe("M6 balance report aggregation", () => {
         variantId: "baseline",
         policyId: "greedy",
         enemyId: "gatekeeper",
-        characterId: "guardian",
+        characterId: "arcanist",
         buildPolicyId: "mana-build",
         combatCount: 1,
         results: { victories: 0, defeats: 1, nonterminal: 0 },
@@ -188,7 +188,7 @@ describe("M6 balance report aggregation", () => {
     expect(first.tuningDecision.numericContentChange).toBe("none");
     expect(first.mechanicalFacts.crn.aa.identical).toBe(true);
     expect(first.mechanicalFacts.crn.isBalanceGate).toBe(false);
-    expect(first.mechanicalFacts.guardianSafety500.isCiGate).toBe(false);
+    expect(first.mechanicalFacts.arcanistSafety500.isCiGate).toBe(false);
     expect(first.mechanicalFacts.characterSafety500).toEqual([
       expect.objectContaining({
         characterId: "sorcerer",
@@ -204,22 +204,23 @@ describe("M6 balance report aggregation", () => {
     expect(first.mechanicalFacts.characterCrn.isBalanceGate).toBe(false);
     expect(first.mechanicalFacts.frostCharacterCrn.isBalanceGate).toBe(false);
     expect(first.mechanicalFacts.policyEnemyCharacter.length).toBeGreaterThan(0);
+    // P13 reward-pool opening (basic+signature → all-element weighted) — 의도된 재앵커.
     expect(first.mechanicalFacts.buildPolicies).toEqual([
       expect.objectContaining({
         buildPolicyId: "fire-build",
-        coinRewardPriority: ["fire", "mana", "basic"],
+        coinRewardPriority: ["fire", "mana", "basic", "lightning", "frost", "blood"],
       }),
       expect.objectContaining({
         buildPolicyId: "mana-build",
-        coinRewardPriority: ["mana", "basic", "fire"],
+        coinRewardPriority: ["mana", "basic", "fire", "frost", "lightning", "blood"],
       }),
       expect.objectContaining({
         buildPolicyId: "frost-build",
-        coinRewardPriority: ["frost", "basic", "mana", "fire", "lightning"],
+        coinRewardPriority: ["frost", "basic", "mana", "fire", "lightning", "blood"],
       }),
       expect.objectContaining({
         buildPolicyId: "lightning-build",
-        coinRewardPriority: ["lightning", "basic", "mana", "fire", "frost"],
+        coinRewardPriority: ["lightning", "basic", "mana", "fire", "frost", "blood"],
       }),
     ]);
     expect(
@@ -227,10 +228,10 @@ describe("M6 balance report aggregation", () => {
     ).toBeGreaterThan(0);
     expect(first.mechanicalFacts.rewardSelectionAudit).toContainEqual(
       expect.objectContaining({
-        characterId: "guardian",
+        characterId: "arcanist",
         buildPolicyId: "mana-build",
         optionType: "skill",
-        optionId: "mana-well",
+        optionId: "arcane-command",
       }),
     );
     expect(first.mechanicalFacts.characterCrn.characters).toEqual([
@@ -239,7 +240,7 @@ describe("M6 balance report aggregation", () => {
         buildPolicyId: "fire-build",
       }),
       expect.objectContaining({
-        characterId: "guardian",
+        characterId: "arcanist",
         buildPolicyId: "mana-build",
       }),
     ]);

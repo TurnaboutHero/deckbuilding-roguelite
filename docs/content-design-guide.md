@@ -49,9 +49,9 @@ exclusiveTo가 현재 캐릭터 ID인 전용 콘텐츠
 
 예를 들어 마나 코인을 요구하지 않아도 소환 장비를 즉시 행동시키는 스킬은 `arcanist` 전용이다. 과열 상태에서 방어를 얻는 스킬도 `warrior` 전용이다.
 
-### 2.4 동전 보상
+### 2.4 동전 보상 (P13 전속성 가중 개방)
 
-일반 보상과 상점의 동전 후보는 기본 동전과 현재 캐릭터 대표 속성 동전만 사용한다. 다른 속성을 제공하려면 특수 이벤트·유물·챌린지처럼 일반 정책을 우회한다는 사실을 명시한다.
+일반 보상과 상점의 동전 후보는 기본 동전 + 모든 속성 동전에서 가중 비복원 추출로 서로 다른 정의 3개를 제시한다(가중치: 대표 4 / 기본 3 / 보유 비대표 2 / 미보유 1 — 정본은 `packages/core/src/run/run.ts`의 `weightedCoinOptions`). 스킬·패시브의 캐릭터 전용 경계(§2.1)는 그대로다 — 개방된 것은 동전뿐이다.
 
 ## 3. ID와 표시명
 
@@ -222,8 +222,10 @@ intents, 패시브, 등장 구간, 보상 가치
 ```
 
 - 행동은 공격, 연속 공격, 방어, 버프, 디버프, 소환으로 표현한다.
+- P13 배치 A 기믹 필드(전부 옵셔널, 계약은 `packages/core/src/combat/enemy-atoms.test.ts`): `windup {turns, cancelOn.damageThreshold}`, `vulnerableWhileWindup`, `conditionalAttack(playerHpBelowHalf)`, `phases {hpBelowFraction, intents}`, `growOnUnblockedDamage(+healOnGrow)`, `healAlly(lowestHpAlly)`.
+- 강공은 windup 예고를 경유해야 하고, 일반 조우의 핵심 위협은 1~2개다(교란 축 3중첩 금지).
 - 의도만 보고 대응 결정을 내릴 수 있어야 한다.
-- 숨은 예외보다 보이는 패시브를 사용한다.
+- 숨은 예외보다 보이는 패시브를 사용한다. `enemyTurnStart` 패시브는 자기 대상 한정.
 - 고정 순환이든 조건부 선택이든 결정론 시드로 재현 가능해야 한다.
 
 ## 10. 카드 문구와 툴팁

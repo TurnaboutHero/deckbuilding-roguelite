@@ -134,24 +134,29 @@ export const previewFlip = (
 
   const placed = state.zones.placed[slot] ?? [];
   const character = db.characters[String(state.characterId)];
-  const remiseFlipBudget =
-    character?.trait.mechanic === "remise" && state.player.remiseCharges > 0
-      ? 1 + placed.length
-      : 0;
-  // Remise can add one check reflip and then a full free reuse. Enumerating the
-  // complete flip budget keeps previews and simulator policies deterministic
-  // without under-supplying the resolver's scripted RNG.
-  const faceBranches = enumerateFaces(placed.length + remiseFlipBudget);
-  const probability = 1 / faceBranches.length;
+  const canRemiseRepeat =
+    character?.trait.mechanic === "remise" &&
+    state.player.remiseCharges > 0 &&
+    skill.tags.includes("attack") &&
+    placed.length > 0;
+  const originalBranches = enumerateFaces(placed.length);
+  const faceBranches = originalBranches.flatMap((original) =>
+    canRemiseRepeat && original[0] === "heads"
+      ? enumerateFaces(placed.length).map((repeat) => ({
+          faces: [...original, ...repeat],
+          probability: (1 / originalBranches.length) * (1 / 2 ** placed.length),
+        }))
+      : [{ faces: original, probability: 1 / originalBranches.length }],
+  );
   const chosen = hasChooseBasicInHand(skill) ? suggestedChosen(state, db) : undefined;
   const firstLivingTarget = state.enemies.findIndex((enemy) => enemy.hp > 0);
 
-  const branches = faceBranches.map((faces): PreviewBranch => {
+  const branches = faceBranches.map((branch): PreviewBranch => {
     const branchState = cloneState(state);
     const result = resolveFlip(
       {
         ...branchState,
-        rngImpl: { ...branchState.rngImpl, flip: scriptedFlips(faces) },
+        rngImpl: { ...branchState.rngImpl, flip: scriptedFlips(branch.faces) },
       },
       slot,
       skill,
@@ -159,7 +164,7 @@ export const previewFlip = (
       db,
       chosen,
     );
-    return { faces, probability, ...sumBranch(result.events) };
+    return { faces: branch.faces, probability: branch.probability, ...sumBranch(result.events) };
   });
 
   return {

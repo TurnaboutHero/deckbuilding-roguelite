@@ -8,7 +8,11 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const outDir = process.argv[2] ?? "/tmp/playtest";
+const args = process.argv.slice(2);
+const onlyIndex = args.indexOf("--only");
+const onlyScope =
+  onlyIndex === -1 ? null : (args.splice(onlyIndex, 2)[1] ?? null);
+const outDir = args[0] ?? "/tmp/playtest";
 const SEED = "BRAVE-EMBER-42";
 const baseUrl =
   process.env.PLAYTEST_BASE_URL ??
@@ -288,7 +292,8 @@ const winCurrentCombat = async (page) => {
   throw new Error("자동 전투가 18턴 안에 끝나지 않았다");
 };
 
-// ---------- 시나리오 1: 첫 상태 + 클릭 장전/회수/사용 (베기) ----------
+if (onlyScope !== "p13") {
+// ---------- 시나리오 1: 첫 상태 + 클릭 장전/회수/사용 (공격) ----------
 {
   const { page, errors } = await boot();
   await page.screenshot({ path: `${outDir}/01-initial.png` });
@@ -578,7 +583,7 @@ const winCurrentCombat = async (page) => {
   // 아래 교환·회수는 별도 새 컨텍스트에서 검증한다. Playwright의 page.mouse는
   // 연속 포인터 캡처 사이에 브라우저가 생성하는 click 이벤트를 재현하지 않는다.
   if (false) {
-  // 이미 장전된 동전끼리 교환: 베기 ↔ 방어
+  // 이미 장전된 동전끼리 교환: 공격 ↔ 방어
   const slashSocket = page.locator(".skill-card").first().locator(".socket").first();
   await page.locator(".hand-tray .coin").first().click();
   if ((await page.locator(".hand-tray .coin.selected").count()) === 0)
@@ -617,7 +622,7 @@ const winCurrentCombat = async (page) => {
       (await guardCard.locator(".socket.loaded").getAttribute("data-coin")) === sourceCoin,
   );
 
-  // 추가로 장전한 베기 동전은 회수해 이후 회수 시나리오의 기존 손패 수를 유지한다.
+  // 추가로 장전한 공격 동전은 회수해 이후 회수 시나리오의 기존 손패 수를 유지한다.
   await slashSocket.click();
   if ((await slashSocket.getAttribute("data-coin")) !== null) await slashSocket.click();
   check("S4 교환 후 한쪽 회수", (await handCount(page)) === 4);
@@ -699,7 +704,7 @@ const winCurrentCombat = async (page) => {
 {
   const { page, errors } = await boot();
   for (let turn = 0; turn < 3; turn += 1) {
-    // 매 턴 베기 1회 장전 후 턴 종료 자동 실행
+    // 매 턴 공격 1회 장전 후 턴 종료 자동 실행
     await page.locator(".hand-tray .coin").first().click();
     await page
       .locator(".skill-card")
@@ -908,8 +913,8 @@ if (false) {
   };
 
   await placeInto(2, 0); // 불타는 일격 1/2: 실행 큐 제외
-  await placeInto(1); // 가드: 완전 장전
-  await placeInto(0); // 정권: 완전 장전
+  await placeInto(1); // 방어: 완전 장전
+  await placeInto(0); // 공격: 완전 장전
   check(
     "S7 부분 장전은 실행 레일 제외",
     (await page.getByTestId("execution-rail").locator("li").count()) === 2,
@@ -1156,7 +1161,7 @@ if (false) {
         "",
     );
     check(
-      `S9 ${tag} 키보드 포커스 대상 = 가드 장전 소켓`,
+      `S9 ${tag} 키보드 포커스 대상 = 방어 장전 소켓`,
       focusOn.includes("장전된 동전 회수"),
       focusOn,
     );
@@ -1199,7 +1204,7 @@ if (false) {
 
 // ---------- 시나리오 11: 버림·소모 인스펙터 + 이동·리셔플 수명주기 피드백 ----------
 {
-  // P9 전사 시작 4번 슬롯은 잿불 베기다. 이 시나리오는 소모 영역 자체의
+  // P9 전사 시작 4번 슬롯은 잿불 공격이다. 이 시나리오는 소모 영역 자체의
   // 계약을 검증하므로 테스트 전용 스킬 오버라이드로 내면의 열정을 명시한다.
   const { page, errors } = await boot(undefined, {
     url: urlWith({
@@ -1271,7 +1276,7 @@ if (false) {
     (await page.locator(".pile-pop").count()) === 0,
   );
 
-  // 기본 동전으로 베기 → 비용 동전이 버림으로 이동하고 HUD가 이를 알려야 한다.
+  // 기본 동전으로 공격 → 비용 동전이 버림으로 이동하고 HUD가 이를 알려야 한다.
   const basicCoin = page
     .locator(".hand-tray .coin:not(.fire):not(.granted-fire)")
     .first();
@@ -1522,7 +1527,7 @@ if (false) {
       "1막 1/10",
   );
   await winCurrentCombat(page);
-  // P12 신스펙: 일반 전투 보상 = 기본 + 현재 캐릭터 대표 속성 중 1택.
+  // P13 신스펙: 일반 전투 코인 보상 = 전속성 가중 추출 3택.
   // 앱 결함 의심(보고 대상): rewardViewStage(apps/ui/src/interaction.ts)가 코인 단독
   // 보상(coinRemovalResolved=true·skillOptions=[])을 v5 '대체 코인'과 구분하지 못해
   // stage가 'fallback-coin'으로 투영된다 — 여기서는 두 값 모두 코인 선택 단계로 수용.
@@ -1542,17 +1547,32 @@ if (false) {
     `hp=${hpAfterFirst}`,
   );
   const bagBeforeReward = await bag();
+  const countCoin = (coins, defId) => coins.filter((coin) => coin === defId).length;
+  const visibleCoinSelector = (defId) =>
+    defId === "basic"
+      ? ".hand-tray .coin:not(.fire):not(.mana):not(.frost):not(.lightning):not(.blood):not(.granted-fire)"
+      : `.hand-tray .coin.${defId}`;
+  const validRewardCoinIds = new Set([
+    "basic",
+    "fire",
+    "mana",
+    "frost",
+    "lightning",
+    "blood",
+  ]);
   const coinIds = await page
     .locator('[data-testid^="coin-reward-"]:not([data-testid$="skip"])')
     .evaluateAll((buttons) =>
-      buttons.map((button) => button.getAttribute("data-testid")),
+      buttons
+        .map((button) => button.getAttribute("data-testid"))
+        .filter((id) => id !== null)
+        .map((id) => id.replace("coin-reward-", "")),
     );
   check(
-    "S12 코인 보상 2개·기본/화염만·중복 없음",
-    coinIds.length === 2 &&
-      new Set(coinIds).size === 2 &&
-      coinIds.includes("coin-reward-basic") &&
-      coinIds.includes("coin-reward-fire"),
+    "S12 코인 보상 3개·유효 defId·중복 없음",
+    coinIds.length === 3 &&
+      new Set(coinIds).size === 3 &&
+      coinIds.every((id) => validRewardCoinIds.has(id)),
     coinIds.join(","),
   );
   await page.screenshot({ path: `${outDir}/30-m5-coin-reward-1280.png` });
@@ -1567,13 +1587,14 @@ if (false) {
   await page.screenshot({ path: `${outDir}/31-m5-coin-reward-1920.png` });
   await page.setViewportSize({ width: 1280, height: 720 });
 
-  await page.locator('[data-testid="coin-reward-fire"]').click();
+  const chosenCoin = coinIds.find((id) => validRewardCoinIds.has(id)) ?? "";
+  await page.locator(`[data-testid="coin-reward-${chosenCoin}"]`).click();
   await page.waitForSelector('[data-testid="node-choice"]', { timeout: 15000 });
   const bagAfterAdd = await bag();
   check(
-    "S12 화염 코인 영구 추가",
+    "S12 선택한 코인 영구 추가",
     bagAfterAdd.length === bagBeforeReward.length + 1 &&
-      bagAfterAdd.includes("fire"),
+      countCoin(bagAfterAdd, chosenCoin) === countCoin(bagBeforeReward, chosenCoin) + 1,
     bagAfterAdd.join(","),
   );
   // P6 신스펙: 제거 단계 삭제(상점 전용 회귀) — 일반 전투는 코인 1택 후 즉시 다음
@@ -1630,7 +1651,7 @@ if (false) {
 
   await page.locator('[data-testid="next-combat"]').click();
   await waitForCombatOrBoundary(page);
-  check("S12 다음 전투에 화염 코인 보존", (await bag()).includes("fire"));
+  check("S12 다음 전투에 선택한 코인 보존", countCoin(await bag(), chosenCoin) === countCoin(bagBeforeReward, chosenCoin) + 1);
   const carriedHp = Number(
     (await page.locator(".unit.player .hp-num").innerText()).split("/")[0],
   );
@@ -1639,13 +1660,20 @@ if (false) {
     carriedHp === hpAfterFirst,
     `${carriedHp} vs ${hpAfterFirst}`,
   );
-  let fireVisible = (await page.locator(".hand-tray .coin.fire").count()) > 0;
-  if (!fireVisible) {
+  let chosenCoinVisible = (await page.locator(visibleCoinSelector(chosenCoin)).count()) > 0;
+  if (!chosenCoinVisible) {
     await page.locator(".pouch-circle").click();
-    fireVisible = (await page.locator(".pouch-pop .pop-coin.fire").count()) > 0;
+    chosenCoinVisible =
+      (await page.locator(`.pouch-pop .pop-coin.${chosenCoin}`).count()) > 0 ||
+      (chosenCoin === "basic" &&
+        (await page
+          .locator(
+            ".pouch-pop .pop-coin:not(.fire):not(.mana):not(.frost):not(.lightning):not(.blood)",
+          )
+          .count()) > 0);
     await page.keyboard.press("Escape");
   }
-  check("S12 추가한 화염 코인이 다음 전투 UI에 표시", fireVisible);
+  check("S12 추가한 선택 코인이 다음 전투 UI에 표시", chosenCoinVisible);
 
   const attemptBeforeReload = Number(await main().getAttribute("data-attempt"));
   await page.reload({ waitUntil: "networkidle" });
@@ -1761,6 +1789,20 @@ if (false) {
     restUpgrades: 0,
     attempt: 0,
   };
+  const fullSlotInjectBase = {
+    ...injectBase,
+    shopPurchasedSkills: 4,
+    equippedSkills: [
+      "jab",
+      "fist-guard",
+      "burning-fist",
+      "flame-hook",
+      "inner-passion",
+      "ember-weave",
+      "furnace",
+      "comet-blow",
+    ],
+  };
   // P6 엘리트 정산 등가물: 코인 1택 완료 후 스킬 1 제안이 남은 상태
   const skillRewards = {
     coinOptions: ["basic", "fire", "mana"],
@@ -1777,7 +1819,7 @@ if (false) {
       errors: e2,
       context,
     } = await inject({
-      ...injectBase,
+      ...fullSlotInjectBase,
       combatIndex: 2,
       phase: "rewards",
       pendingRewards: skillRewards,
@@ -1793,14 +1835,14 @@ if (false) {
       (await p2
         .locator('[data-testid="run-phase"]')
         .getAttribute("data-equipped-skills")) ?? "";
-    await choices.first().click();
+    await choices.first().getByRole("button", { name: "선택" }).click();
     check(
       "S12 스킬 선택 후 명시적 8슬롯 교체 화면",
       (await p2.locator('[data-testid^="replace-slot-"]').count()) === 8,
     );
     await p2.locator('[data-testid="replace-cancel"]').click();
     check("S12 교체 취소가 스킬 선택으로 복귀", (await choices.count()) === 1);
-    await choices.first().click();
+    await choices.first().getByRole("button", { name: "선택" }).click();
     await p2.locator('[data-testid="replace-decline"]').click();
     check(
       "S12 교체 거절이 장착 스킬을 유지하고 다음 노드로 진행",
@@ -1821,7 +1863,7 @@ if (false) {
       errors: e2,
       context,
     } = await inject({
-      ...injectBase,
+      ...fullSlotInjectBase,
       combatIndex: 2,
       phase: "rewards",
       pendingRewards: skillRewards,
@@ -1835,7 +1877,7 @@ if (false) {
     const chosen = String(
       await choices.first().getAttribute("data-testid"),
     ).replace("skill-reward-", "");
-    await choices.first().click();
+    await choices.first().getByRole("button", { name: "선택" }).click();
     await p2.locator('[data-testid="replace-slot-5"]').click();
     check(
       "S12 선택 스킬이 지정 슬롯을 교체",
@@ -2299,7 +2341,7 @@ if (false) {
     JSON.stringify(cardMetrics),
   );
   check(
-    "S15 베기 기본·앞면 행",
+    "S15 공격 기본·앞면 행",
     slash.includes("기본") && slash.includes("앞면"),
     slash.replace(/\n/g, " / "),
   );
@@ -2360,7 +2402,7 @@ if (false) {
     JSON.stringify(rowClipReport.filter((item) => item.overflow)),
   );
   check(
-    "S15 잿불 베기 속성 면 행",
+    "S15 잿불 공격 속성 면 행",
     ignition.includes("화염 앞면") &&
       ignition.includes("화염 뒷면") &&
       ignition.includes("화상"),
@@ -2626,7 +2668,7 @@ if (false) {
     await enterSlashTargeting(page);
     const initialTargets = await highlightedTargets(page);
     check(
-      "S19 베기 대상 지정 진입: targetable 2 + 기본 선택 1",
+      "S19 공격 대상 지정 진입: targetable 2 + 기본 선택 1",
       initialTargets.length === 2 && (await selectedTarget(page)) === 0,
       `targets=${initialTargets.join(",")} selected=${await selectedTarget(page)}`,
     );
@@ -2904,15 +2946,18 @@ if (false) {
 
 // ---------- 시나리오 21: P3.2 캐릭터 선택 ----------
 {
-  // 21a. ?select=1 → 선택 화면: 두 캐릭터 카드, 특성 문구(발동 시점·임시 수명 명시)
+  // 21a. ?select=1 → 선택 화면: 플레이어블 5종 노출, 은퇴한 수호자 부재
   const { page, errors } = await boot(undefined, {
     url: `${baseUrl}?seed=${SEED}&select=1`,
     waitFor: "select",
   });
-  // P12: 혈액 마검사 추가로 6종 — 데이터 주도 노출 계약
+  // P13: 수호자 삭제 후 캐릭터 카드 5종 — 데이터 주도 노출 계약
   check(
-    "S21 선택 화면 캐릭터 카드 6종 (화염 격투가·수호자·술사·냉기 도적·마도기사·혈액 마검사)",
-    (await page.locator(".character-card").count()) === 6 &&
+    "S21 선택 화면 캐릭터 카드 5종 (화염 격투가·술사·냉기 도적·마도기사·혈액 마검사)",
+    (await page.locator(".character-card").count()) === 5 &&
+      (await page
+        .locator('[data-testid="character-select-warrior"]')
+        .count()) === 1 &&
       (await page
         .locator('[data-testid="character-select-sorcerer"]')
         .count()) === 1 &&
@@ -2926,6 +2971,10 @@ if (false) {
         .locator('[data-testid="character-select-blood-spellblade"]')
         .count()) === 1,
   );
+  check(
+    "S21 수호자 카드 부재",
+    (await page.locator('[data-testid="character-select-guardian"]').count()) === 0,
+  );
   // P6 D5: warrior 표시명 '화염 격투가' (id는 'warrior' 유지)
   check(
     "S21 화염 격투가 표시명 카드",
@@ -2933,22 +2982,9 @@ if (false) {
       await page.locator('[data-testid="character-select-warrior"]').innerText()
     ).includes("화염 격투가"),
   );
-  const guardianCard = page.locator(
-    '[data-testid="character-select-guardian"]',
-  );
-  const guardianText = (await guardianCard.innerText()).replace(/\n/g, " ");
-  check(
-    "S21 수호자 특성 문구 — 전투 시작·임시 명시",
-    guardianText.includes("전투 시작 시") && guardianText.includes("임시"),
-    guardianText.slice(0, 120),
-  );
-  check(
-    "S21 수호자 카드 구성 정보 (HP·마나)",
-    guardianText.includes("70") && guardianText.includes("마나"),
-  );
-
-  // 21b. 키보드로 수호자 선택 → 수호자 전투 진입 (가방 마나 2·전용 스킬 카드·스프라이트 폴백)
-  await guardianCard.focus();
+  // 21b. 키보드로 화염 격투가 선택 → 전투 진입
+  const warriorCard = page.locator('[data-testid="character-select-warrior"]');
+  await warriorCard.focus();
   await page.keyboard.press("Enter");
   await page.waitForSelector(".combat-shell[data-bag]");
   await page.waitForFunction(
@@ -2956,21 +2992,21 @@ if (false) {
   );
   const bag = await page.locator(".combat-shell").getAttribute("data-bag");
   check(
-    "S21 수호자 가방 마나 2닢",
-    (bag ?? "").split(",").filter((id) => id === "mana").length === 2,
+    "S21 화염 격투가 가방 화염 2닢",
+    (bag ?? "").split(",").filter((id) => id === "fire").length === 2,
     bag ?? "",
   );
   const cardTitles = await page
     .locator(".skill-card .card-title")
     .allInnerTexts();
   check(
-    "S21 수호자 전용 스킬 카드 렌더",
-    ["수호 타격", "마나 방벽"].every((name) => cardTitles.includes(name)) &&
+    "S21 화염 격투가 시작 스킬 카드 렌더",
+    ["공격", "방어"].every((name) => cardTitles.includes(name)) &&
       cardTitles.filter((name) => name === "빈 슬롯").length === 4,
     cardTitles.join(","),
   );
   check(
-    "S21 수호자 전용 스프라이트 (폴백 마커 없음)",
+    "S21 화염 격투가 스프라이트 (폴백 마커 없음)",
     (await page.locator("[data-sprite-fallback]").count()) === 0 &&
       (await page.locator(".unit.player .sprite-frame").count()) >= 1,
   );
@@ -2992,30 +3028,12 @@ if (false) {
       "화염 격투가",
   );
 
-  // 21d. ?character=guardian 직접 부팅
-  const direct = await boot(undefined, {
-    url: `${baseUrl}?seed=${SEED}&character=guardian`,
-  });
-  check(
-    "S21 직접 부팅 선택 화면 생략",
-    (await direct.page.locator('[data-testid="character-select"]').count()) ===
-      0,
-  );
-  const directBag = await direct.page
-    .locator(".combat-shell")
-    .getAttribute("data-bag");
-  check(
-    "S21 직접 부팅 수호자 가방",
-    (directBag ?? "").split(",").filter((id) => id === "mana").length === 2,
-    directBag ?? "",
-  );
   check(
     "S21 캐릭터 부팅 에러 0",
-    errors.length === 0 && direct.errors.length === 0,
-    [...errors, ...direct.errors].join(" | "),
+    errors.length === 0,
+    errors.join(" | "),
   );
   await page.close();
-  await direct.page.close();
 }
 
 // ---------- 시나리오 22: P3.3 불의 심장 연료 지정 + 턴 버프 ----------
@@ -3463,7 +3481,7 @@ if (false) {
     upgradedSlots: [false, false, false, false, false, false, false, false],
     acquiredPassives: [],
     gold: 150,
-    nodeChoices: [0, 0, 0],
+    nodeChoices: [0, 0, 0, 0, 0],
     shopRemovals: 0,
     shopPurchasedCoins: 0,
     shopPurchasedSkills: 0,
@@ -3575,7 +3593,7 @@ if (false) {
       ).includes("매진"),
     );
     // 스킬 구매: 강타 50 → 슬롯 1 교체
-    await page.locator('[data-testid="shop-skill-smash"]').click();
+    await page.locator('[data-testid="shop-skill-buy-smash"]').click();
     check(
       "S25 스킬 슬롯 픽커 표시",
       (await page.locator('[data-testid="shop-slot-picker"]').count()) === 1,
@@ -3639,6 +3657,7 @@ if (false) {
     ...baseSave,
     gold: 35,
     phase: "choose-node",
+    nodeChoices: [0, 0, 0],
     graph: {
       layers: [
         [{ id: "c0", kind: "combat", encounter: ["raider"] }],
@@ -4150,7 +4169,7 @@ if (false) {
       const coin = page.locator(".hand-tray .coin").first();
       await coin.scrollIntoViewIfNeeded();
       await coin.tap();
-      const card = page.locator(".skill-card", { hasText: "정권" }).first(); // P6: warrior 슬롯0 = jab(정권)
+      const card = page.locator(".skill-card", { hasText: "공격" }).first(); // P6: warrior 슬롯0 = jab(공격)
       await card.scrollIntoViewIfNeeded();
       await card.locator(".socket").first().tap();
       check(
@@ -4372,7 +4391,7 @@ if (false) {
       },
     );
     await pressOn(page, page.locator(".hand-tray .coin").first());
-    const card = page.locator(".skill-card", { hasText: "정권" }).first(); // P6: warrior 슬롯0 = jab(정권)
+    const card = page.locator(".skill-card", { hasText: "공격" }).first(); // P6: warrior 슬롯0 = jab(공격)
     await pressOn(page, card.locator(".socket").first());
     check("S29 키보드 장전", (await card.locator(".socket-coin").count()) >= 1);
     await pressOn(page, card.locator(".card-action"));
@@ -4751,7 +4770,7 @@ if (false) {
   await page.keyboard.press("Escape");
   await waitForKeywordTooltip(page, PASSIVE_DESCRIPTION, false);
 
-  // 기본 코인을 명시적으로 찾아 베기 장전 — 화상 없이 결정론 회복 산술 (+1) 검증.
+  // 기본 코인을 명시적으로 찾아 공격 장전 — 화상 없이 결정론 회복 산술 (+1) 검증.
   // 손패 index 가정 금지: 속성/부여 클래스가 전부 없는 코인만 기본 코인이다.
   const basicCoin = page.locator(
     ".hand-tray .coin:not(.fire):not(.mana):not(.frost):not(.lightning):not(.granted-fire)",
@@ -4769,7 +4788,7 @@ if (false) {
       ).split("/")[0],
     );
   const hpAfterAttack = await readGhoulHp();
-  check("S32 베기 피해 적용", hpAfterAttack < 38, `hp=${hpAfterAttack}`);
+  check("S32 공격 피해 적용", hpAfterAttack < 38, `hp=${hpAfterAttack}`);
   check(
     "S32 화상 없음 (회복 산술 전제)",
     (await page.locator(".unit.enemy .burn-chip").count()) === 0,
@@ -5219,6 +5238,165 @@ const phaseAttr = (page, name) =>
     errors.join(" | "),
   );
   await page.close();
+}
+}
+
+// ---------- p13-multi-enemy: 3/4/5적 전투 레이아웃 + 상점 설명 ----------
+{
+  console.log("\n[p13-multi-enemy]");
+  const p13OutDir = resolve(outDir, "p13-layout");
+  await mkdir(p13OutDir, { recursive: true });
+  const viewports = [
+    { width: 1024, height: 720 },
+    { width: 1280, height: 720 },
+    { width: 1440, height: 900 },
+    { width: 1600, height: 900 },
+    { width: 1920, height: 1080 },
+  ];
+  const encounters = [
+    "trio-ghoul-goblin-slime",
+    "quad-ghoul-goblin-slime-thief",
+    "quint-ghoul-goblin-slime-thief-mage",
+  ];
+  for (const viewport of viewports) {
+    for (const encounter of encounters) {
+      const { page, errors } = await boot(viewport, {
+        fast: true,
+        url: urlWith({ seed: SEED, encounter }),
+      });
+      const layout = await page.evaluate(() => {
+        const rectOf = (element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+          };
+        };
+        const visible = (element) => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return (
+            style.visibility !== "hidden" &&
+            style.display !== "none" &&
+            rect.width > 0 &&
+            rect.height > 0
+          );
+        };
+        const plates = [...document.querySelectorAll(".enemy-line .unit-plate")].map(rectOf);
+        const intents = [...document.querySelectorAll(".enemy-line .intent")].map((intent) => ({
+          ...rectOf(intent),
+          visible: visible(intent),
+        }));
+        const hand = document.querySelector(".hand-tray");
+        const turn = document.querySelector(".end-turn");
+        return {
+          enemyCount: plates.length,
+          platesInside: plates.every(
+            (rect) =>
+              rect.left >= 0 &&
+              rect.top >= 0 &&
+              rect.right <= innerWidth &&
+              rect.bottom <= innerHeight,
+          ),
+          platesOverlap: plates.some((rect, index) =>
+            plates
+              .slice(index + 1)
+              .some(
+                (other) =>
+                  rect.left < other.right &&
+                  other.left < rect.right &&
+                  rect.top < other.bottom &&
+                  other.top < rect.bottom,
+              ),
+          ),
+          intentsVisible: intents.length === plates.length && intents.every((intent) => intent.visible && intent.height >= 14),
+          handVisible: hand instanceof HTMLElement && visible(hand),
+          turnVisible: turn instanceof HTMLElement && visible(turn),
+        };
+      });
+      const expectedEnemies = encounter.startsWith("trio") ? 3 : encounter.startsWith("quad") ? 4 : 5;
+      check(
+        `P13 ${viewport.width}x${viewport.height} ${encounter} enemy plates inside viewport`,
+        layout.enemyCount === expectedEnemies && layout.platesInside,
+        JSON.stringify(layout),
+      );
+      check(
+        `P13 ${viewport.width}x${viewport.height} ${encounter} enemy plates do not overlap`,
+        !layout.platesOverlap,
+        JSON.stringify(layout),
+      );
+      check(
+        `P13 ${viewport.width}x${viewport.height} ${encounter} intents and bottom controls visible`,
+        layout.intentsVisible && layout.handVisible && layout.turnVisible,
+        JSON.stringify(layout),
+      );
+      await page.screenshot({
+        path: `${p13OutDir}/p13-${viewport.width}x${viewport.height}-${encounter}.png`,
+      });
+      check(
+        `P13 ${viewport.width}x${viewport.height} ${encounter} has no errors`,
+        errors.length === 0,
+        errors.join(" | "),
+      );
+      await page.close();
+    }
+  }
+
+  const shopContext = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    deviceScaleFactor: 1,
+  });
+  const shopPage = await shopContext.newPage();
+  const shopErrors = [];
+  shopPage.on("pageerror", (error) => shopErrors.push(`pageerror: ${error.message}`));
+  shopPage.on("console", (message) => {
+    if (message.type() === "error" && !message.location().url.endsWith("/favicon.ico"))
+      shopErrors.push(`console: ${message.text()}`);
+  });
+  await shopPage.goto(urlWith({ seed: SEED, testShop: "p13" }), { waitUntil: "networkidle" });
+  await shopPage.waitForSelector('[data-testid="shop-screen"]', { timeout: 15000 });
+  const shopEvidence = await shopPage.evaluate(() => {
+    const cards = [...document.querySelectorAll('[data-testid="shop-skills"] .shop-skill')];
+    return {
+      cardCount: cards.length,
+      everyCardHasEffects: cards.every(
+        (card) =>
+          card.querySelectorAll(".card-effect-row").length > 0 &&
+          (card.querySelector(".card-effects")?.textContent ?? "").trim().length > 0,
+      ),
+      keywordCount: document.querySelectorAll('[data-testid="shop-skills"] .kw').length,
+    };
+  });
+  check(
+    "P13 shop shows five skill cards with visible effect rows",
+    shopEvidence.cardCount === 5 && shopEvidence.everyCardHasEffects,
+    JSON.stringify(shopEvidence),
+  );
+  const firstKeyword = shopPage.locator('[data-testid="shop-skills"] .kw').first();
+  await firstKeyword.focus();
+  const tooltipOpened = await shopPage
+    .waitForFunction(() => {
+      const tip = [...document.querySelectorAll('[role="tooltip"]')].find((node) => {
+        const style = getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      });
+      return tip !== undefined;
+    })
+    .then(() => true)
+    .catch(() => false);
+  check(
+    "P13 shop keyword opens tooltip on keyboard focus",
+    shopEvidence.keywordCount > 0 && tooltipOpened,
+    JSON.stringify(shopEvidence),
+  );
+  await shopPage.screenshot({ path: `${p13OutDir}/p13-shop-descriptions.png` });
+  check("P13 shop has no errors", shopErrors.length === 0, shopErrors.join(" | "));
+  await shopContext.close();
 }
 
 await browser.close();

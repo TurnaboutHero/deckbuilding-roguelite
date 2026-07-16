@@ -8,9 +8,10 @@ export const M6_CRN_REPORT_SCHEMA_VERSION = "m6-crn-v1" as const;
 export const M6_TRANSCRIPT_SCHEMA_VERSION = "m6-transcript-v1" as const;
 export const SIM_CHARACTER_IDS = [
   "warrior",
-  "guardian",
   "sorcerer",
-  "frost-knight", "arcanist"] as const;
+  "frost-knight",
+  "arcanist",
+] as const;
 export type SimCharacterId = (typeof SIM_CHARACTER_IDS)[number];
 
 export const M6_VARIANT_IDS = ["baseline", "basic-first"] as const;

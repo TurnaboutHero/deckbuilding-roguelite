@@ -30,7 +30,7 @@ export type SkillUpgradePatch =
   | { kind: 'addFaceEffect'; face: 'heads' | 'tails'; effect: EffectAtom }
   | { kind: 'addMixedFaceEffect'; effect: EffectAtom }
   | { kind: 'setFaceMode'; face: 'heads' | 'tails'; mode: 'any' | 'per' }
-  | { kind: 'replaceEffect'; section: 'base' | 'heads' | 'tails' | 'overheat'; index: number; effect: EffectAtom }
+  | { kind: 'replaceEffect'; section: 'base' | 'heads' | 'tails' | 'overheat' | 'onRepeatFinish'; index: number; effect: EffectAtom }
   | { kind: 'setRemiseLightningCount'; count: number }
   | { kind: 'addCoinOnUse'; coin: CoinDefId; zone: 'draw' | 'discard' | 'hand'; count: number }
   | { kind: 'costDelta'; delta: number }
@@ -67,6 +67,7 @@ export interface PassiveDef {
     | 'ignitionInstinct'
     | 'emberBlade'
     | 'hotBarrier'
+    | 'residualHeat'
     | 'previewDeployment'
     | 'inverseGuard'
     | 'crossCalculation'
@@ -130,8 +131,12 @@ export interface FlipSkillDef extends SkillDefBase {
   // P7 D5 — 특정 속성 코인 면 보너스 (일반 면 보너스와 합산, 항상 per 면당)
   elementFaces?: { element: Element; face: Face; effects: EffectAtom[] }[];
   remise?: {
+    onRepeatFinish?: EffectAtom[];
+    /** @deprecated P13 Wave 3 stack remise ignores the old reflip model. */
     reuseOnReflipTails?: boolean;
+    /** @deprecated P13 Wave 3 stack remise ignores the old reflip model. */
     returnFirstCoinOnReuse?: boolean;
+    /** @deprecated P13 Wave 3 stack remise ignores the old reflip model. */
     addLightningToHandAfterReuse?: number;
   };
   returnUsedElementToDrawTop?: {
@@ -178,6 +183,7 @@ export type EffectAtom =
   | { kind: 'reduceCooldown'; amount: number }
   // P7 D5 — 과열 진입 (비중첩, no-op 재진입)
   | { kind: 'enterOverheat' }
+  | { kind: 'scheduleOverheat' }
   | { kind: 'applyStatus'; status: StatusId; stacks: number; to: 'target' | 'self' }
   | { kind: 'addCoin'; coin: CoinDefId; zone: 'draw' | 'discard' | 'hand'; count: number }
   | { kind: 'grantElement'; element: Element; scope: 'allBasicInHand' | 'chooseBasicInHand' }
@@ -195,6 +201,10 @@ export type EffectAtom =
   | { kind: 'damagePerBlock'; amountPerBlock: number }
   | { kind: 'blockFromCurrent'; cap: number }
   | { kind: 'damagePlusBlock'; base: number; cap: number }
+  | { kind: 'echoPreheat'; amount: number }
+  | { kind: 'precisionDefenseArm' }
+  | { kind: 'damagePlusEcho'; base: number }
+  | { kind: 'aoeDamagePlusEcho'; base: number }
   | { kind: 'prepareNextAttackDamage'; amount: number }
   | { kind: 'scheduleEndTurnBlockAoe'; cap: number }
   // P6 D6 — 소환: equipment 'chosen'은 커맨드의 chosenEquipment(기본: 정렬 첫 장비)
@@ -242,15 +252,21 @@ export interface CharacterDef {
 
 export type EnemyAction =
   | { kind: 'attack'; damage: number; hits?: number }
+  | { kind: 'conditionalAttack'; damage: number; bonusDamage: number; condition: 'playerHpBelowHalf' }
   | { kind: 'block'; amount: number }
   | { kind: 'nextDrawPenalty'; amount: number }
   | { kind: 'applyStatus'; status: StatusId; stacks: number }
   | { kind: 'heal'; amount: number }
-  | { kind: 'buffNextAttack'; amount: number };
+  | { kind: 'buffNextAttack'; amount: number }
+  | { kind: 'growOnUnblockedDamage'; amount: number; healOnGrow?: number }
+  | { kind: 'healAlly'; amount: number; target: 'lowestHpAlly' };
 
 export interface EnemyIntent {
   id: string;
   actions: EnemyAction[];
+  windup?: { turns: number; revealAtStart: true };
+  cancelOn?: { damageThreshold: number };
+  vulnerableWhileWindup?: number;
 }
 
 // 몬스터 패시브 — 설계 가이드 §3 패시브 원칙 준용: 자동 조건 발동 최대 1개.
@@ -269,6 +285,7 @@ export interface EnemyDef {
   name: string;
   maxHp: number;
   intents: EnemyIntent[];
+  phases?: { hpBelowFraction: number; intents: EnemyIntent[] }[];
   passive?: EnemyPassiveDef;
 }
 
@@ -371,6 +388,12 @@ const validateAtomAmounts = (db: Omit<ContentDb, 'validate'>): string[] => {
         (!Number.isInteger(atom.amount) || atom.amount <= 0)
       ) {
         errors.push(`${owner}: ${atom.kind} amount must be a positive integer`);
+      }
+      if (atom.kind === 'echoPreheat' && (!Number.isInteger(atom.amount) || atom.amount <= 0)) {
+        errors.push(`${owner}: echoPreheat amount must be a positive integer`);
+      }
+      if ((atom.kind === 'damagePlusEcho' || atom.kind === 'aoeDamagePlusEcho') && (!Number.isInteger(atom.base) || atom.base < 0)) {
+        errors.push(`${owner}: ${atom.kind} base must be a non-negative integer`);
       }
       if (atom.kind === 'returnDiscardCoin' && (!Number.isInteger(atom.count) || atom.count <= 0)) {
         errors.push(`${owner}: returnDiscardCoin count must be a positive integer`);
@@ -552,6 +575,58 @@ const validateEnemyPassives = (enemies: Record<string, EnemyDef>): string[] => {
   return errors;
 };
 
+const validateEnemyIntents = (enemies: Record<string, EnemyDef>): string[] => {
+  const errors: string[] = [];
+  const validateIntent = (intent: EnemyIntent, owner: string): void => {
+    if (intent.windup !== undefined) {
+      if (!Number.isInteger(intent.windup.turns) || intent.windup.turns < 1 || intent.windup.turns > 3) {
+        errors.push(`${owner}: windup turns must be an integer from 1 to 3`);
+      }
+      if (intent.windup.revealAtStart !== true) errors.push(`${owner}: windup revealAtStart must be true`);
+    }
+    if (intent.cancelOn !== undefined && (!Number.isInteger(intent.cancelOn.damageThreshold) || intent.cancelOn.damageThreshold <= 0)) {
+      errors.push(`${owner}: cancelOn damageThreshold must be a positive integer`);
+    }
+    if (
+      intent.vulnerableWhileWindup !== undefined &&
+      (!Number.isFinite(intent.vulnerableWhileWindup) || intent.vulnerableWhileWindup <= 1 || intent.vulnerableWhileWindup > 2)
+    ) {
+      errors.push(`${owner}: vulnerableWhileWindup must be greater than 1 and at most 2`);
+    }
+    for (const action of intent.actions) {
+      if ('amount' in action && (!Number.isInteger(action.amount) || action.amount <= 0)) {
+        errors.push(`${owner}: ${action.kind} amount must be a positive integer`);
+      }
+      if (action.kind === 'attack') {
+        if (!Number.isInteger(action.damage) || action.damage <= 0) errors.push(`${owner}: attack damage must be a positive integer`);
+        if (action.hits !== undefined && (!Number.isInteger(action.hits) || action.hits <= 0)) {
+          errors.push(`${owner}: attack hits must be a positive integer`);
+        }
+      } else if (action.kind === 'conditionalAttack') {
+        if (!Number.isInteger(action.damage) || action.damage <= 0) errors.push(`${owner}: conditionalAttack damage must be a positive integer`);
+        if (!Number.isInteger(action.bonusDamage) || action.bonusDamage < 0) {
+          errors.push(`${owner}: conditionalAttack bonusDamage must be a non-negative integer`);
+        }
+      } else if (action.kind === 'growOnUnblockedDamage' && action.healOnGrow !== undefined) {
+        if (!Number.isInteger(action.healOnGrow) || action.healOnGrow <= 0) errors.push(`${owner}: healOnGrow must be a positive integer`);
+      }
+    }
+  };
+  for (const enemy of Object.values(enemies)) {
+    if (enemy.intents.length === 0) errors.push(`enemy ${String(enemy.id)}: must declare at least one intent`);
+    enemy.intents.forEach((intent, index) => validateIntent(intent, `enemy ${String(enemy.id)} intent ${intent.id || index}`));
+    for (const [index, phase] of (enemy.phases ?? []).entries()) {
+      const owner = `enemy ${String(enemy.id)} phase ${index}`;
+      if (!Number.isFinite(phase.hpBelowFraction) || phase.hpBelowFraction <= 0 || phase.hpBelowFraction >= 1) {
+        errors.push(`${owner}: hpBelowFraction must be greater than 0 and less than 1`);
+      }
+      if (phase.intents.length === 0) errors.push(`${owner}: must declare at least one intent`);
+      phase.intents.forEach((intent, intentIndex) => validateIntent(intent, `${owner} intent ${intent.id || intentIndex}`));
+    }
+  }
+  return errors;
+};
+
 // P6 D2 — 획득 패시브 검증: 플레이어 훅에서 안전한 원자만 (applyStatus/damage류는
 // runHook의 player 타깃 문맥에서 자기 오염이 되므로 콘텐츠 단계에서 차단).
 const PASSIVE_SAFE_ATOMS = new Set(['block', 'addCoin', 'addTurnTrigger', 'empowerSummons', 'summonEquipment', 'grantElement']);
@@ -616,6 +691,10 @@ const validateSkillUpgrades = (skills: readonly SkillDef[]): string[] => {
           ? skill.type === 'flip'
             ? skill.base
             : skill.effects
+          : patch.section === 'onRepeatFinish'
+            ? skill.type === 'flip'
+              ? skill.remise?.onRepeatFinish
+              : undefined
           : patch.section === 'overheat'
             ? skill.overheatBonus
             : skill.type === 'flip'
@@ -656,6 +735,7 @@ export const validateContentDb = (db: Omit<ContentDb, 'validate'>): string[] => 
   ...validateTurnTriggers(db),
   ...validateAttackTargets(Object.values(db.skills)),
   ...validateEvents(Object.values(db.events ?? {}), db.enemies),
+  ...validateEnemyIntents(db.enemies),
   ...validateEnemyPassives(db.enemies),
   ...validatePassives(db.passives),
   ...validateEquipment(db.equipment),

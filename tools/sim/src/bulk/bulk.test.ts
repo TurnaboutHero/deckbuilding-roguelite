@@ -165,12 +165,12 @@ describe("M6 deterministic bulk and CRN", () => {
     ]);
   });
 
-  it("can run the accepted policy matrix for guardian with unique trace ids", () => {
+  it("can run the accepted policy matrix for arcanist with unique trace ids", () => {
     const result = runBulk({
-      baseSeed: "P3-GUARDIAN-POLICY-MATRIX",
+      baseSeed: "P3-ARCANIST-POLICY-MATRIX",
       games: 2,
       policyIds: POLICY_IDS,
-      characterIds: ["guardian"],
+      characterIds: ["arcanist"],
     });
 
     // P7 D1(캡 폐지·반복 기본기) 이후 방어형 캐릭터의 turtle/greedy는
@@ -188,7 +188,7 @@ describe("M6 deterministic bulk and CRN", () => {
       expect(["victory", "defeat", "nonterminal"]).toContain(trace.result);
       expect(trace.crash).toBeNull();
     }
-    expect(result.traces.every((trace) => trace.characterId === "guardian")).toBe(
+    expect(result.traces.every((trace) => trace.characterId === "arcanist")).toBe(
       true,
     );
     expect(new Set(result.traces.map((trace) => trace.traceId)).size).toBe(
@@ -205,7 +205,7 @@ describe("M6 deterministic bulk and CRN", () => {
     });
 
     // P7 D1 이후 frost-knight의 turtle/greedy도 블록 스톨로 논터미널이 될 수
-    // 있다(guardian 매트릭스와 동일한 생산 코드 백로그) — 유계 포착만 고정.
+    // 있다 — 유계 포착만 고정.
     expect(result.report.metrics.outcomes.runs).toBe(8);
     expect(
       result.report.metrics.outcomes.terminalRuns +

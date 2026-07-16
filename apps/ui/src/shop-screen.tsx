@@ -1,6 +1,6 @@
 // 상점 화면 — 순수 프레젠테이션 (D4 3행동). 상태·가격 진실은 코어 pendingShop이
 // 소유하고, 이 컴포넌트는 props로만 받는다 (UI 규칙 중복 금지).
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 export interface ShopCoinOffer {
   id: string;
@@ -15,6 +15,7 @@ export interface ShopSkillOffer {
   price: number;
   rarityName: string;
   card: ReactNode;
+  effects: ReactNode;
 }
 
 export interface ShopPassiveOffer {
@@ -50,6 +51,37 @@ interface ShopScreenProps {
   onRemoveCoin: (bagIndex: number) => void;
   onLeave: () => void;
 }
+
+const skillOfferListStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  alignItems: "stretch",
+};
+
+const skillOfferCardStyle: CSSProperties = {
+  minWidth: 0,
+  height: "100%",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "stretch",
+  gap: 8,
+  padding: 10,
+  border: "2px solid #6b5a2c",
+  borderRadius: 8,
+  background: "#1d2434",
+  color: "#f3e9d2",
+};
+
+const skillOfferHeaderStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+};
+
+const skillOfferBuyStyle: CSSProperties = {
+  alignSelf: "stretch",
+  justifyContent: "center",
+};
 
 export const ShopScreen = ({
   gold,
@@ -130,22 +162,33 @@ export const ShopScreen = ({
     </div>
     <div className="shop-section" data-testid="shop-skills">
       <h3>스킬 구매</h3>
-      <ul>
+      <ul style={skillOfferListStyle}>
         {skillOffers.map((offer, index) => (
           <li key={`${offer.id}-${index}`}>
-            <button
+            <div
+              aria-label={`${offer.name} ${offer.rarityName} 스킬`}
               className={`shop-item shop-skill ${skillPick === index ? "picked" : ""}`}
               data-testid={`shop-skill-${offer.id}`}
-              disabled={gold < offer.price}
-              onClick={() => onPickSkill(index)}
-              type="button"
+              style={skillOfferCardStyle}
             >
-              {offer.card}
-              <span className="shop-item-name">
-                {offer.name} <small>({offer.rarityName})</small>
+              <span style={skillOfferHeaderStyle}>
+                {offer.card}
+                <span className="shop-item-name">
+                  {offer.name} <small>({offer.rarityName})</small>
+                </span>
               </span>
-              <strong className="shop-price">{offer.price}G</strong>
-            </button>
+              {offer.effects}
+              <button
+                className="shop-item"
+                data-testid={`shop-skill-buy-${offer.id}`}
+                disabled={gold < offer.price}
+                onClick={() => onPickSkill(index)}
+                style={skillOfferBuyStyle}
+                type="button"
+              >
+                <strong className="shop-price">{offer.price}G</strong>
+              </button>
+            </div>
           </li>
         ))}
         {skillOffers.length === 0 ? <li className="shop-empty">매진</li> : null}

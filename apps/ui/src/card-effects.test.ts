@@ -9,6 +9,9 @@ const skill = (id: string) => {
   return found;
 };
 
+const renderedTexts = (id: string) =>
+  skillEffectRows(skill(id)).flatMap((row) => row.segments.map((segment) => segment.text));
+
 describe("skillEffectRows", () => {
   it("renames Blood Offering to Blood Release at Blood Sword stage 5", () => {
     const offering = skill("blood-offering-skill");
@@ -69,13 +72,51 @@ describe("skillEffectRows", () => {
     expect(rows.find((row) => row.kind === "base")?.segments).toEqual([{ text: "과열 진입", term: "overheat" }]);
   });
 
-  it("renders armor reference and delayed release effects without generic copy", () => {
-    expect(skillEffectRows(skill("mana-amplification"))[1]?.segments[0]?.text).toBe("현재 방어만큼 방어 (최대 10)");
-    expect(skillEffectRows(skill("armor-smash"))[1]?.segments[0]?.text).toBe("피해 6 + 현재 방어 (최대 +10)");
-    expect(skillEffectRows(skill("arcane-armor-release"))[1]?.segments.map((segment) => segment.text)).toEqual([
-      "방어 10",
-      "소환 행동 후 현재 방어만큼 전체 피해 (최대 18)",
+  it("renders armor echo effects without generic copy", () => {
+    const manaAmplification = skillEffectRows(skill("mana-amplification"));
+    expect(manaAmplification[1]?.segments).toEqual([
+      { text: "방어 6" },
+      { text: "정밀 방어 예약", term: "precisionDefense" },
     ]);
+
+    const armorSmash = skillEffectRows(skill("armor-smash"));
+    expect(armorSmash[1]?.segments).toEqual([{ text: "피해 6 + 반향", term: "echoAmplification" }]);
+
+    const arcaneArmorRelease = skillEffectRows(skill("arcane-armor-release"));
+    expect(arcaneArmorRelease[1]?.segments).toEqual([
+      { text: "방어 8" },
+      { text: "모든 적 피해 4 + 반향", term: "echoAmplification" },
+    ]);
+
+    const armorCompression = skillEffectRows(skill("armor-compression"));
+    expect(armorCompression.find((row) => row.kind === "heads")?.segments).toEqual([
+      { text: "반향 예열 +2", term: "echoPreheat" },
+    ]);
+
+    for (const id of ["mana-amplification", "armor-smash", "arcane-armor-release", "armor-compression"]) {
+      expect(renderedTexts(id)).not.toContain("효과");
+    }
+  });
+
+  it("renders pending overheat and remise atoms without generic copy", () => {
+    const fireFist = skillEffectRows(skill("fire-fist"));
+    expect(fireFist.find((row) => row.badge === "화염 앞면")?.segments).toEqual([
+      { text: "피해 +1" },
+      { text: "다음 턴 과열", term: "pendingOverheat" },
+    ]);
+    expect(fireFist.find((row) => row.badge === "화염 뒷면")?.segments).toEqual([
+      { text: "다음 턴 과열", term: "pendingOverheat" },
+    ]);
+
+    expect(renderedTexts("redoublement")).toContain("르미즈 +1");
+    expect(renderedTexts("fleche")).toContain("반복 시 피해 +4");
+    expect(skillEffectRows(skill("fente")).find((row) => row.badge === "르미즈")?.segments).toEqual([
+      { text: "반복 후 감전 1", term: "shock" },
+    ]);
+
+    for (const id of ["fire-fist", "redoublement", "fleche", "fente"]) {
+      expect(renderedTexts(id)).not.toContain("효과");
+    }
   });
 
   it("tags burn segments with the burn keyword", () => {

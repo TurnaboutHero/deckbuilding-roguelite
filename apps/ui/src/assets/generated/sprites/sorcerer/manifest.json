@@ -25,54 +25,7 @@
       255,
       0
     ],
-    "selection": "auto",
-    "score": 213.92,
-    "min_subject_distance": 209.11,
-    "background": {
-      "mode": "flat",
-      "hex": "#11E81D",
-      "rgb": [
-        17,
-        232,
-        29
-      ],
-      "opaque_border_fraction": 1.0,
-      "border_coverage": 1.0,
-      "enclosed_background_pixels": 83,
-      "enclosed_material_pixels": 0,
-      "subject_pixels": 6211
-    },
-    "candidates": [
-      {
-        "name": "magenta",
-        "hex": "#FF00FF",
-        "score": 203.7,
-        "min_subject_distance": 200.68,
-        "clears_erase_radius": true
-      },
-      {
-        "name": "green",
-        "hex": "#00FF00",
-        "score": 213.92,
-        "min_subject_distance": 209.11,
-        "clears_erase_radius": true
-      },
-      {
-        "name": "cyan",
-        "hex": "#00FFFF",
-        "score": 129.33,
-        "min_subject_distance": 79.42,
-        "clears_erase_radius": false
-      },
-      {
-        "name": "blue",
-        "hex": "#004DFF",
-        "score": 98.77,
-        "min_subject_distance": 21.26,
-        "clears_erase_radius": false
-      }
-    ],
-    "selection_reason": "highest 1st-percentile subject distance among the 2 candidate(s) clearing the 96 erase radius"
+    "selection": "manual"
   },
   "animation": {
     "cellWidth": 256,

@@ -157,7 +157,10 @@ button:focus-visible {
 .enemy-line {
   display: flex;
   align-items: stretch;
+  align-content: flex-start;
   justify-content: flex-end;
+  flex: 1 1 0;
+  flex-wrap: nowrap;
   gap: clamp(12px, 2vw, 28px);
   min-width: 0;
 }
@@ -172,6 +175,7 @@ button:focus-visible {
 }
 
 .enemy-line .unit {
+  flex: 0 1 clamp(190px, 16vw, 300px);
   min-width: clamp(190px, 16vw, 300px);
 }
 
@@ -192,7 +196,59 @@ button:focus-visible {
 }
 
 .enemy-line .unit-plate {
-  width: clamp(190px, 16vw, 300px);
+  width: min(100%, clamp(190px, 16vw, 300px));
+}
+
+.enemy-line[data-enemy-count="4"],
+.enemy-line[data-enemy-count="5"] {
+  gap: clamp(6px, 1vw, 14px);
+}
+
+.enemy-line[data-enemy-count="4"] .unit {
+  flex: 1 1 clamp(142px, 13vw, 220px);
+  min-width: 0;
+}
+
+.enemy-line[data-enemy-count="5"] .unit {
+  flex: 1 1 clamp(116px, 10.5vw, 180px);
+  min-width: 0;
+}
+
+.enemy-line[data-enemy-count="4"] .unit-plate,
+.enemy-line[data-enemy-count="5"] .unit-plate {
+  border-width: 3px;
+  gap: 4px;
+  min-width: 0;
+  padding: 7px 9px;
+}
+
+.enemy-line[data-enemy-count="4"] .unit-plate {
+  width: min(100%, clamp(142px, 13vw, 220px));
+}
+
+.enemy-line[data-enemy-count="5"] .unit-plate {
+  width: min(100%, clamp(116px, 10.5vw, 180px));
+  padding: 6px 7px;
+}
+
+.enemy-line[data-enemy-count="4"] .unit.enemy .sprite {
+  width: clamp(104px, 10vw, 152px);
+  height: clamp(78px, 8vw, 118px);
+}
+
+.enemy-line[data-enemy-count="5"] .unit.enemy .sprite {
+  width: clamp(82px, 8vw, 128px);
+  height: clamp(62px, 6.5vw, 100px);
+}
+
+.enemy-line[data-enemy-count="5"] .unit-name {
+  font-size: 13px;
+}
+
+.enemy-line[data-enemy-count="5"] .intent {
+  min-height: 18px;
+  padding: 3px 5px;
+  font-size: 11px;
 }
 
 .unit.targetable .unit-plate,

@@ -7,7 +7,7 @@ Style contract: match the attached base/anchor reference image EXACTLY: same pix
 
 Use this prompt as an authoritative sprite-production spec. Do not expand it into a polished illustration, painterly character image, anime key art, 3D render, vector mascot, glossy app icon, realistic portrait, or marketing artwork.
 
-Animation action: spell command sequence: reading stance, raise the free hand forward, sharp pointing command gesture, recover to reading stance — body and book motion only, no detached effects.
+Animation action: spell-cast sequence: gather mana at the raised hand, step forward, palm thrust cast with a compact mana flash touching the palm, recover - every effect pixel stays connected to the hand.
 
 Anchor lock:
 - Accepted idle/direction anchors own character identity, outfit details, colors, face design, asymmetric markings, and side-specific accessories for final action rows.

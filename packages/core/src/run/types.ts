@@ -4,9 +4,10 @@ import type { RunGraph } from './graph';
 // v7 (P7 D2): 장착 슬롯 6→8 일반화, 빈 슬롯 null, 시작 4스킬.
 // v6 저장은 equippedSkills/upgradedSlots를 null/false로 8까지 패딩.
 // v6 (P6 D1~D3): 3막 그래프(acts 메타)·휴식/보물 노드·획득 패시브·스킬 강화.
+// v9 (P13 W5c): guardian saves are retired instead of loaded.
 // v8 (P12): persist the Blood Spellblade's run-long Blood Sword investment.
-export const RUN_SAVE_VERSION = 8 as const;
-export const LEGACY_RUN_SAVE_VERSIONS = [1, 2, 3, 4, 5, 6, 7] as const;
+export const RUN_SAVE_VERSION = 9 as const;
+export const LEGACY_RUN_SAVE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
 // P7 D2 — 기본 최대 장착 슬롯 (10 확장은 이 상수 + 세이브 버전 승격 경로만).
 // 단일 정본은 combat/state의 MAX_SKILL_SLOTS — 런 계층 별칭만 제공한다.

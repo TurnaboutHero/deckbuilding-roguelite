@@ -404,7 +404,7 @@ try {
     const rail = page.getByTestId("execution-rail");
     await rail.locator("li").first().getByRole("button", { name: /뒤로/ }).click();
     await page.waitForFunction(
-      () => document.querySelector(".execution-rail .execution-name")?.textContent === "가드",
+      () => document.querySelector(".execution-rail .execution-name")?.textContent === "방어",
     );
     await page.locator(".end-turn").click();
     await page.locator(".unit.enemy.targetable .sprite").first().waitFor({ state: "visible" });
@@ -415,13 +415,13 @@ try {
     await page.getByRole("button", { name: "남은 실행 취소" }).click();
     const cancelledState = {
       firstLoaded: await card(page, 0).locator(".socket.loaded").count(),
-      guardLoaded: await card(page, 1).locator(".socket.loaded").count(),
+      defenseLoaded: await card(page, 1).locator(".socket.loaded").count(),
       phase: await page.locator("main").getAttribute("data-auto-turn-end-phase"),
       currentBeforeCancel,
     };
     check(
       "선택 중 취소는 완료 효과를 유지하고 남은 장전을 보존",
-      cancelledState.guardLoaded === 0 && cancelledState.firstLoaded === 1 && cancelledState.phase === "cancelled",
+      cancelledState.defenseLoaded === 0 && cancelledState.firstLoaded === 1 && cancelledState.phase === "cancelled",
       JSON.stringify(cancelledState),
     );
     check("자동 실행 취소 에러 0", errors.length === 0, errors.join(" | "));
@@ -478,7 +478,7 @@ try {
     await card(page, 0).hover();
     await slashPreviewTip.waitFor({ state: "visible" });
     const slashPreview = await slashPreviewTip.innerText();
-    check("베기 프리뷰 자해 없음", !/자해/.test(slashPreview), slashPreview);
+    check("공격 프리뷰 자해 없음", !/자해/.test(slashPreview), slashPreview);
     check("프리뷰 시나리오 에러 0", errors.length === 0, errors.join(" | "));
     await page.context().close();
   }

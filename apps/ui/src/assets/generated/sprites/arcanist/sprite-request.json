@@ -24,27 +24,26 @@
       0,
       255
     ],
-    "selection": "explicit",
-    "selection_reason": "base background is flat magenta; navy/blue subject — magenta pinned (P6 D7 chroma gate)"
+    "selection": "manual"
   },
   "states": {
     "idle": {
       "frames": 4,
       "fps": 4,
       "loop": true,
-      "action": "subtle breathing while reading the open grimoire, combat-ready loop"
+      "action": "subtle breathing standing-ready loop, raised hand keeps a small mana point that stays touching the fingertips"
     },
     "attack": {
       "frames": 4,
       "fps": 8,
       "loop": false,
-      "action": "spell command sequence: reading stance, raise the free hand forward, sharp pointing command gesture, recover to reading stance — body and book motion only, no detached effects"
+      "action": "spell-cast sequence: gather mana at the raised hand, step forward, palm thrust cast with a compact mana flash touching the palm, recover - every effect pixel stays connected to the hand"
     },
     "hurt": {
       "frames": 4,
       "fps": 8,
       "loop": false,
-      "action": "flinch back from a hit clutching the grimoire and recover, body-only reaction"
+      "action": "flinch back from a hit and recover, body-only reaction"
     }
   },
   "style": "match the attached base/anchor reference image EXACTLY: same pixel density (logical pixel block size), same body proportions, same outline weight, same palette, same shading style, same level of detail. Do not restyle, do not change proportions, do not add or remove detail density. Avoid polished illustration, painterly rendering, anime key art, 3D render, vector app-icon polish, glossy lighting, soft gradients, and anti-aliased high-detail edges.",

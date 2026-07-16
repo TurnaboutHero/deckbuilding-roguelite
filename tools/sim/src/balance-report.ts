@@ -162,8 +162,8 @@ interface P3CharacterCrnEvidence {
   readonly isBalanceGate: false;
 }
 
-interface P3GuardianSafetyMetrics {
-  readonly sample: "guardian policy runs";
+interface P3ArcanistSafetyMetrics {
+  readonly sample: "arcanist policy runs";
   readonly runs: number;
   readonly terminalRuns: number;
   readonly crashRuns: number;
@@ -272,7 +272,7 @@ export interface M6BalanceReport {
     readonly anomalies: M6BalanceAnomalyBreakdown;
     readonly crn: M6CompactCrnEvidence;
     readonly policyEnemyCharacter: readonly P3PolicyEnemyCharacterRow[];
-    readonly guardianSafety500: P3GuardianSafetyMetrics;
+    readonly arcanistSafety500: P3ArcanistSafetyMetrics;
     readonly characterSafety500: readonly P3CharacterSafetyMetrics[];
     readonly rewardSelectionDominance: P3RewardSelectionReport;
     readonly buildPolicies: readonly P3BuildPolicyRow[];
@@ -719,12 +719,12 @@ const compactCharacterCrnEvidence = (
   isBalanceGate: false,
 });
 
-const guardianSafetyMetrics = (
+const arcanistSafetyMetrics = (
   traces: readonly M6RunTrace[],
-): P3GuardianSafetyMetrics => {
+): P3ArcanistSafetyMetrics => {
   const outcomes = foldM6Metrics(traces).outcomes;
   return {
-    sample: "guardian policy runs",
+    sample: "arcanist policy runs",
     runs: outcomes.runs,
     terminalRuns: outcomes.terminalRuns,
     crashRuns: outcomes.crashRuns,
@@ -970,7 +970,7 @@ const buildPolicyRows = (): readonly P3BuildPolicyRow[] =>
   (
     [
       ["fire-build", ["warrior"]],
-      ["mana-build", ["guardian"]],
+      ["mana-build", ["arcanist"]],
       ["frost-build", ["frost-knight"]],
       ["lightning-build", ["sorcerer"]],
     ] as const
@@ -986,10 +986,10 @@ const rewardSelectionAuditRows = (
 ): readonly P3RewardSelectionAuditRow[] => {
   const required = [
     {
-      characterId: "guardian" as const,
+      characterId: "arcanist" as const,
       buildPolicyId: "mana-build" as const,
       optionType: "skill" as const,
-      optionId: "mana-well",
+      optionId: "arcane-command",
     },
     {
       characterId: "sorcerer" as const,
@@ -1213,7 +1213,7 @@ export const buildM6BalanceReport = (
     games: config.gamesPerPolicy,
     policyIds: POLICY_IDS,
     variantIds: ["baseline"],
-    characterIds: ["guardian", "sorcerer", "frost-knight"],
+    characterIds: ["arcanist", "sorcerer", "frost-knight"],
     captureTranscripts: true,
   });
   const crnReport = runCrnComparison({
@@ -1224,12 +1224,12 @@ export const buildM6BalanceReport = (
     variantB: "basic-first",
   });
   const crn = compactCrnEvidence(crnReport);
-  const guardianCrn = runBulk({
+  const arcanistCrn = runBulk({
     baseSeed: config.baseSeed,
     games: config.crnGames,
     policyIds: ["greedy"],
     variantIds: ["baseline"],
-    characterIds: ["guardian"],
+    characterIds: ["arcanist"],
     buildPolicyIds: ["mana-build"],
   });
   // 신규 캐릭터 결정론은 자기 자신의 A=A로 증명한다 — warrior aa 재사용은 거짓 증명 (감시자 반려)
@@ -1288,7 +1288,7 @@ export const buildM6BalanceReport = (
         ...bulk.traces,
         ...characterBulk.traces,
       ]),
-      guardianSafety500: guardianSafetyMetrics(characterTraces("guardian")),
+      arcanistSafety500: arcanistSafetyMetrics(characterTraces("arcanist")),
       characterSafety500: [
         characterSafetyMetrics(
           "sorcerer",
@@ -1315,11 +1315,11 @@ export const buildM6BalanceReport = (
           traces: characterAa.result.traces,
         },
         {
-          characterId: "guardian",
+          characterId: "arcanist",
           buildPolicyId: "mana-build",
-          traces: guardianCrn.traces,
+          traces: arcanistCrn.traces,
         },
-        guardianCrn.report.anomalySeeds.length,
+        arcanistCrn.report.anomalySeeds.length,
       ),
       frostCharacterCrn: compactCharacterCrnEvidence(
         config.baseSeed,

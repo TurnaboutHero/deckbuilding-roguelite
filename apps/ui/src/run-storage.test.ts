@@ -14,8 +14,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   RUN_SAVE_KEY,
+  RUN_SAVE_QUARANTINE_KEY,
   clearRun,
   loadRun,
+  loadRunDetailed,
   parseRunSave,
   saveRun,
   serializeRunSave,
@@ -27,8 +29,6 @@ const LEGACY_CONTENT_VERSION = "0.5.0-m5";
 const P10_CONTENT_VERSION = "1.4.0-p10";
 const STARTING_BAG = [...(contentDb.characters.warrior?.startingBag ?? [])];
 const STARTING_SKILLS = [...(contentDb.characters.warrior?.startingSkills ?? [])];
-const GUARDIAN_STARTING_BAG = [...(contentDb.characters.guardian?.startingBag ?? [])];
-const GUARDIAN_STARTING_SKILLS = [...(contentDb.characters.guardian?.startingSkills ?? [])];
 
 // P7 D2 — 세이브 v7: 장착 슬롯 8 고정 (null = 빈 슬롯), 강화 플래그 8칸
 const MAX_SLOTS = 8;
@@ -253,39 +253,26 @@ describe("run save serialization boundary", () => {
     expect(loadRun(storage, CONTENT_VERSION, contentDb)).toBeNull();
   });
 
-  it("round-trips a Guardian run through caller-supplied storage", () => {
+  it("classifies retired guardian saves without throwing and quarantines the original raw value", () => {
     const storage = new MemoryStorage();
-    const save: RunSave = {
-      version: RUN_SAVE_VERSION,
-      contentVersion: CONTENT_VERSION,
+    const retiredRaw = JSON.stringify({
+      ...freshSave(),
+      version: 8,
+      contentVersion: "1.6.0-blood",
       runSeed: "BRAVE-EMBER-42",
-      character: "guardian" as never,
+      character: "guardian",
       currentHp: 70,
       maxHp: 70,
-      bag: [...GUARDIAN_STARTING_BAG] as never,
-      equippedSkills: padSkills(GUARDIAN_STARTING_SKILLS) as never,
-      gold: 0,
-      graph: legacyGraph(),
-      nodeChoices: [0, 0, 0, 0, 0],
-      shopRemovals: 0,
-      shopPurchasedCoins: 0,
-      shopPurchasedSkills: 0,
-      eventCombats: 0,
-      eventCoinGains: 0,
-      eventCoinLosses: 0,
-      upgradedSlots: [...NO_UPGRADES] as never,
-      acquiredPassives: [] as never,
-      shopPurchasedPassives: 0,
-      treasureOpened: 0,
-      restHeals: 0,
-      restUpgrades: 0,
-      combatIndex: 0,
-      attempt: 0,
+      bag: ["basic", "basic", "basic", "basic", "basic", "basic", "basic", "basic", "mana", "mana"],
+      equippedSkills: padSkills(["slash", "guard", "warding-strike", "mana-bulwark"]),
       phase: "combat",
-    };
+    });
+    storage.values.set(RUN_SAVE_KEY, retiredRaw);
 
-    saveRun(storage, save, contentDb);
-    expect(loadRun(storage, CONTENT_VERSION, contentDb)).toEqual(save);
+    const result = loadRunDetailed(storage, CONTENT_VERSION, contentDb);
+    expect(result.status).toBe("retired-character");
+    expect(result.save).toBeNull();
+    expect(storage.values.get(RUN_SAVE_QUARANTINE_KEY)).toBe(retiredRaw);
   });
 
   it("returns null without throwing for corrupt, old-version, wrong-content, or inaccessible saves", () => {
@@ -382,7 +369,7 @@ describe("run save serialization boundary", () => {
     });
   });
 
-  it("rejects current-generation off-pool pending rewards and shop offers", () => {
+  it("accepts current-generation all-element coin offers and rejects truly invalid pending offers", () => {
     const rewardRun = createRun(
       {
         contentVersion: CONTENT_VERSION,
@@ -394,13 +381,30 @@ describe("run save serialization boundary", () => {
     const started = startRunCombat(rewardRun, contentDb);
     const rewards = settleRunCombat(started.run, wonCombat(started.combat, started.combat.player.hp), contentDb);
     expect(parse(serialize(rewards))).toEqual(rewards);
+    const manaRewardOffer = {
+      ...rewards,
+      pendingRewards: {
+        ...rewards.pendingRewards!,
+        coinOptions: ["mana"],
+      },
+    };
+    expect(parse(JSON.stringify(manaRewardOffer))).toEqual(manaRewardOffer);
+    const legacyGraphManaRewardOffer = {
+      ...rewards,
+      graph: { layers: rewards.graph.layers },
+      pendingRewards: {
+        ...rewards.pendingRewards!,
+        coinOptions: ["mana"],
+      },
+    };
+    expect(parse(JSON.stringify(legacyGraphManaRewardOffer))).toEqual(legacyGraphManaRewardOffer);
     expect(
       parse(
         JSON.stringify({
           ...rewards,
           pendingRewards: {
             ...rewards.pendingRewards!,
-            coinOptions: ["mana"],
+            coinOptions: ["ash"],
           },
         }),
       ),
@@ -409,21 +413,9 @@ describe("run save serialization boundary", () => {
       parse(
         JSON.stringify({
           ...rewards,
-          graph: { layers: rewards.graph.layers },
           pendingRewards: {
             ...rewards.pendingRewards!,
-            coinOptions: ["mana"],
-          },
-        }),
-      ),
-    ).toBeNull();
-    expect(
-      parse(
-        JSON.stringify({
-          ...rewards,
-          pendingRewards: {
-            ...rewards.pendingRewards!,
-            skillOptions: ["warding-strike"],
+            skillOptions: ["arcane-charge"],
             skillChoiceResolved: false,
           },
         }),
@@ -451,13 +443,22 @@ describe("run save serialization boundary", () => {
     }
     if (shopRun === undefined || shopRun.pendingShop === undefined) throw new Error("failed to find a generated shop");
     expect(parse(serialize(shopRun))).toEqual(shopRun);
+    const manaShopOffer = {
+      ...shopRun,
+      pendingShop: {
+        ...shopRun.pendingShop,
+        coinOptions: ["mana"],
+        coinPrices: [70],
+      },
+    };
+    expect(parse(JSON.stringify(manaShopOffer))).toEqual(manaShopOffer);
     expect(
       parse(
         JSON.stringify({
           ...shopRun,
           pendingShop: {
             ...shopRun.pendingShop,
-            coinOptions: ["mana"],
+            coinOptions: ["ash"],
             coinPrices: [70],
           },
         }),
@@ -469,7 +470,7 @@ describe("run save serialization boundary", () => {
           ...shopRun,
           pendingShop: {
             ...shopRun.pendingShop,
-            skillOptions: ["warding-strike"],
+            skillOptions: ["arcane-charge"],
             skillPrices: [50],
           },
         }),
@@ -585,7 +586,7 @@ describe("run save serialization boundary", () => {
     // 감시자 발견 회귀: 검증기가 exclusiveTo를 무시하면 전용 스킬을 가용으로 오판해
     // 공용 풀 소진(B2 fallback) 저장을 거부한다 — 코어와 같은 술어를 공유해야 한다
     const shared = [...(contentDb.characters.warrior?.startingSkills ?? []).map(String), "smash"];
-    const exclusiveIds = ["warding-strike", "mana-bulwark", "shield-reprisal", "mana-well"];
+    const exclusiveIds = ["arcane-charge", "arcane-command", "shield-summon", "weapon-tuning"];
     const context = {
       coins: contentDb.coins,
       characters: contentDb.characters,

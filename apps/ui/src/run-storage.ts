@@ -4,7 +4,6 @@ import {
   RUN_SAVE_VERSION,
   MAX_SKILL_SLOTS,
   completedCombatCount,
-  isCoinEligibleForCharacter,
   isLockedSkill,
   isRewardSkillEligibleForCharacter,
   isSkillEligibleForCharacter,
@@ -36,6 +35,7 @@ export type LoadRunStatus =
   | "recovered" // 주 손상 → 백업으로 복구 (주 원문은 격리)
   | "corrupt" // 주·백업 모두 파싱 불가 (원문 격리, 사용자 결정 대기)
   | "unsupported" // 형식은 유효하나 미지 버전/콘텐츠 (원문 격리, 사용자 결정 대기)
+  | "retired-character" // 제거된 캐릭터 저장 (원문 격리, 새 런 시작 유도)
   | "unavailable"; // 저장소 접근 자체가 불가
 
 export interface LoadRunResult {
@@ -160,6 +160,9 @@ const paddedToCurrent = (value: Record<string, unknown>): Record<string, unknown
 
 const migratedLegacySave = (value: Record<string, unknown>): Record<string, unknown> | null => {
   if (value.version === RUN_SAVE_VERSION) return value;
+  // P13 W5c v8 -> v9: non-retired saves are field-preserving; retired guardian saves
+  // are classified before loading and never normalized into a current RunSave.
+  if (value.version === 8) return paddedToCurrent(value);
   // P12 v7 -> v8: the character validation below initializes Blood Sword investment to zero.
   if (value.version === 7) return paddedToCurrent(value);
   // P7 D2 — v6 → v7: 장착/강화 배열을 8칸 패딩(빈 슬롯 null / false)만 — 필드 의미 불변.
@@ -335,7 +338,6 @@ const parsePendingRewards = (
   equippedSkills: readonly (string | null)[],
   acquiredPassives: readonly string[],
   context: RunValidationContext,
-  allowLegacyOffers = false,
 ): PendingRewards | null => {
   if (!isRecord(value) || !isStringArray(value.coinOptions) || !isStringArray(value.skillOptions)) return null;
   if (
@@ -352,11 +354,7 @@ const parsePendingRewards = (
     coinOptions.length < 1 ||
     coinOptions.length > 3 ||
     !hasUniqueStrings(coinOptions) ||
-    !coinOptions.every((coin) =>
-      allowLegacyOffers
-        ? isKnownCoin(coin, context)
-        : isCoinEligibleForCharacter(context as ContentDb, character as CharacterId, coin as CoinDefId),
-    )
+    !coinOptions.every((coin) => isKnownCoin(coin, context))
   ) {
     return null;
   }
@@ -366,9 +364,7 @@ const parsePendingRewards = (
     !hasUniqueStrings(skillOptions) ||
     !skillOptions.every(
       (skill) =>
-        (allowLegacyOffers
-          ? isKnownSkill(skill, context)
-          : isRewardSkillEligibleForCharacter(context as ContentDb, character as CharacterId, skill as SkillId)) &&
+        isRewardSkillEligibleForCharacter(context as ContentDb, character as CharacterId, skill as SkillId) &&
         !equipped.has(skill),
     )
   ) {
@@ -424,7 +420,6 @@ const parsePendingShop = (
   value: unknown,
   character: string,
   context: RunValidationContext,
-  allowLegacyOffers = false,
 ): PendingShop | null => {
   if (
     !isRecord(value) ||
@@ -446,15 +441,9 @@ const parsePendingShop = (
     skillOptions.length !== skillPrices.length ||
     !hasUniqueStrings(coinOptions) ||
     !hasUniqueStrings(skillOptions) ||
-    !coinOptions.every((coin) =>
-      allowLegacyOffers
-        ? isKnownCoin(coin, context)
-        : isCoinEligibleForCharacter(context as ContentDb, character as CharacterId, coin as CoinDefId),
-    ) ||
+    !coinOptions.every((coin) => isKnownCoin(coin, context)) ||
     !skillOptions.every((skill) =>
-      allowLegacyOffers
-        ? isKnownSkill(skill, context)
-        : isRewardSkillEligibleForCharacter(context as ContentDb, character as CharacterId, skill as SkillId),
+      isRewardSkillEligibleForCharacter(context as ContentDb, character as CharacterId, skill as SkillId),
     ) ||
     !coinPrices.every(isPositiveSafeInteger) ||
     !skillPrices.every(isPositiveSafeInteger)
@@ -517,8 +506,6 @@ const normalizeRunSave = (
   if (migrated === null || migrated.version !== RUN_SAVE_VERSION) return null;
   if (!isNonEmptyString(migrated.contentVersion)) return null;
   const isLegacyContent = LEGACY_CONTENT_VERSIONS.includes(migrated.contentVersion);
-  const migratedFromLegacySave = rawValue.version !== RUN_SAVE_VERSION;
-  const allowLegacyOffers = migratedFromLegacySave || isLegacyContent;
   const value = isLegacyContent ? migrateRetiredColdSkills(migrated) : migrated;
   // 레거시 콘텐츠 버전(m5)은 현 콘텐츠의 부분집합·수치 불변이라 안전 마이그레이션 —
   // 반환 저장의 contentVersion은 현 버전으로 정규화되어 다음 저장부터 새 표기를 쓴다.
@@ -716,7 +703,6 @@ const normalizeRunSave = (
           value.equippedSkills,
           value.acquiredPassives,
           context,
-          allowLegacyOffers,
         );
   if (value.phase === "rewards" && pendingRewards === undefined) return null;
   if (value.phase !== "rewards" && value.pendingRewards !== undefined) return null;
@@ -725,7 +711,7 @@ const normalizeRunSave = (
   const pendingShop =
     value.pendingShop === undefined
       ? undefined
-      : parsePendingShop(value.pendingShop, value.character, context, allowLegacyOffers);
+      : parsePendingShop(value.pendingShop, value.character, context);
   if (value.phase === "shop" && pendingShop === undefined) return null;
   if (value.phase !== "shop" && value.pendingShop !== undefined) return null;
   if (pendingShop === null) return null;
@@ -846,7 +832,10 @@ export const saveRun = (storage: StorageLike, save: RunSave, context: RunValidat
 // 손상 vs 미지원 판별: JSON 파싱 불가/형식 파손 = corrupt. 파싱은 되는데
 // (a) 미래 스키마 버전 또는 (b) 알 수 없는 콘텐츠 버전이면 = unsupported
 // (다른 세대의 정상 저장 — 데이터 파손이 아니다).
-const classifyInvalidRaw = (raw: string, expectedContentVersion: string): "corrupt" | "unsupported" => {
+const classifyInvalidRaw = (
+  raw: string,
+  expectedContentVersion: string,
+): "corrupt" | "unsupported" | "retired-character" => {
   try {
     const value = JSON.parse(raw) as Record<string, unknown>;
     if (typeof value !== "object" || value === null) return "corrupt";
@@ -856,6 +845,7 @@ const classifyInvalidRaw = (raw: string, expectedContentVersion: string): "corru
       const knownContentVersions = new Set<string>([expectedContentVersion, ...LEGACY_CONTENT_VERSIONS]);
       if (!knownContentVersions.has(value.contentVersion)) return "unsupported";
     }
+    if (value.character === "guardian") return "retired-character";
     return "corrupt";
   } catch {
     return "corrupt";

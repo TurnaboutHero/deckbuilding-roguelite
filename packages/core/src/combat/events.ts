@@ -20,10 +20,14 @@ export type CombatEvent =
   | { type: 'healed'; target: TargetRef; amount: number; hp: number }
   | { type: 'cooldownReduced'; slots: number[]; amount: number }
   | { type: 'overheatEntered' }
+  | { type: 'overheatScheduled' }
+  | { type: 'overheatActivated' }
   | { type: 'overheatConsumed'; skill: SkillId }
-  | { type: 'remiseChecked'; coin: CoinUid; face: Face }
-  | { type: 'remiseReflipped'; coin: CoinUid; face: Face }
-  | { type: 'remiseReused'; skill: SkillId }
+  | { type: 'echoComputed'; base: number; preheat: number; precision: number; total: number }
+  | { type: 'echoSpent'; skill: SkillId; amount: number }
+  | { type: 'remiseGained'; amount: number; total: number }
+  | { type: 'remiseSpent'; skill: SkillId; firstFace: Face; repeat: boolean; remaining: number }
+  | { type: 'remiseRepeatResolved'; skill: SkillId }
   | { type: 'weaponOutputChanged'; amount: number; value: number }
   | { type: 'statusApplied'; target: TargetRef; status: StatusId; stacks: number; turns?: number }
   | { type: 'statusTicked'; target: TargetRef; status: StatusId; amount: number; remaining: number; turns?: number }
@@ -49,5 +53,11 @@ export type CombatEvent =
   | { type: 'enemyPassiveTriggered'; enemy: number; passive: string }
   | { type: 'enemyAttackBuffed'; enemy: number; amount: number; nextAttackBonus: number }
   | { type: 'intentRevealed'; enemy: number; intent: EnemyIntent }
+  | { type: 'enemyWindupStarted'; enemy: number; intent: EnemyIntent; turnsLeft: number; cancelThreshold?: number }
+  | { type: 'enemyWindupTicked'; enemy: number; intent: EnemyIntent; turnsLeft: number }
+  | { type: 'enemyWindupCancelled'; enemy: number; intent: EnemyIntent }
+  | { type: 'enemyPhaseChanged'; enemy: number }
+  | { type: 'enemyGrew'; enemy: number; stacks: number }
+  | { type: 'enemyHealFailed'; enemy: number; target: number }
   | { type: 'turnStarted'; turn: number }
   | { type: 'combatEnded'; result: 'victory' | 'defeat'; turns: number };

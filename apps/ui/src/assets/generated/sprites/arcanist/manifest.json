@@ -25,8 +25,7 @@
       0,
       255
     ],
-    "selection": "explicit",
-    "selection_reason": "base background is flat magenta; navy/blue subject — magenta pinned (P6 D7 chroma gate)"
+    "selection": "manual"
   },
   "animation": {
     "cellWidth": 256,

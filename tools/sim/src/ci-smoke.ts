@@ -16,10 +16,11 @@ const EXPECTED_RUNS = GAMES_PER_POLICY * POLICY_IDS.length;
 const SEED_42_GOLDEN = {
   seed: "42",
   result: "defeat",
-  combatsCompleted: 10,
+  combatsCompleted: 11,
   // 1.1.0-p6 재고정 — 3막·격투가 셋·막 스케일 ×1.15/1.3·막 보스 전체 회복 (balance-provisional)
   // 1.6.0-blood 재고정 — 혈액 마검사 및 보상 풀 정책 반영 (balance-provisional)
-  turnsPerCombat: [3, 3, 4, 2, 3, 3, 3, 4, 4, 3],
+  // 2026-07-16 P13: 보상 풀 전속성 가중 개방(basic+signature → all-element weighted)으로 재앵커
+  turnsPerCombat: [3, 3, 4, 2, 3, 3, 3, 4, 4, 4, 2],
   carriedHp: 0,
   finalBag: [
     "basic",
@@ -34,13 +35,14 @@ const SEED_42_GOLDEN = {
     "fire",
     "fire",
     "fire",
+    "mana",
     "fire",
+    "mana",
     "fire",
-    "fire",
-    "fire",
-    "fire",
-    "fire",
-    "fire",
+    "basic",
+    "basic",
+    "basic",
+    "basic",
   ],
   finalEquippedSkills: ["jab", "fist-guard", "burning-fist", "flame-hook", "null", "null", "null", "conflagration"],
   encounterOrder: [
@@ -54,6 +56,7 @@ const SEED_42_GOLDEN = {
     ["gatekeeper-plus"],
     ["raider-plus"],
     ["gatekeeper-plus"],
+    ["raider-plus", "gatekeeper-plus"],
   ],
 } as const;
 

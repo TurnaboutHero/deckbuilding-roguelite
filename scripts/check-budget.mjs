@@ -18,7 +18,7 @@ const BUDGETS = {
   // help/history/preferences surfaces, and their responsive/accessibility CSS.
   // Keep the measured addition bounded instead of disabling the gate.
   total: 3213312,
-  js: 497664, // 486 KiB
+  js: 532480, // 520 KiB - 2026-07-16 P13: 상점 효과 행·적 예고 배지·과열/반향 HUD 추가로 상향 (실측 520,801B)
   css: 86016, // 84 KiB
   maxFile: 716800, // 700 KiB
 };

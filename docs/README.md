@@ -1,6 +1,6 @@
 # 문서 안내
 
-> 마지막 동기화: 2026-07-14 · 기준: PRD v2.0 / P12
+> 마지막 동기화: 2026-07-16 · 기준: PRD v2.1 / P13
 
 문서의 역할을 제품 정본, 구현 스냅샷, 콘텐츠 작성 가이드, 결정 기록으로 분리한다. 같은 규칙을 여러 문서에서 독립적으로 수정하지 않는다.
 
@@ -10,7 +10,7 @@
 2. **실제 동작**: `packages/core`, `packages/content`, `apps/ui`의 코드와 회귀 테스트
 3. **구현 안내**: [`current-implementation.md`](./current-implementation.md)
 4. **신규 콘텐츠 작성 계약**: [`content-design-guide.md`](./content-design-guide.md)
-5. **결정 근거와 이력**: `../PRD/P7_*.md`~`../PRD/P12_*.md`, 역사 문서
+5. **결정 근거와 이력**: `../PRD/P7_*.md`~`../PRD/P13_*.md`, 역사 문서
 
 제품 문서와 코드가 다르면 한쪽을 조용히 정답으로 간주하지 않는다. 의도한 변경이면 같은 작업에서 제품 정본·구현 스냅샷·테스트를 함께 갱신하고, 의도하지 않은 차이면 회귀 결함으로 처리한다.
 
@@ -22,7 +22,8 @@
 | [`PRD.md`](./PRD.md) | 브랜드 코어, 전투·런·보상·캐릭터·UX 규칙 | **제품 단일 정본** |
 | [`current-implementation.md`](./current-implementation.md) | 현재 코드의 상태·명령·해결 순서·저장·검증 안내 | **기술 스냅샷** |
 | [`content-design-guide.md`](./content-design-guide.md) | 코인·스킬·패시브·캐릭터·몬스터 작성 규칙 | **작성 계약** |
-| [`../PRD/P12_BLOOD_SPELLBLADE_DESIGN_SYNC.md`](../PRD/P12_BLOOD_SPELLBLADE_DESIGN_SYNC.md) | 혈액 마검사와 혈마검 런 성장의 구현 근거 | **최신 결정 기록** |
+| [`../PRD/P13_REVISION_DESIGN_SYNC.md`](../PRD/P13_REVISION_DESIGN_SYNC.md) | 스택 르미즈·과열 예약·갑주 반향·전속성 보상·몬스터 배치 A·수호자 삭제 | **최신 결정 기록** |
+| [`../PRD/P12_BLOOD_SPELLBLADE_DESIGN_SYNC.md`](../PRD/P12_BLOOD_SPELLBLADE_DESIGN_SYNC.md) | 혈액 마검사와 혈마검 런 성장의 구현 근거 | 결정 기록 |
 | [`../PRD/P11_COLD_ROGUE_DESIGN_SYNC.md`](../PRD/P11_COLD_ROGUE_DESIGN_SYNC.md) | 냉기 도적·보존·지정 드로우 구현 근거 | 결정 기록 |
 | [`../PRD/P10_CHARACTER_DESIGN_SYNC.md`](../PRD/P10_CHARACTER_DESIGN_SYNC.md) | 화염 격투가·마도기사 구현 근거 | 결정 기록 |
 | [`../PRD/P9_NEW_DESIGN_DECISIONS.md`](../PRD/P9_NEW_DESIGN_DECISIONS.md) | 번개 결투사·르미즈 구현 근거 | 결정 기록 |

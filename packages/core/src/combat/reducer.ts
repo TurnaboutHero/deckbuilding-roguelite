@@ -40,6 +40,14 @@ const emptyPlaced = (): Record<SlotId, CoinUid[]> => {
   return placed as Record<SlotId, CoinUid[]>;
 };
 
+const gainRemise = (input: CombatState, amount: number, events: CombatEvent[]): CombatState => {
+  const total = Math.min(3, Math.max(0, input.player.remiseCharges + amount));
+  const gained = total - input.player.remiseCharges;
+  if (gained <= 0) return input;
+  events.push({ type: 'remiseGained', amount: gained, total });
+  return { ...input, player: { ...input.player, remiseCharges: total } };
+};
+
 // P6 D2 — 시작 고유 특성(trait)과 획득 패시브를 같은 훅 실행기로 처리한다.
 // 순서 결정론: trait 먼저, 이후 획득 순서(acquiredPassives 배열 순서) 그대로.
 const runHook = (input: CombatState, db: ContentDb, hook: 'combatStart' | 'turnStart'): { state: CombatState; events: CombatEvent[] } => {
@@ -86,7 +94,10 @@ const startPlayerTurn = (input: CombatState, db: ContentDb, clearBlock = true): 
     // P7 D1 — 턴 시작에 쿨다운 감소 (쿨1=다음 턴 가용, 쿨3=두 턴 봉인 후 가용)
     player: {
       ...input.player,
-      remiseCharges: db.characters[String(input.characterId)]?.trait.mechanic === 'remise' ? 1 : 0,
+      overheat: input.player.pendingOverheat && !input.player.overheat ? true : input.player.overheat,
+      pendingOverheat: false,
+      armorEchoAvailable: input.player.armorEcho > 0,
+      remiseCharges: input.player.remiseCharges,
       continuousMotionUsed: false,
       retrievalHabitUsed: false,
       balanceSenseUsed: false,
@@ -103,6 +114,8 @@ const startPlayerTurn = (input: CombatState, db: ContentDb, clearBlock = true): 
       coldHandsUsedThisTurn: false,
       frostCompoundUsedThisTurn: false,
       refrozenLootUsedThisTurn: false,
+      shieldMasteryUsedThisTurn: false,
+      attackSkillUsedThisTurn: false,
       firstDamageReducedThisTurn: false,
       firstBurnBoostUsedThisTurn: false,
       burnAppliedThisTurn: false,
@@ -123,6 +136,10 @@ const startPlayerTurn = (input: CombatState, db: ContentDb, clearBlock = true): 
       cooldownRemaining: Math.max(0, candidate.cooldownRemaining - 1)
     }))
   };
+  if (input.player.pendingOverheat && !input.player.overheat) events.push({ type: 'overheatActivated' });
+  if (db.characters[String(input.characterId)]?.trait.mechanic === 'remise') {
+    state = gainRemise(state, 1, events);
+  }
   if (clearBlock && state.player.block > 0) {
     events.push({ type: 'blockCleared', target: { type: 'player' }, amount: state.player.block });
   }
@@ -222,6 +239,7 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
       nextDrawPenalty: 0,
       nextDrawBonus: 0,
       overheat: false,
+      pendingOverheat: false,
       weaponOutput: 0,
       nextAttackDamageBonus: 0,
       endTurnBlockAoeCap: 0,
@@ -237,7 +255,7 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
       manaMembraneBlockThisTurn: 0,
       blueCircuitUsedThisTurn: false,
       manaConsumedForResonance: 0,
-      remiseCharges: character.trait.mechanic === 'remise' ? 1 : 0,
+      remiseCharges: 0,
       continuousMotionUsed: false,
       retrievalHabitUsed: false,
       balanceSenseUsed: false,
@@ -254,6 +272,8 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
       coldHandsUsedThisTurn: false,
       frostCompoundUsedThisTurn: false,
       refrozenLootUsedThisTurn: false,
+      shieldMasteryUsedThisTurn: false,
+      attackSkillUsedThisTurn: false,
       bloodSwordInvestment: cfg.bloodSwordInvestment ?? 0,
       bloodSwordPower: bloodSwordPowerFor(cfg.bloodSwordInvestment ?? 0),
       bloodSwordReleaseBonus: 0,
@@ -261,7 +281,14 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
       bloodSwordKillCoinUsedThisTurn: false,
       bloodSwordDiscountUsedThisTurn: false,
       concentratedBloodUsedThisTurn: false,
-      redRefluxUsedThisTurn: false
+      redRefluxUsedThisTurn: false,
+      residualHeatUsed: false,
+      armorEcho: 0,
+      armorEchoAvailable: false,
+      armorEchoAbsorbedThisEnemyTurn: 0,
+      echoPreheat: 0,
+      precisionDefenseArmed: false,
+      precisionDefenseSatisfied: false
     },
     enemies,
     coins,
@@ -461,6 +488,7 @@ const endTurn = (input: CombatState, db: ContentDb, preserveChoice?: readonly Co
   const placed = emptyPlaced();
   state = {
     ...state,
+    player: { ...state.player, remiseCharges: 0, armorEcho: 0, armorEchoAvailable: false },
     zones: { ...state.zones, hand: [...state.zones.hand, ...returned], placed }
   };
   const passiveMechanics = new Set(
@@ -469,9 +497,8 @@ const endTurn = (input: CombatState, db: ContentDb, preserveChoice?: readonly Co
       return mechanic === undefined ? [] : [mechanic];
     })
   );
-  if (passiveMechanics.has('preparedStance')) {
-    const amount = Math.min(2, state.zones.hand.length);
-    if (amount > 0) state = applyBlock(state, { type: 'player' }, amount, events);
+  if (passiveMechanics.has('preparedStance') && state.player.attackSkillUsedThisTurn) {
+    state = applyBlock(state, { type: 'player' }, 1, events);
   }
   if (passiveMechanics.has('hotBarrier') && state.player.burnAppliedThisTurn) {
     state = applyBlock(state, { type: 'player' }, 2, events);

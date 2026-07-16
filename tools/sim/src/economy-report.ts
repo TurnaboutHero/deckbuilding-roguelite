@@ -42,7 +42,7 @@ export const P4_ECONOMY_REPORT_SCHEMA_VERSION = "p4-economy-report-v1" as const;
 
 export const P4_ECONOMY_CHARACTER_IDS = [
   "warrior",
-  "guardian",
+  "arcanist",
   "sorcerer",
   "frost-knight",
 ] as const;
