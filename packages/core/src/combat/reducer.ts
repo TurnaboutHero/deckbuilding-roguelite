@@ -145,7 +145,7 @@ const startPlayerTurn = (input: CombatState, db: ContentDb, clearBlock = true): 
     events.push({ type: 'blockCleared', target: { type: 'player' }, amount: state.player.block });
   }
   // P7 D3 — 턴 시작 총 드로우 [0,8] 클램프 (nextTurnDraw 폭주 방지)
-  const drawCount = Math.min(8, Math.max(0, 5 - state.player.nextDrawPenalty + state.player.nextDrawBonus));
+  const drawCount = Math.min(8, Math.max(0, 3 - state.player.nextDrawPenalty + state.player.nextDrawBonus));
   state = {
     ...state,
     player: {

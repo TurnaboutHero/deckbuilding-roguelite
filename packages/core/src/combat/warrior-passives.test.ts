@@ -125,7 +125,16 @@ describe('warrior passives', () => {
     expect(idleEnded.events.some((event) => event.type === 'blockGained')).toBe(false);
     expect(idleEnded.state.player.hp).toBe(19);
 
-    const attackTurn = combat([id<PassiveId>('preparedStance')]);
+    const initialAttackTurn = combat([id<PassiveId>('preparedStance')]);
+    const suppliedCoin = initialAttackTurn.zones.draw[0]!;
+    const attackTurn: CombatState = {
+      ...initialAttackTurn,
+      zones: {
+        ...initialAttackTurn.zones,
+        hand: [...initialAttackTurn.zones.hand, suppliedCoin],
+        draw: initialAttackTurn.zones.draw.slice(1)
+      }
+    };
     const afterAttack = useFlip(attackTurn, slot(2), attackTurn.zones.hand[0]!);
     expect(afterAttack.zones.hand.length).toBeGreaterThan(2);
 

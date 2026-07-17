@@ -34,13 +34,13 @@ describe('M5 full-run simulator', () => {
     // P12 재고정: 기본+대표 속성 전용 동전 보상 정책을 포함한 결정론 런 골든.
     // P13 reward-pool opening (basic+signature → all-element weighted) — 의도된 재앵커.
     // warrior 시작 셋 = jab·fist-guard·burning-fist·inner-passion + 빈 슬롯 4(null).
-    // seed 42 fight-first는 11번째 전투 후 패배한다 — balance-provisional 관측치
-    // (baseline 정책 우선순위가 신규 격투 스킬 ID를 모른다는 한계 포함, 백로그 보고).
+    // v1.2 draw-3 전환기 기준 seed 42 fight-first는 2번째 전투 후 패배한다.
+    // 콘텐츠 래더 수치가 아직 이관 전인 balance-provisional 관측치이며, 후속 지시마다 깊이를 추적한다.
     const simulation = simulateRun('42');
 
     expect(simulation.summary.result).toBe('defeat');
-    expect(simulation.summary.combatsCompleted).toBe(11);
-    expect(simulation.combats).toHaveLength(11);
+    expect(simulation.summary.combatsCompleted).toBe(2);
+    expect(simulation.combats).toHaveLength(2);
     for (let index = 0; index < simulation.combats.length; index += 1) {
       const combat = simulation.combats[index];
       if (combat === undefined) throw new Error('missing combat record');
@@ -60,8 +60,8 @@ describe('M5 full-run simulator', () => {
     expect(simulation.summary).toEqual({
       seed: '42',
       result: 'defeat',
-      combatsCompleted: 11,
-      turnsPerCombat: [3, 3, 4, 2, 3, 3, 3, 4, 4, 4, 2], // P10 화염 전사 시작 세트 반영 결정론 골든 (balance-provisional)
+      combatsCompleted: 2,
+      turnsPerCombat: [5, 6], // v1.2 draw-3 전환기 결정론 골든 (balance-provisional)
       carriedHp: 0,
       finalBag: [
         'basic',
@@ -74,30 +74,12 @@ describe('M5 full-run simulator', () => {
         'basic',
         'fire',
         'fire',
-        'fire',
-        'fire',
-        'mana',
-        'fire',
-        'mana',
-        'fire',
-        'basic',
-        'basic',
-        'basic',
-        'basic'
+        'fire'
       ],
-      finalEquippedSkills: ['jab', 'fist-guard', 'burning-fist', 'flame-hook', 'null', 'null', 'null', 'conflagration'],
+      finalEquippedSkills: ['jab', 'fist-guard', 'burning-fist', 'flame-hook', 'null', 'null', 'null', 'null'],
       encounterOrder: [
         ['raider'],
-        ['gatekeeper'],
-        ['goblin', 'ghoul'],
-        ['thief', 'goblin'],
-        ['gatekeeper-plus'],
-        ['shaman'],
-        ['gatekeeper'],
-        ['gatekeeper-plus'],
-        ['raider-plus'],
-        ['gatekeeper-plus'],
-        ['raider-plus', 'gatekeeper-plus']
+        ['gatekeeper']
       ]
     });
   });

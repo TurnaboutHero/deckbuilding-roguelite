@@ -1,5 +1,5 @@
 import type { ContentDb, EffectAtom, FlipSkillDef, SkillDef } from '../content-types';
-import { effectiveElements, flipSkillEffects } from '../content-types';
+import { effectiveElements, flipSkillEffects, isSuccessLadderFlipSkill } from '../content-types';
 import type { CoinDefId, CoinUid, EquipmentDefId, SlotId } from '../ids';
 import { consumeRequirementFor } from './consume-requirement';
 import { MAX_PRESERVED_COINS } from './state';
@@ -66,6 +66,11 @@ const isBasicCoinInHand = (state: CombatState, db: ContentDb, coin: CoinUid): bo
 
 export const coinSatisfiesFlipRequirement = (state: CombatState, db: ContentDb, skill: FlipSkillDef, coin: CoinUid): boolean => {
   const instance = state.coins[Number(coin)];
+  if (isSuccessLadderFlipSkill(skill)) {
+    const coinDef = instance === undefined ? undefined : db.coins[String(instance.defId)];
+    if (coinDef === undefined) return false;
+    return coinDef.element === null || skill.element !== undefined;
+  }
   if (skill.requiredCoin !== undefined) {
     return instance !== undefined && String(instance.defId) === String(skill.requiredCoin);
   }

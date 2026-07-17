@@ -452,8 +452,18 @@ describe('M4 consume skills, grants, and once per combat', () => {
   // P7 D1: 턴당 3회 캡 폐지 — 소비 포함 4번째 스킬 사용도 합법이다
   it('allows a fourth skill use in the same turn, consume included (cap removed)', () => {
     const db = testDb();
+    const initial = createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'consume-cap');
+    const suppliedCoin = initial.zones.draw[0]!;
+    const supplied = {
+      ...initial,
+      zones: {
+        ...initial.zones,
+        hand: [...initial.zones.hand, suppliedCoin],
+        draw: initial.zones.draw.slice(1)
+      }
+    };
     let state = withHandDefs(
-      replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'consume-cap'), [
+      replaceFlipRng(supplied, [
         'heads',
         'heads',
         'heads',
@@ -483,8 +493,6 @@ describe('M4 consume skills, grants, and once per combat', () => {
   it('omits consume legal commands when hand has no fire or fire grant', () => {
     const db = testDb();
     const state = withHandDefs(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'no-fuel'), [
-      'basic',
-      'basic',
       'basic',
       'basic',
       'basic'
@@ -520,7 +528,17 @@ describe('combat determinism and D0', () => {
   // 쿨다운은 다음 플레이어 턴 시작에 감소해 재사용이 가능해진다.
   it('rejects a same-turn reuse via cooldown, allows a fourth use, then frees the skill next turn', () => {
     const db = testDb();
-    let state = replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'd0'), [
+    const initial = createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'd0');
+    const suppliedCoin = initial.zones.draw[0]!;
+    const supplied = {
+      ...initial,
+      zones: {
+        ...initial.zones,
+        hand: [...initial.zones.hand, suppliedCoin],
+        draw: initial.zones.draw.slice(1)
+      }
+    };
+    let state = replaceFlipRng(supplied, [
       'heads',
       'heads',
       'heads',
@@ -559,10 +577,10 @@ describe('combat determinism and D0', () => {
 });
 
 describe('draw and win loss', () => {
-  it('draws 5, reshuffles discard when draw is depleted, and permits partial draw', () => {
+  it('draws 3, reshuffles discard when draw is depleted, and permits partial draw', () => {
     const db = testDb();
     let state = createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'draw');
-    expect(state.zones.hand).toHaveLength(5);
+    expect(state.zones.hand).toHaveLength(3);
 
     state = {
       ...state,
@@ -706,17 +724,23 @@ describe('draw and win loss', () => {
     const state = replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'hand-cap'), [
       'tails'
     ]);
-    const extra = [11, 12, 13, 14, 15, 16].map((value) => value as CoinUid);
+    const loadedCoin = state.zones.hand[0]!;
+    const extra = [11, 12, 13, 14, 15, 16, 17, 18].map((value) => value as CoinUid);
     const capped = {
       ...state,
-      nextUid: 17,
-      zones: { ...state.zones, hand: [...state.zones.hand, ...extra] },
+      nextUid: 19,
+      zones: {
+        ...state.zones,
+        hand: [...state.zones.hand.slice(1), ...extra],
+        placed: { ...state.zones.placed, [slot(0)]: [loadedCoin] }
+      },
       coins: {
         ...state.coins,
         ...Object.fromEntries(extra.map((coin) => [Number(coin), { uid: coin, defId: id<CoinDefId>('basic'), permanent: true, grants: [] }]))
       }
     };
-    const result = useFirstCoin(capped, 0, 0, db);
+    const result = step(capped, { type: 'useFlipSkill', slot: slot(0), target: 0 }, db);
+    if (!result.ok) throw new Error(result.error);
     expect(result.state.zones.hand).toHaveLength(10);
     const created = result.events.find((event) => event.type === 'coinCreated');
     expect(created).toMatchObject({ type: 'coinCreated', zone: 'discard' });

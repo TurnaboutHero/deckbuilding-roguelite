@@ -196,6 +196,15 @@ describe('P7 D1 — 쿨다운 행동 모델', () => {
   it('쿨다운 0(반복) 스킬은 같은 턴에 코인이 남는 한 4회 이상 사용 가능하다', () => {
     const db = testDb();
     let state = start([id<SkillId>('basicStrike')], undefined, db);
+    const suppliedCoin = state.zones.draw[0]!;
+    state = {
+      ...state,
+      zones: {
+        ...state.zones,
+        hand: [...state.zones.hand, suppliedCoin],
+        draw: state.zones.draw.slice(1)
+      }
+    };
     for (let i = 0; i < 4; i += 1) {
       state = useLoaded(state, db, 0, 0);
       expect(state.slots[0]!.cooldownRemaining).toBe(0);
@@ -469,13 +478,13 @@ describe('P7 감사 보정 회귀 (D9)', () => {
     const db = testDb();
     const bag = Array.from({ length: 20 }, () => id<CoinDefId>('basic'));
     const state = start([id<SkillId>('bigDraw')], bag, db);
-    expect(state.zones.hand.length).toBe(5);
+    expect(state.zones.hand.length).toBe(3);
     const coin = state.zones.hand[0]!;
     const placed = step(state, { type: 'placeCoin', coin, slot: slot(0) }, db);
     if (!placed.ok) throw new Error(placed.error);
     const used = step(placed.state, { type: 'useFlipSkill', slot: slot(0) }, db);
     if (!used.ok) throw new Error(used.error);
-    // 장전 1 소모 후 4 + draw 9 → 상한 10에서 정지 (13 아님)
+    // 장전 1 소모 후 2 + draw 9 → 상한 10에서 정지 (11 아님)
     expect(used.state.zones.hand.length).toBe(10);
   });
 

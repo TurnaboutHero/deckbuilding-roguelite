@@ -19,14 +19,12 @@ describe("recommended load proposal", () => {
     const proposal = recommendedLoadProposal(state, contentDb);
 
     expect(proposal.requiresConfirmation).toBe(true);
-    expect(proposal.commands).toHaveLength(5);
+    expect(proposal.commands).toHaveLength(3);
     expect(proposal.commands.every((command) => command.type === "placeCoin")).toBe(true);
     expect(proposal.placements.map((placement) => placement.slot)).toEqual([
       slot(0),
       slot(1),
       slot(2),
-      slot(2),
-      slot(3),
     ]);
     expect(state).toEqual(before);
   });
@@ -41,9 +39,19 @@ describe("recommended load proposal", () => {
     if (coin === undefined) throw new Error("missing test coin");
     const partial = step(initial, { type: "placeCoin", coin, slot: slot(2) }, contentDb);
     if (!partial.ok) throw new Error(partial.error);
+    const suppliedCoin = partial.state.zones.draw[0];
+    if (suppliedCoin === undefined) throw new Error("missing supplied test coin");
+    const supplied: CombatState = {
+      ...partial.state,
+      zones: {
+        ...partial.state.zones,
+        hand: [...partial.state.zones.hand, suppliedCoin],
+        draw: partial.state.zones.draw.slice(1),
+      },
+    };
 
-    const proposal = recommendedLoadProposal(partial.state, contentDb);
-    let simulated: CombatState = partial.state;
+    const proposal = recommendedLoadProposal(supplied, contentDb);
+    let simulated: CombatState = supplied;
     for (const command of proposal.commands) {
       const result = step(simulated, command, contentDb);
       expect(result.ok).toBe(true);

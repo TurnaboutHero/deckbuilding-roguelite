@@ -85,14 +85,21 @@ const withFaces = (state: CombatState, faces: readonly ('heads' | 'tails')[]): C
 const combat = (): CombatState => createCombat({ character: id<CharacterId>('warrior'), enemies: [id<EnemyDefId>('raider')] }, testDb(), 'furnace');
 
 const withHandDefs = (state: CombatState, defs: readonly string[]): CombatState => {
+  const suppliedCount = Math.max(0, defs.length - state.zones.hand.length);
+  const supplied = state.zones.draw.slice(0, suppliedCount);
+  const hand = [...state.zones.hand, ...supplied];
   const updates = Object.fromEntries(
     defs.map((defId, index) => {
-      const coin = state.zones.hand[index];
+      const coin = hand[index];
       if (coin === undefined) throw new Error('missing hand coin');
       return [Number(coin), { ...state.coins[Number(coin)]!, defId: id<CoinDefId>(defId) }];
     })
   );
-  return { ...state, coins: { ...state.coins, ...updates } };
+  return {
+    ...state,
+    zones: { ...state.zones, hand, draw: state.zones.draw.slice(suppliedCount) },
+    coins: { ...state.coins, ...updates }
+  };
 };
 
 const placeFirst = (state: CombatState, slotIndex = 0): CombatState => {

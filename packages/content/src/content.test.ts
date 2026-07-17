@@ -43,19 +43,25 @@ const withEquippedSkills = (state: CombatState, values: readonly string[]): Comb
   )
 });
 
-const withHandDefs = (state: CombatState, defs: readonly string[]): CombatState => ({
-  ...state,
-  coins: {
-    ...state.coins,
-    ...Object.fromEntries(
-      defs.map((defId, index) => {
-        const coin = state.zones.hand[index];
-        if (coin === undefined) throw new Error('missing hand coin');
-        return [Number(coin), { ...state.coins[Number(coin)]!, defId: coinId(defId), grants: [] }];
-      })
-    )
-  }
-});
+const withHandDefs = (state: CombatState, defs: readonly string[]): CombatState => {
+  const suppliedCount = Math.max(0, defs.length - state.zones.hand.length);
+  const supplied = state.zones.draw.slice(0, suppliedCount);
+  const hand = [...state.zones.hand, ...supplied];
+  return {
+    ...state,
+    zones: { ...state.zones, hand, draw: state.zones.draw.slice(suppliedCount) },
+    coins: {
+      ...state.coins,
+      ...Object.fromEntries(
+        defs.map((defId, index) => {
+          const coin = hand[index];
+          if (coin === undefined) throw new Error('missing hand coin');
+          return [Number(coin), { ...state.coins[Number(coin)]!, defId: coinId(defId), grants: [] }];
+        })
+      )
+    }
+  };
+};
 
 describe('P9 latest design sync', () => {
   it('ships the revised starters while retaining legacy reward ids', () => {
@@ -533,7 +539,17 @@ describe('P11 Cold Rogue design sync', () => {
   });
 
   it('caps additional preservation at two and total preserved coins at three', () => {
-    const state = { ...coldCombat('p11-cap'), player: { ...coldCombat('p11-cap').player, additionalPreserveThisTurn: 2 } };
+    const initial = coldCombat('p11-cap');
+    const suppliedCoin = initial.zones.draw[0]!;
+    const state = {
+      ...initial,
+      player: { ...initial.player, additionalPreserveThisTurn: 2 },
+      zones: {
+        ...initial.zones,
+        hand: [...initial.zones.hand, suppliedCoin],
+        draw: initial.zones.draw.slice(1)
+      }
+    };
     const three = state.zones.hand.slice(0, 3);
     expect(step(state, { type: 'endTurn', preserve: three }, contentDb).ok).toBe(true);
     expect(step(state, { type: 'endTurn', preserve: state.zones.hand.slice(0, 4) }, contentDb)).toMatchObject({

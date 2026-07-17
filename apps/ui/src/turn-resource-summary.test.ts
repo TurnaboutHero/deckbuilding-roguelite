@@ -33,10 +33,10 @@ describe("turn resource summary", () => {
     const queue = executionQueueSnapshot([], loads);
 
     expect(summarizeTurnResources(state, queue)).toEqual({
-      usable: 3,
+      usable: 1,
       loaded: 2,
       queued: 1,
-      discardedOnEnd: 4,
+      discardedOnEnd: 2,
     });
   });
 

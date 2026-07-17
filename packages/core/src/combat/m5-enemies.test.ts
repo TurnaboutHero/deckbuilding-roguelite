@@ -133,7 +133,7 @@ describe('M5 enemy actions', () => {
     );
 
     const withered = endTurn(initial, db);
-    expect(withered.state.zones.hand).toHaveLength(4);
+    expect(withered.state.zones.hand).toHaveLength(2);
     expect(withered.state.player.nextDrawPenalty).toBe(0);
     expect(withered.events).toContainEqual({
       type: 'witherApplied',
@@ -144,7 +144,7 @@ describe('M5 enemy actions', () => {
     expect(withered.state.enemies[0]?.intent.id).toBe('hex-strike');
 
     const recovered = endTurn(withered.state, db);
-    expect(recovered.state.zones.hand).toHaveLength(5);
+    expect(recovered.state.zones.hand).toHaveLength(3);
     expect(recovered.state.player.nextDrawPenalty).toBe(0);
     expect(recovered.state.player.hp).toBe(61);
     expect(recovered.events.some((event) => event.type === 'witherApplied')).toBe(false);
