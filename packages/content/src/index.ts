@@ -942,29 +942,68 @@ export const skills = {
   },
   'fire-fist': {
     id: skill('fire-fist'),
-    name: '화격권',
+    name: '화염권',
     type: 'flip',
     rarity: 'common',
     tags: ['attack'],
     targetType: 'single-enemy',
-    cooldown: 1,
     cost: 2,
+    element: 'fire',
     exclusiveTo: character('warrior'),
-    base: [
-      { kind: 'addCoin', coin: coin('fire'), zone: 'draw', count: 1 },
-      { kind: 'damage', amount: 10 }
+    successFace: 'heads',
+    successLadder: [
+      [{ kind: 'damage', amount: 2 }],
+      [
+        { kind: 'damage', amount: 4 },
+        { kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }
+      ],
+      [
+        { kind: 'damage', amount: 7 },
+        { kind: 'applyStatus', status: 'burn', stacks: 2, to: 'target' }
+      ]
     ],
-    heads: { mode: 'per', effects: [{ kind: 'damage', amount: 1 }] },
-    // 화염 코인 앞면은 일반 앞면 +1과 합산해 +2, 화염 코인은 양면 모두 다음 턴 과열을 예약한다.
-    elementFaces: [
-      { element: 'fire', face: 'heads', effects: [{ kind: 'damage', amount: 1 }, { kind: 'scheduleOverheat' }] },
-      { element: 'fire', face: 'tails', effects: [{ kind: 'scheduleOverheat' }] }
-    ],
-    overheatBonus: [{ kind: 'damage', amount: 4 }],
+    resonance: {
+      element: 'fire',
+      effects: [{ kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }]
+    },
     upgrade: {
-      name: '단조 정권',
-      description: '과열 피해 14 → 16',
-      patch: { kind: 'replaceEffect', section: 'overheat', index: 0, effect: { kind: 'damage', amount: 6 } }
+      name: '작열권',
+      description: '앞면 2개 성공 시 피해 9, 화상 3',
+      patch: {
+        kind: 'multi',
+        patches: [
+          { kind: 'ladderAmount', tier: 2, index: 0, delta: 2 },
+          { kind: 'ladderAmount', tier: 2, index: 1, field: 'stacks', delta: 1 }
+        ]
+      }
+    }
+  },
+  'direct-hit': {
+    id: skill('direct-hit'),
+    name: '직격타',
+    type: 'flip',
+    rarity: 'common',
+    tags: ['attack'],
+    targetType: 'single-enemy',
+    cost: 2,
+    element: 'fire',
+    exclusiveTo: character('warrior'),
+    successFace: 'heads',
+    successLadder: [
+      [{ kind: 'damage', amount: 1 }],
+      [
+        { kind: 'damage', amount: 4 },
+        { kind: 'addCoin', coin: coin('fire'), zone: 'draw', position: 'top', count: 1 }
+      ],
+      [
+        { kind: 'damage', amount: 6 },
+        { kind: 'addCoin', coin: coin('fire'), zone: 'draw', position: 'top', count: 1 }
+      ]
+    ],
+    upgrade: {
+      name: '정타',
+      description: '앞면 0개 성공 시 피해 1 → 2',
+      patch: { kind: 'ladderAmount', tier: 0, index: 0, delta: 1 }
     }
   },
   'overheat-strike': {
@@ -1957,8 +1996,8 @@ export const characters = {
     name: '화염 격투가',
     maxHp: 70,
     startingBag: [...Array.from({ length: 8 }, () => coin('basic')), coin('fire'), coin('fire')],
-    // P7 D2 — 시작 4스킬: 반복 기본기 2 + 캐릭터 스킬 2 (버닝 스트라이크 + 과열 인에이블러)
-    startingSkills: [skill('jab'), skill('fist-guard'), skill('burning-fist'), skill('flame-hook')],
+    // v1.2 — 반복 기본기 2 + 화염 속성 성공 단계 전용기 2.
+    startingSkills: [skill('jab'), skill('fist-guard'), skill('fire-fist'), skill('direct-hit')],
     trait: {
       id: 'ember-pouch',
       name: '불씨 주머니',

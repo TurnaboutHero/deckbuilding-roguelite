@@ -61,7 +61,7 @@ describe('M5 full-run simulator', () => {
       seed: '42',
       result: 'defeat',
       combatsCompleted: 2,
-      turnsPerCombat: [5, 6], // v1.2 draw-3 전환기 결정론 골든 (balance-provisional)
+      turnsPerCombat: [5, 5], // v1.2 화염 시작기 전환 후 결정론 골든 (balance-provisional)
       carriedHp: 0,
       finalBag: [
         'basic',
@@ -76,7 +76,7 @@ describe('M5 full-run simulator', () => {
         'fire',
         'fire'
       ],
-      finalEquippedSkills: ['jab', 'fist-guard', 'burning-fist', 'flame-hook', 'null', 'null', 'null', 'null'],
+      finalEquippedSkills: ['jab', 'fist-guard', 'fire-fist', 'direct-hit', 'null', 'null', 'null', 'null'],
       encounterOrder: [
         ['raider'],
         ['gatekeeper']

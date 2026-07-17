@@ -358,6 +358,41 @@ describe('success-ladder validation', () => {
     } as unknown as SkillDef;
     expect(testDb([legacy]).validate()).toContainEqual(expect.stringContaining('requires a success-ladder'));
   });
+
+  it('validates ladderAmount stacks targets and rejects field mismatches', () => {
+    expect(
+      errorsFor({
+        cost: 2,
+        successFace: 'heads',
+        successLadder: [
+          [{ kind: 'damage', amount: 2 }],
+          [{ kind: 'damage', amount: 4 }],
+          [
+            { kind: 'damage', amount: 7 },
+            { kind: 'applyStatus', status: 'burn', stacks: 2, to: 'target' }
+          ]
+        ],
+        upgrade: {
+          name: 'hotter',
+          description: 'burn 3',
+          patch: { kind: 'ladderAmount', tier: 2, index: 1, field: 'stacks', delta: 1 }
+        }
+      })
+    ).toEqual([]);
+
+    expect(
+      errorsFor({
+        cost: 1,
+        successFace: 'heads',
+        successLadder: [[], [{ kind: 'damage', amount: 4 }]],
+        upgrade: {
+          name: 'invalid',
+          description: 'invalid',
+          patch: { kind: 'ladderAmount', tier: 1, index: 0, field: 'stacks', delta: 1 }
+        }
+      })
+    ).toContainEqual(expect.stringContaining('has no stacks'));
+  });
 });
 
 describe('success-ladder upgrades', () => {
@@ -376,5 +411,39 @@ describe('success-ladder upgrades', () => {
     const upgraded = deriveUpgradedSkill(authored);
     expect(upgraded).toMatchObject({ successLadder: [[], [{ kind: 'damage', amount: 5 }]] });
     expect(authored.successLadder).toEqual([[], [{ kind: 'damage', amount: 4 }]]);
+  });
+
+  it('applies a multi patch to damage and status stacks without mutating the authored ladder', () => {
+    const authored = ladderSkill('upgradeable-flame-fist', {
+      cost: 2,
+      element: 'fire',
+      successFace: 'heads',
+      successLadder: [
+        [{ kind: 'damage', amount: 2 }],
+        [{ kind: 'damage', amount: 4 }, { kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }],
+        [{ kind: 'damage', amount: 7 }, { kind: 'applyStatus', status: 'burn', stacks: 2, to: 'target' }]
+      ],
+      upgrade: {
+        name: 'hotter',
+        description: 'damage 9 and burn 3',
+        patch: {
+          kind: 'multi',
+          patches: [
+            { kind: 'ladderAmount', tier: 2, index: 0, delta: 2 },
+            { kind: 'ladderAmount', tier: 2, index: 1, field: 'stacks', delta: 1 }
+          ]
+        }
+      }
+    });
+
+    const upgraded = deriveUpgradedSkill(authored) as FlipSkillDef;
+    expect(upgraded.successLadder?.[2]).toEqual([
+      { kind: 'damage', amount: 9 },
+      { kind: 'applyStatus', status: 'burn', stacks: 3, to: 'target' }
+    ]);
+    expect(authored.successLadder?.[2]).toEqual([
+      { kind: 'damage', amount: 7 },
+      { kind: 'applyStatus', status: 'burn', stacks: 2, to: 'target' }
+    ]);
   });
 });

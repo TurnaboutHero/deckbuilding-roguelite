@@ -421,11 +421,13 @@ export const deriveUpgradedSkill = (def: SkillDef): SkillDef => {
     const ladder = def.successLadder.map((tier) => [...tier]);
     const tier = ladder[patch.tier];
     const atom = tier?.[patch.index];
+    const field = patch.field ?? "amount";
+    const current = atom?.[field as keyof typeof atom];
     if (
       tier === undefined ||
       atom === undefined ||
-      !("amount" in atom) ||
-      typeof atom.amount !== "number"
+      !(field in atom) ||
+      typeof current !== "number"
     ) {
       throw new Error(
         `upgrade ladderAmount target is invalid: ${String(def.id)}`,
@@ -433,7 +435,7 @@ export const deriveUpgradedSkill = (def: SkillDef): SkillDef => {
     }
     tier[patch.index] = {
       ...atom,
-      amount: atom.amount + patch.delta,
+      [field]: current + patch.delta,
     } as typeof atom;
     return { ...def, successLadder: ladder };
   }

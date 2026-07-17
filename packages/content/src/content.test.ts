@@ -1,5 +1,5 @@
 import type { CombatState, CoinDefId, CoinUid, ConsumeSkillDef, EnemyDef, Face, FlipSkillDef, Rng, RngSnapshot, SkillDef, SkillId, SlotId } from '@game/core';
-import { createCombat, deriveUpgradedSkill, legalCommands, rewardEligibleSkillIds, statusStacks, statusTurns, step, validateContentDb } from '@game/core';
+import { createCombat, createRun, deriveUpgradedSkill, legalCommands, rewardEligibleSkillIds, settleRunCombat, startRunCombat, statusStacks, statusTurns, step, validateContentDb } from '@game/core';
 import { describe, expect, it } from 'vitest';
 
 import { characters, coins, CONTENT_VERSION, LEGACY_CONTENT_VERSIONS, contentDb, enemies, equipment, events, passives, skills } from './index';
@@ -112,7 +112,7 @@ describe('P9 latest design sync', () => {
   });
 
   it('ships the revised starters while retaining legacy reward ids', () => {
-    expect(characters.warrior.startingSkills.map(String)).toEqual(['jab', 'fist-guard', 'burning-fist', 'flame-hook']);
+    expect(characters.warrior.startingSkills.map(String)).toEqual(['jab', 'fist-guard', 'fire-fist', 'direct-hit']);
     expect(skills['flame-hook']).toMatchObject({ name: '불씨권', cost: 1 });
     expect('upgrade' in skills['flame-hook']).toBe(false);
     expect(skills['inner-passion']).toBeDefined();
@@ -120,6 +120,103 @@ describe('P9 latest design sync', () => {
     expect(characters.sorcerer.startingSkills.map(String)).toEqual(['slash', 'guard', 'attaque', 'parade']);
     expect(Object.values(contentDb.skills).filter((entry) => String(entry.exclusiveTo) === 'sorcerer')).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: '팡트' }), expect.objectContaining({ name: '뇌정 처형' })])
+    );
+  });
+
+  it('ships the v1.2 fire starters as exact success ladders with scoped upgrades', () => {
+    expect(skills['fire-fist']).toMatchObject({
+      name: '화염권',
+      exclusiveTo: 'warrior',
+      type: 'flip',
+      rarity: 'common',
+      cost: 2,
+      element: 'fire',
+      successFace: 'heads',
+      successLadder: [
+        [{ kind: 'damage', amount: 2 }],
+        [{ kind: 'damage', amount: 4 }, { kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }],
+        [{ kind: 'damage', amount: 7 }, { kind: 'applyStatus', status: 'burn', stacks: 2, to: 'target' }]
+      ],
+      resonance: {
+        element: 'fire',
+        effects: [{ kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }]
+      }
+    });
+    expect(skills['fire-fist']).not.toHaveProperty('overheatBonus');
+    expect(skills['fire-fist']).not.toHaveProperty('elementFaces');
+    expect(skills['fire-fist']).not.toHaveProperty('base');
+
+    expect(skills['direct-hit']).toMatchObject({
+      name: '직격타',
+      exclusiveTo: 'warrior',
+      type: 'flip',
+      rarity: 'common',
+      cost: 2,
+      element: 'fire',
+      successFace: 'heads',
+      successLadder: [
+        [{ kind: 'damage', amount: 1 }],
+        [
+          { kind: 'damage', amount: 4 },
+          { kind: 'addCoin', coin: 'fire', zone: 'draw', position: 'top', count: 1 }
+        ],
+        [
+          { kind: 'damage', amount: 6 },
+          { kind: 'addCoin', coin: 'fire', zone: 'draw', position: 'top', count: 1 }
+        ]
+      ]
+    });
+    expect(skills['direct-hit']).not.toHaveProperty('base');
+
+    expect((deriveUpgradedSkill(skills['fire-fist']!) as FlipSkillDef).successLadder?.[2]).toEqual([
+      { kind: 'damage', amount: 9 },
+      { kind: 'applyStatus', status: 'burn', stacks: 3, to: 'target' }
+    ]);
+    expect((deriveUpgradedSkill(skills['direct-hit']!) as FlipSkillDef).successLadder?.[0]).toEqual([
+      { kind: 'damage', amount: 2 }
+    ]);
+  });
+
+  it('fires Flame Fist resonance once from shipped content', () => {
+    let state = withEquippedSkill(combat('v12-fire-resonance'), 'fire-fist');
+    state = withFaces(withHandDefs(state, ['fire', 'fire']), ['heads', 'heads']);
+    const result = useFlip(state, state.zones.hand.slice(0, 2), 0);
+
+    expect(result.events.filter((event) => event.type === 'resonanceTriggered')).toEqual([
+      { type: 'resonanceTriggered', skill: skillId('fire-fist'), element: 'fire' }
+    ]);
+    expect(statusStacks(result.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(5);
+  });
+
+  it('carries Direct Hit temporary fire from draw top into the next hand but not the post-combat bag', () => {
+    const run = createRun(
+      { contentVersion: CONTENT_VERSION, runSeed: 'v12-direct-hit-lifecycle', character: 'warrior' as never },
+      contentDb
+    );
+    const started = startRunCombat(run, contentDb);
+    const directHitSlot = started.combat.slots.findIndex((candidate) => String(candidate.skillId) === 'direct-hit');
+    expect(directHitSlot).toBeGreaterThanOrEqual(0);
+
+    const state = withFaces(withHandDefs(started.combat, ['basic', 'basic']), ['heads', 'tails']);
+    const used = useFlipAt(state, directHitSlot, state.zones.hand.slice(0, 2), 0);
+    const created = used.events.find((event) => event.type === 'coinCreated' && event.defId === 'fire');
+    if (created?.type !== 'coinCreated') throw new Error('missing Direct Hit fire coin');
+    expect(used.state.zones.draw[0]).toBe(created.coin);
+    expect(used.state.coins[Number(created.coin)]?.permanent).toBe(false);
+
+    const ended = step(used.state, { type: 'endTurn' }, contentDb);
+    if (!ended.ok) throw new Error(ended.error);
+    expect(ended.state.zones.hand).toContain(created.coin);
+
+    const victorious = {
+      ...ended.state,
+      phase: 'victory' as const,
+      enemies: ended.state.enemies.map((enemy) => ({ ...enemy, hp: 0 }))
+    };
+    const settled = settleRunCombat(started.run, victorious, contentDb);
+    expect(settled.bag).toEqual(run.bag);
+    expect(settled.bag.filter((coin) => String(coin) === 'fire')).toHaveLength(
+      run.bag.filter((coin) => String(coin) === 'fire').length
     );
   });
 
@@ -729,12 +826,15 @@ describe('P10 Fire Warrior and Arcanist design sync', () => {
     expect(statusStacks(result.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(1);
   });
 
-  it('pins the confirmed fire kit, passives, and overheat-only Fire Fist upgrade', () => {
+  it('pins the confirmed fire kit, passives, and v1.2 Fire Fist upgrade', () => {
     expect(skills['burnout-blow']).toMatchObject({ oncePerCombat: true, consume: { element: 'fire', count: 3 } });
     expect(skills['warrior-flame-rampage']).toMatchObject({ cost: 2, oncePerCombat: true });
     expect(deriveUpgradedSkill(skills['warrior-flame-rampage']!)).toMatchObject({ cost: 3, cooldown: 1, oncePerCombat: undefined });
-    expect((deriveUpgradedSkill(skills['fire-fist']!) as FlipSkillDef).overheatBonus).toEqual([{ kind: 'damage', amount: 6 }]);
-    expect((deriveUpgradedSkill(skills['fire-fist']!) as FlipSkillDef).base).toEqual(skills['fire-fist']?.base);
+    expect((deriveUpgradedSkill(skills['fire-fist']!) as FlipSkillDef).successLadder?.[2]).toEqual([
+      { kind: 'damage', amount: 9 },
+      { kind: 'applyStatus', status: 'burn', stacks: 3, to: 'target' }
+    ]);
+    expect((deriveUpgradedSkill(skills['fire-fist']!) as FlipSkillDef).overheatBonus).toBeUndefined();
     expect(
       Object.values(passives)
         .filter((entry) => String(entry.exclusiveTo) === 'warrior')
@@ -1211,20 +1311,19 @@ describe('P3.4 shipped content goldens', () => {
     expect(contentDb.validate()).toEqual([]);
   });
 
-  it('creates Fire Fist temporary fuel even when its overheat hit ends combat', () => {
-    let state = withEquippedSkill(combat('fire-fist-finisher'), 'fire-fist');
+  it('stops Direct Hit before temporary fuel creation when its damage ends combat', () => {
+    let state = withEquippedSkill(combat('direct-hit-finisher'), 'direct-hit');
     state = withFaces(
       {
         ...state,
-        player: { ...state.player, overheat: true },
-        enemies: state.enemies.map((enemy) => ({ ...enemy, hp: 14, maxHp: 14 }))
+        enemies: state.enemies.map((enemy) => ({ ...enemy, hp: 4, maxHp: 4 }))
       },
-      ['tails', 'tails']
+      ['heads', 'tails']
     );
     const result = useFlip(state, state.zones.hand.slice(0, 2), 0);
     expect(result.state.phase).toBe('victory');
-    expect(result.events).toContainEqual(expect.objectContaining({ type: 'coinCreated', defId: 'fire', zone: 'draw' }));
-    expect(result.events).toContainEqual(expect.objectContaining({ type: 'damageDealt', amount: 14, target: { type: 'enemy', index: 0 } }));
+    expect(result.events).not.toContainEqual(expect.objectContaining({ type: 'coinCreated', defId: 'fire' }));
+    expect(result.events).toContainEqual(expect.objectContaining({ type: 'damageDealt', amount: 4, target: { type: 'enemy', index: 0 } }));
   });
 });
 
@@ -1810,15 +1909,15 @@ describe('P6 shipped content goldens (1.1.0-p6)', () => {
     const warrior = characters.warrior;
     expect(String(warrior.id)).toBe('warrior');
     expect(warrior.name).toBe('화염 격투가');
-    // P7 D2 — 시작 4스킬: 반복 기본기 2 + 버닝 스트라이크 + 과열 인에이블러
-    expect(warrior.startingSkills.map(String)).toEqual(['jab', 'fist-guard', 'burning-fist', 'flame-hook']);
+    // v1.2 — 시작 4스킬: 반복 기본기 2 + 화염 속성 성공 단계 전용기 2
+    expect(warrior.startingSkills.map(String)).toEqual(['jab', 'fist-guard', 'fire-fist', 'direct-hit']);
     // 기존 검술 기본기는 공용 defs로 존치 (타 캐릭터 시작 셋·구 세이브 참조 유효)
     for (const legacy of ['slash', 'guard']) {
       expect(contentDb.skills[legacy]).toBeDefined();
       expect(contentDb.skills[legacy]?.exclusiveTo).toBeUndefined();
     }
     expect(contentDb.skills['burning-strike']?.exclusiveTo).toBe('warrior');
-    for (const fist of ['jab', 'fist-guard', 'burning-fist', 'flame-hook', 'inner-passion']) {
+    for (const fist of ['jab', 'fist-guard', 'fire-fist', 'direct-hit', 'burning-fist', 'flame-hook', 'inner-passion']) {
       expect(String(contentDb.skills[fist]?.exclusiveTo)).toBe('warrior');
     }
   });
@@ -1897,7 +1996,7 @@ describe('P9 shipped content goldens (1.3.0-p9)', () => {
     });
   });
 
-  it('pins the warrior overheat kit and the new draw/cooldown utilities (D3/D5)', () => {
+  it('pins the remaining warrior overheat kit and v1.2 fire starters (D3/D5)', () => {
     expect(skills['inner-passion']).toMatchObject({
       type: 'flip',
       cooldown: 3,
@@ -1908,29 +2007,20 @@ describe('P9 shipped content goldens (1.3.0-p9)', () => {
       tails: { mode: 'any', effects: [{ kind: 'block', amount: 3 }] }
     });
     expect(skills['fire-fist']).toMatchObject({
-      name: '화격권',
+      name: '화염권',
       rarity: 'common',
       cost: 2,
-      cooldown: 1,
-      base: [
-        { kind: 'addCoin', coin: coinId('fire'), zone: 'draw', count: 1 },
-        { kind: 'damage', amount: 10 }
+      element: 'fire',
+      successFace: 'heads',
+      successLadder: [
+        [{ kind: 'damage', amount: 2 }],
+        [{ kind: 'damage', amount: 4 }, { kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }],
+        [{ kind: 'damage', amount: 7 }, { kind: 'applyStatus', status: 'burn', stacks: 2, to: 'target' }]
       ],
-      heads: { mode: 'per', effects: [{ kind: 'damage', amount: 1 }] },
-      elementFaces: [
-        {
-          element: 'fire',
-          face: 'heads',
-          effects: [{ kind: 'damage', amount: 1 }, { kind: 'scheduleOverheat' }]
-        },
-        {
-          element: 'fire',
-          face: 'tails',
-          effects: [{ kind: 'scheduleOverheat' }]
-        }
-      ],
-      overheatBonus: [{ kind: 'damage', amount: 4 }]
+      resonance: { element: 'fire', effects: [{ kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }] }
     });
+    expect(skills['fire-fist']).not.toHaveProperty('overheatBonus');
+    expect(skills['direct-hit']).toMatchObject({ name: '직격타', cost: 2, element: 'fire', successFace: 'heads' });
     expect(skills['ember-weave']).toMatchObject({
       name: '잿불 갑주',
       base: [{ kind: 'block', amount: 4 }],

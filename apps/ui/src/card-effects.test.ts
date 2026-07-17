@@ -101,14 +101,24 @@ describe("skillEffectRows", () => {
     }
   });
 
-  it("renders pending overheat and remise atoms without generic copy", () => {
-    const fireFist = skillEffectRows(skill("fire-fist"));
-    expect(fireFist.find((row) => row.badge === "화염 앞면")?.segments).toEqual([
-      { text: "피해 +1" },
-      { text: "다음 턴 과열", term: "pendingOverheat" },
-    ]);
-    expect(fireFist.find((row) => row.badge === "화염 뒷면")?.segments).toEqual([
-      { text: "다음 턴 과열", term: "pendingOverheat" },
+  it("renders exact v1.2 Fire Fist tiers and remise atoms without generic copy", () => {
+    expect(skillEffectRows(skill("fire-fist"))).toEqual([
+      { kind: "tier", badge: "0개", segments: [{ text: "피해 2" }] },
+      {
+        kind: "tier",
+        badge: "1개",
+        segments: [{ text: "피해 4" }, { text: "화상 1", term: "burn" }],
+      },
+      {
+        kind: "tier",
+        badge: "2개",
+        segments: [{ text: "피해 7" }, { text: "화상 2", term: "burn" }],
+      },
+      {
+        kind: "rule",
+        badge: "공명",
+        segments: [{ text: "화상 1", term: "burn" }],
+      },
     ]);
 
     expect(renderedTexts("redoublement")).toContain("르미즈 +1");

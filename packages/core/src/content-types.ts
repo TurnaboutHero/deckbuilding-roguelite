@@ -27,7 +27,7 @@ export interface CoinInstance {
 export type SkillUpgradePatch =
   | { kind: 'multi'; patches: SkillUpgradePatch[] }
   | { kind: 'baseAmount'; index: number; delta: number }
-  | { kind: 'ladderAmount'; tier: number; index: number; delta: number }
+  | { kind: 'ladderAmount'; tier: number; index: number; field?: 'amount' | 'stacks'; delta: number }
   | { kind: 'addFaceEffect'; face: 'heads' | 'tails'; effect: EffectAtom }
   | { kind: 'addMixedFaceEffect'; effect: EffectAtom }
   | { kind: 'setFaceMode'; face: 'heads' | 'tails'; mode: 'any' | 'per' }
@@ -768,8 +768,9 @@ const validateSkillUpgrades = (skills: readonly SkillDef[]): string[] => {
         errors.push(`${owner}: ladderAmount index ${patch.index} does not exist`);
       } else {
         const atom = skill.successLadder[patch.tier]?.[patch.index];
-        if (atom === undefined || !('amount' in atom) || typeof atom.amount !== 'number') {
-          errors.push(`${owner}: ladderAmount index ${patch.index} has no amount`);
+        const field = patch.field ?? 'amount';
+        if (atom === undefined || !(field in atom) || typeof atom[field as keyof typeof atom] !== 'number') {
+          errors.push(`${owner}: ladderAmount index ${patch.index} has no ${field}`);
         }
       }
       if (!Number.isInteger(patch.delta) || patch.delta === 0) {

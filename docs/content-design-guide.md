@@ -131,7 +131,18 @@ elementFaces / overheatBonus / preservedBonus (필요할 때만)
 - 레거시 기본 효과는 항상 발동한다. 성공 단계형은 선택된 단계만 발동한다.
 - 연속 피해 원자는 한 피해 패킷으로 합쳐지는지 확인한다.
 - 같은 면의 개수에 비례한다면 `per`, 하나 이상만 필요하면 `any`를 쓴다.
-- 성공 단계의 기존 원자 수치만 강화할 때는 `ladderAmount { tier, index, delta }`를 사용한다. 레거시 `baseAmount` 등과 혼합하지 않는다.
+- 성공 단계의 기존 원자 수치만 강화할 때는 `ladderAmount { tier, index, delta }`를 사용한다. `damage.amount`처럼 기본 `amount`가 아닌 `applyStatus.stacks`를 바꿀 때는 `field: 'stacks'`를 명시한다. 레거시 `baseAmount` 등과 혼합하지 않는다.
+
+```text
+// 화염권 2개 성공 강화: 피해 7 → 9, 화상 2 → 3
+patch: {
+  kind: 'multi',
+  patches: [
+    { kind: 'ladderAmount', tier: 2, index: 0, delta: 2 },
+    { kind: 'ladderAmount', tier: 2, index: 1, field: 'stacks', delta: 1 }
+  ]
+}
+```
 
 ### 5.3 소비형
 
