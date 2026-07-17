@@ -1074,19 +1074,19 @@ describe("run progression", () => {
 
     // D3 — 순수 강화 적용: patch(baseAmount +1)가 파생 def에만 반영, 원본 불변
     const derived = deriveUpgradedSkill(db.skills["s1"]!);
-    expect(derived.type === "flip" && derived.base[0]).toEqual({
+    expect(derived.type === "flip" && derived.base?.[0]).toEqual({
       kind: "damage",
       amount: 2,
     });
     const original = db.skills["s1"]!;
-    expect(original.type === "flip" && original.base[0]).toEqual({
+    expect(original.type === "flip" && original.base?.[0]).toEqual({
       kind: "damage",
       amount: 1,
     });
     // 강화 오버레이 db — 강화 슬롯 스킬만 같은 ID로 치환, 나머지는 그대로
     const overlay = upgradedContentDb(upgraded, db);
     const overlayS1 = overlay.skills["s1"]!;
-    expect(overlayS1.type === "flip" && overlayS1.base[0]).toEqual({
+    expect(overlayS1.type === "flip" && overlayS1.base?.[0]).toEqual({
       kind: "damage",
       amount: 2,
     });

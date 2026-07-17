@@ -27,6 +27,7 @@ export interface CoinInstance {
 export type SkillUpgradePatch =
   | { kind: 'multi'; patches: SkillUpgradePatch[] }
   | { kind: 'baseAmount'; index: number; delta: number }
+  | { kind: 'ladderAmount'; tier: number; index: number; delta: number }
   | { kind: 'addFaceEffect'; face: 'heads' | 'tails'; effect: EffectAtom }
   | { kind: 'addMixedFaceEffect'; effect: EffectAtom }
   | { kind: 'setFaceMode'; face: 'heads' | 'tails'; mode: 'any' | 'per' }
@@ -126,8 +127,8 @@ export interface FlipSkillDef extends SkillDefBase {
   // 일부 플립형 스킬은 지정 속성 동전만 장전할 수 있다. 소비가 아니므로 면과 proc은 정상 판정한다.
   requiredElement?: Element;
   requiredCoin?: CoinDefId;
-  /** Legacy base effects. Must be empty for success-ladder skills. */
-  base: EffectAtom[];
+  /** Legacy base effects. Required for legacy flip skills and absent on success-ladder skills. */
+  base?: EffectAtom[];
   heads?: { mode: 'any' | 'per'; effects: EffectAtom[] };
   tails?: { mode: 'any' | 'per'; effects: EffectAtom[] };
   mixed?: { effects: EffectAtom[] };
@@ -521,7 +522,7 @@ const validateFlipModels = (skills: readonly SkillDef[]): string[] => {
     }
 
     const legacyFields =
-      skill.base.length > 0 || [skill.heads, skill.tails, skill.mixed, skill.elementFaces].some((value) => value !== undefined);
+      skill.base !== undefined || [skill.heads, skill.tails, skill.mixed, skill.elementFaces].some((value) => value !== undefined);
     if (legacyFields) errors.push(`${owner}: success-ladder skill cannot mix legacy flip fields`);
     if (skill.remise !== undefined || (skill.overheatBonus?.length ?? 0) > 0) {
       errors.push(`${owner}: success-ladder skill cannot mix legacy remise or overheat behavior`);
@@ -546,9 +547,6 @@ const validateFlipModels = (skills: readonly SkillDef[]): string[] => {
       if (skill.resonance.effects.length === 0) {
         errors.push(`${owner}: resonance must declare at least one effect`);
       }
-    }
-    if (skill.upgrade !== undefined) {
-      errors.push(`${owner}: success-ladder upgrades are not supported by legacy upgrade patches`);
     }
   }
   return errors;
@@ -745,6 +743,11 @@ const validateSkillUpgrades = (skills: readonly SkillDef[]): string[] => {
     if (upgrade === undefined) continue;
     const owner = `skill ${String(skill.id)} upgrade`;
     const patch = upgrade.patch;
+    const ladderSkill = skill.type === 'flip' && declaresSuccessLadder(skill);
+    if (ladderSkill && patch.kind !== 'multi' && patch.kind !== 'ladderAmount') {
+      errors.push(`${owner}: success-ladder skill only supports ladderAmount patches`);
+      continue;
+    }
     if (patch.kind === 'multi') {
       if (patch.patches.length < 2) errors.push(`${owner}: multi requires at least two patches`);
       for (const child of patch.patches) {
@@ -753,6 +756,24 @@ const validateSkillUpgrades = (skills: readonly SkillDef[]): string[] => {
           upgrade: { ...upgrade, patch: child }
         } as SkillDef;
         errors.push(...validateSkillUpgrades([nested]));
+      }
+    } else if (patch.kind === 'ladderAmount') {
+      if (skill.type !== 'flip' || !isSuccessLadderFlipSkill(skill)) {
+        errors.push(`${owner}: ladderAmount requires a success-ladder flip skill`);
+        continue;
+      }
+      if (!Number.isInteger(patch.tier) || skill.successLadder[patch.tier] === undefined) {
+        errors.push(`${owner}: ladderAmount tier ${patch.tier} does not exist`);
+      } else if (!Number.isInteger(patch.index)) {
+        errors.push(`${owner}: ladderAmount index ${patch.index} does not exist`);
+      } else {
+        const atom = skill.successLadder[patch.tier]?.[patch.index];
+        if (atom === undefined || !('amount' in atom) || typeof atom.amount !== 'number') {
+          errors.push(`${owner}: ladderAmount index ${patch.index} has no amount`);
+        }
+      }
+      if (!Number.isInteger(patch.delta) || patch.delta === 0) {
+        errors.push(`${owner}: ladderAmount delta must be a nonzero integer`);
       }
     } else if (patch.kind === 'baseAmount') {
       const atoms = skill.type === 'flip' ? (skill.base ?? []) : skill.effects;

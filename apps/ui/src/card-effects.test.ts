@@ -23,12 +23,18 @@ describe("skillEffectRows", () => {
     ]);
   });
 
-  it("builds base and heads rows for slash", () => {
-    expect(skillEffectRows(skill("slash")).map((row) => row.kind)).toEqual(["base", "heads"]);
+  it("builds Drive-style success tier rows for slash", () => {
+    expect(skillEffectRows(skill("slash"))).toMatchObject([
+      { kind: "tier", badge: "0개", segments: [{ text: "효과 없음" }] },
+      { kind: "tier", badge: "1개", segments: [{ text: "피해 4" }] },
+    ]);
   });
 
-  it("builds base and tails rows for guard", () => {
-    expect(skillEffectRows(skill("guard")).map((row) => row.kind)).toEqual(["base", "tails"]);
+  it("builds Drive-style success tier rows for guard", () => {
+    expect(skillEffectRows(skill("guard"))).toMatchObject([
+      { kind: "tier", badge: "0개", segments: [{ text: "효과 없음" }] },
+      { kind: "tier", badge: "1개", segments: [{ text: "방어 4" }] },
+    ]);
   });
 
   it("marks burning-strike heads as per coin", () => {
@@ -36,11 +42,8 @@ describe("skillEffectRows", () => {
     expect(heads?.modeNote).toBe("동전마다");
   });
 
-  // 회귀 (값 잘림): 면 보너스 행은 값이 먼저 오고 +로 가산임을 명시한다 — 잘려도 수치는 보인다
-  // P7 D2 기본기 하향: slash 기본 4 / 앞면 +3 (반복 기본기가 유료 스킬을 지배하지 않게)
+  // 회귀 (값 잘림): 레거시 면 보너스 행은 값이 먼저 오고 +로 가산임을 명시한다.
   it("puts the bonus magnitude first with a plus sign", () => {
-    const slashHeads = skillEffectRows(skill("slash")).find((row) => row.kind === "heads");
-    expect(slashHeads?.segments[0]?.text).toBe("피해 +3");
     const strikeHeads = skillEffectRows(skill("burning-strike")).find((row) => row.kind === "heads");
     expect(strikeHeads?.segments[0]?.text).toBe("피해 +3");
   });

@@ -1223,7 +1223,11 @@ export const resolveFlip = (
           };
       }
     }
-    for (const atom of resonanceEffects(effectSkill, resolutionFaces, resolutionElements)) {
+    const resolvedResonance = resonanceEffects(effectSkill, resolutionFaces, resolutionElements);
+    if (resolvedResonance.length > 0 && effectSkill.resonance !== undefined) {
+      events.push({ type: 'resonanceTriggered', skill: effectSkill.id, element: effectSkill.resonance.element });
+    }
+    for (const atom of resolvedResonance) {
       for (const effectTarget of targetsForSkillEffect(state, atom, skill, resolutionTarget)) {
         state = applyEffectAtom(state, atom, effectTarget, db, events, chosen, {
           turnTriggerScope,

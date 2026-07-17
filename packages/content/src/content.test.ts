@@ -64,6 +64,53 @@ const withHandDefs = (state: CombatState, defs: readonly string[]): CombatState 
 };
 
 describe('P9 latest design sync', () => {
+  it('ships the v1.2 neutral basics as one-success ladders with exact upgrades and no legacy fields', () => {
+    expect(skills.slash).toMatchObject({
+      name: '공격',
+      type: 'flip',
+      cooldown: 0,
+      cost: 1,
+      successFace: 'heads',
+      successLadder: [[], [{ kind: 'damage', amount: 4 }]],
+      upgrade: { patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 } }
+    });
+    expect(skills.guard).toMatchObject({
+      name: '방어',
+      type: 'flip',
+      cooldown: 0,
+      cost: 1,
+      successFace: 'tails',
+      successLadder: [[], [{ kind: 'block', amount: 4 }]],
+      upgrade: { patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 } }
+    });
+    for (const basic of [skills.slash, skills.guard]) {
+      expect(Object.hasOwn(basic, 'base')).toBe(false);
+      expect(Object.hasOwn(basic, 'heads')).toBe(false);
+      expect(Object.hasOwn(basic, 'tails')).toBe(false);
+    }
+    expect((deriveUpgradedSkill(skills.slash) as FlipSkillDef).successLadder).toEqual([[], [{ kind: 'damage', amount: 5 }]]);
+    expect((deriveUpgradedSkill(skills.guard) as FlipSkillDef).successLadder).toEqual([[], [{ kind: 'block', amount: 5 }]]);
+  });
+
+  it('keeps end turn legal when an element-heavy hand cannot fund neutral ladder basics', () => {
+    let state = withHandDefs(combat('v12-basic-soft-lock', 'sorcerer'), ['fire', 'mana', 'frost']);
+    state = {
+      ...state,
+      slots: state.slots.map((candidate, index) =>
+        index === 0
+          ? { ...candidate, skillId: skillId('slash'), cooldownRemaining: 0, usedThisCombat: false }
+          : index === 1
+            ? { ...candidate, skillId: skillId('guard'), cooldownRemaining: 0, usedThisCombat: false }
+            : { ...candidate, skillId: null, cooldownRemaining: 0, usedThisCombat: false }
+      )
+    };
+
+    const commands = legalCommands(state, contentDb);
+    expect(commands.some((command) => command.type === 'placeCoin')).toBe(false);
+    expect(commands).toContainEqual(expect.objectContaining({ type: 'endTurn' }));
+    expect(step(state, { type: 'endTurn' }, contentDb).ok).toBe(true);
+  });
+
   it('ships the revised starters while retaining legacy reward ids', () => {
     expect(characters.warrior.startingSkills.map(String)).toEqual(['jab', 'fist-guard', 'burning-fist', 'flame-hook']);
     expect(skills['flame-hook']).toMatchObject({ name: '불씨권', cost: 1 });
@@ -191,7 +238,7 @@ describe('P9 latest design sync', () => {
     expect((upgraded('diffusion-mark') as FlipSkillDef).mixed?.effects).toEqual([{ kind: 'addCoin', coin: coinId('mana'), zone: 'hand', count: 1 }]);
     expect((upgraded('reactor-overdrive') as ConsumeSkillDef).consume.count).toBe(1);
     expect((upgraded('arcane-duplicate') as ConsumeSkillDef).effects[0]).toMatchObject({ duration: 3, fullCapExtension: 3 });
-    expect((upgraded('azure-armory-open') as FlipSkillDef).base[0]).toMatchObject({ baseDamage: 3, baseCount: 4 });
+    expect((upgraded('azure-armory-open') as FlipSkillDef).base?.[0]).toMatchObject({ baseDamage: 3, baseCount: 4 });
     expect((upgraded('redoublement') as FlipSkillDef).base).toEqual([
       { kind: 'damage', amount: 5 },
       { kind: 'readyRemise', amount: 2 }
@@ -205,7 +252,7 @@ describe('P9 latest design sync', () => {
     expect((upgraded('charge-mark') as FlipSkillDef).heads?.effects[0]).toMatchObject({ stacks: 2 });
     expect((upgraded('capacitor-shield') as ConsumeSkillDef).effects[0]).toMatchObject({ base: 8, cap: 8 });
     expect(upgraded('superconduct')).toMatchObject({ oncePerCombat: undefined, cooldown: 4 });
-    expect((upgraded('overload-flurry') as FlipSkillDef).base[0]).toMatchObject({ amount: 6 });
+    expect((upgraded('overload-flurry') as FlipSkillDef).base?.[0]).toMatchObject({ amount: 6 });
     expect((upgraded('thunder-execution') as ConsumeSkillDef).consume.count).toBe(2);
     for (const id of ['attaque', 'parade', 'parade-riposte', 'fleche']) {
       expect(contentDb.skills[id]?.upgrade).toBeUndefined();
@@ -775,7 +822,7 @@ describe('P10 Fire Warrior and Arcanist design sync', () => {
       duration: 3,
       fullCapExtension: 3
     });
-    expect((deriveUpgradedSkill(skills['azure-armory-open']!) as FlipSkillDef).base[0]).toEqual({
+    expect((deriveUpgradedSkill(skills['azure-armory-open']!) as FlipSkillDef).base?.[0]).toEqual({
       kind: 'virtualManaSwordVolley',
       baseDamage: 3,
       baseCount: 4
@@ -1071,7 +1118,7 @@ describe('P3.3 heart-of-flame interaction regressions', () => {
 
   it('fires heart-of-flame on a real attack and burns the enemy by 2', () => {
     const state = armedHeart();
-    const coin = state.zones.hand[0];
+    const coin = state.zones.hand.find((candidate) => String(state.coins[Number(candidate)]?.defId) === 'basic');
     if (coin === undefined) throw new Error('missing coin');
     const placed = step(state, { type: 'placeCoin', coin, slot: slotId(1) }, contentDb);
     if (!placed.ok) throw new Error(placed.error);
@@ -1351,7 +1398,7 @@ describe('P3.4 exclusive reward reachability (dead-option gate)', () => {
       const atoms =
         entry.type === 'flip'
           ? [
-              ...entry.base,
+              ...(entry.base ?? []),
               ...(entry.heads?.effects ?? []),
               ...(entry.tails?.effects ?? []),
               ...(entry.mixed?.effects ?? []),
@@ -1419,9 +1466,16 @@ describe('P3.4 hostile coin proc rerouting regressions', () => {
   // 감시자 결함 회귀: self 스킬(guard)에 냉기/전기 코인 앞면 — 상태는 적에게, 플레이어 0
   const procCase = (defId: string) => {
     let state = withEquippedSkill(combat(`proc-${defId}`), 'guard');
-    state = withHandDefs(state, [defId]);
+    state = withHandDefs(state, ['basic']);
     const coinUid = state.zones.hand[0];
     if (coinUid === undefined) throw new Error('missing coin');
+    state = {
+      ...state,
+      coins: {
+        ...state.coins,
+        [Number(coinUid)]: { ...state.coins[Number(coinUid)]!, grants: [defId as 'frost' | 'lightning'] }
+      }
+    };
     const result = useFlip(withFaces(state, ['heads']), [coinUid], 0);
     return result;
   };
@@ -1563,7 +1617,7 @@ describe('M5 shipped content', () => {
   // P7 D4 — mana 양면: 앞 방어 1 / 뒤 방어 2, 스킬 대상과 무관하게 항상 플레이어
   it('mana procs grant player block on both faces in attack, defense, and self-target contexts', () => {
     const cases = [
-      // guard 기본 방어 4 (P7 기본기 하향) + 앞 proc 1 = 5, 뒤는 +3 면 보너스 포함 4+3+2 = 9
+      // v1.2 guard는 앞면 실패(마나 proc 1만), 뒷면 성공 방어 4 + 마나 proc 2 = 6.
       {
         skill: 'slash',
         face: 'heads',
@@ -1575,7 +1629,7 @@ describe('M5 shipped content', () => {
         skill: 'guard',
         face: 'heads',
         procBlock: 1,
-        expectedBlock: 5,
+        expectedBlock: 1,
         target: undefined
       },
       {
@@ -1596,7 +1650,7 @@ describe('M5 shipped content', () => {
         skill: 'guard',
         face: 'tails',
         procBlock: 2,
-        expectedBlock: 9,
+        expectedBlock: 6,
         target: undefined
       }
     ] as const;
@@ -1604,9 +1658,18 @@ describe('M5 shipped content', () => {
     for (const testCase of cases) {
       let state = withFaces(combat(`mana-${testCase.skill}-${testCase.face}`), [testCase.face]);
       state = withEquippedSkill(state, testCase.skill);
-      state = withHandDefs(state, ['mana']);
+      state = withHandDefs(state, testCase.skill === 'slash' || testCase.skill === 'guard' ? ['basic'] : ['mana']);
       const cost = state.zones.hand[0];
       if (cost === undefined) throw new Error('missing mana coin');
+      if (testCase.skill === 'slash' || testCase.skill === 'guard') {
+        state = {
+          ...state,
+          coins: {
+            ...state.coins,
+            [Number(cost)]: { ...state.coins[Number(cost)]!, grants: ['mana'] }
+          }
+        };
+      }
       const result = useFlip(state, [cost], testCase.target);
 
       expect(result.state.player.block).toBe(testCase.expectedBlock);
@@ -1692,7 +1755,7 @@ describe('M5 shipped content', () => {
   });
 
   it('Flame Sword adds one burn for each later damage packet this turn', () => {
-    let state = withFaces(combat('flame-sword-trigger'), ['tails', 'tails']);
+    let state = withFaces(combat('flame-sword-trigger'), ['heads', 'heads']);
     state = withEquippedSkills(state, ['flame-sword', 'slash', 'slash']);
     state = withHandDefs(state, ['fire', 'basic', 'basic']);
     const [fuel] = state.zones.hand;
@@ -1807,24 +1870,31 @@ describe('P9 shipped content goldens (1.3.0-p9)', () => {
     });
   });
 
-  it('ships repeatable basics at 4 (+3) with cooldown 0 (D1/D2 — v1.3 하향)', () => {
-    for (const [attack, defense] of [
-      ['slash', 'guard'],
-      ['jab', 'fist-guard']
-    ] as const) {
-      expect(contentDb.skills[attack]).toMatchObject({
-        cooldown: 0,
-        cost: 1,
-        base: [{ kind: 'damage', amount: 4 }],
-        heads: { mode: 'any', effects: [{ kind: 'damage', amount: 3 }] }
-      });
-      expect(contentDb.skills[defense]).toMatchObject({
-        cooldown: 0,
-        cost: 1,
-        base: [{ kind: 'block', amount: 4 }],
-        tails: { mode: 'any', effects: [{ kind: 'block', amount: 3 }] }
-      });
-    }
+  it('ships v1.2 neutral basics while retaining the legacy fire-fighter basics for their later slice', () => {
+    expect(contentDb.skills.slash).toMatchObject({
+      cooldown: 0,
+      cost: 1,
+      successFace: 'heads',
+      successLadder: [[], [{ kind: 'damage', amount: 4 }]]
+    });
+    expect(contentDb.skills.guard).toMatchObject({
+      cooldown: 0,
+      cost: 1,
+      successFace: 'tails',
+      successLadder: [[], [{ kind: 'block', amount: 4 }]]
+    });
+    expect(contentDb.skills.jab).toMatchObject({
+      cooldown: 0,
+      cost: 1,
+      base: [{ kind: 'damage', amount: 4 }],
+      heads: { mode: 'any', effects: [{ kind: 'damage', amount: 3 }] }
+    });
+    expect(contentDb.skills['fist-guard']).toMatchObject({
+      cooldown: 0,
+      cost: 1,
+      base: [{ kind: 'block', amount: 4 }],
+      tails: { mode: 'any', effects: [{ kind: 'block', amount: 3 }] }
+    });
   });
 
   it('pins the warrior overheat kit and the new draw/cooldown utilities (D3/D5)', () => {

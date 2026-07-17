@@ -102,7 +102,7 @@ describe('build policy resolution regressions', () => {
 
   it('drives simulateRun sorcerer rewards with the lightning build (path consistency)', () => {
     // simulateRun이 fire-build 하드코딩이면 policy run과 보상 경로가 어긋난다.
-    const { summary } = simulateRun('SORCERER-BUILD-REG', 'sorcerer');
+    const { summary } = simulateRun('SORC-V12-0', 'sorcerer');
     const lightningCount = summary.finalBag.filter((coin) => coin === 'lightning').length;
     if (summary.combatsCompleted >= 2) {
       expect(lightningCount).toBeGreaterThan(2);

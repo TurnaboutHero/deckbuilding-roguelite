@@ -1,3 +1,4 @@
+import { isSuccessLadderFlipSkill } from "@game/core";
 import type { EffectAtom, SkillDef } from "@game/core";
 
 import { Keyword } from "./keywords";
@@ -6,7 +7,7 @@ import type { KeywordTerm } from "./keywords";
 import "./card-effects.css";
 
 export interface EffectRowModel {
-  kind: "base" | "heads" | "tails" | "mixed" | "cost" | "effect" | "element-face" | "overheat" | "preserved" | "rule";
+  kind: "base" | "tier" | "heads" | "tails" | "mixed" | "cost" | "effect" | "element-face" | "overheat" | "preserved" | "rule";
   badge: string;
   modeNote?: string;
   segments: Array<{ text: string; term?: KeywordTerm }>;
@@ -269,6 +270,22 @@ export function skillEffectRows(skill: SkillDef, bloodSwordPower = 0): EffectRow
     return rows;
   }
 
+  if (isSuccessLadderFlipSkill(skill)) {
+    const rows: EffectRowModel[] = skill.successLadder.map((tier, index) => ({
+      kind: "tier",
+      badge: `${index}개`,
+      segments: tier.length === 0 ? [{ text: "효과 없음" }] : atomSegments(tier),
+    }));
+    if (skill.resonance !== undefined) {
+      rows.push({
+        kind: "rule",
+        badge: "공명",
+        segments: atomSegments(skill.resonance.effects),
+      });
+    }
+    return rows;
+  }
+
   const rows: EffectRowModel[] = [
     ...(skill.requiredElement === undefined
       ? []
@@ -286,7 +303,7 @@ export function skillEffectRows(skill: SkillDef, bloodSwordPower = 0): EffectRow
     {
       kind: "base",
       badge: "기본",
-      segments: atomSegments(skill.base),
+      segments: atomSegments(skill.base ?? []),
     },
   ];
 

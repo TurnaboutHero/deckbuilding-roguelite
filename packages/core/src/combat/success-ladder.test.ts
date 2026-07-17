@@ -8,6 +8,7 @@ import { createCombat, step } from './reducer';
 import { previewFlip } from './preview';
 import { statusStacks, statusTurns } from './state';
 import type { CombatState } from './state';
+import { deriveUpgradedSkill } from '../run/run';
 
 const id = <T extends string>(value: string) => value as T;
 const slot = (value: number) => value as SlotId;
@@ -20,7 +21,6 @@ const ladderSkill = (value: string, definition: Record<string, unknown>): FlipSk
     rarity: 'common',
     tags: ['attack'],
     targetType: 'single-enemy',
-    base: [],
     ...definition
   }) as unknown as FlipSkillDef;
 
@@ -198,6 +198,11 @@ describe('success-ladder flip resolution', () => {
         .filter((event) => event.type === 'statusApplied' && event.status === 'burn')
         .map((event) => (event.type === 'statusApplied' ? event.stacks : 0))
     ).toEqual([2, 1, 1, 1]);
+    expect(twoWithFire.events.filter((event) => event.type === 'resonanceTriggered')).toEqual([
+      { type: 'resonanceTriggered', skill: flameFist.id, element: 'fire' }
+    ]);
+    const resonanceIndex = twoWithFire.events.findIndex((event) => event.type === 'resonanceTriggered');
+    expect(twoWithFire.events[resonanceIndex + 1]).toMatchObject({ type: 'statusApplied', status: 'burn', stacks: 1 });
   });
 
   it('applies an off-element face proc without granting fire resonance', () => {
@@ -205,6 +210,16 @@ describe('success-ladder flip resolution', () => {
     const result = loadAndUse(combat(db, ['heads', 'tails']), 2, 2, db, ['frost', 'basic']);
     expect(statusStacks(result.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(1);
     expect(statusTurns(result.state.enemies[0]?.statuses ?? {}, 'frostbite')).toBe(1);
+    expect(result.events.some((event) => event.type === 'resonanceTriggered')).toBe(false);
+  });
+
+  it('does not emit resonance for zero successful faces or legacy skills', () => {
+    const db = testDb();
+    const zeroSuccess = loadAndUse(combat(db, ['tails', 'tails']), 2, 2, db, ['fire', 'fire']);
+    expect(zeroSuccess.events.some((event) => event.type === 'resonanceTriggered')).toBe(false);
+
+    const legacy = loadAndUse(combat(db, ['heads', 'heads']), 4, 2, db, ['fire', 'fire']);
+    expect(legacy.events.some((event) => event.type === 'resonanceTriggered')).toBe(false);
   });
 
   it('puts Direct Hit temporary fire coin on draw top for the next turn', () => {
@@ -292,5 +307,74 @@ describe('success-ladder validation', () => {
         base: [{ kind: 'damage', amount: 1 }]
       })
     ).toContainEqual(expect.stringContaining('mix legacy'));
+  });
+
+  it('accepts a ladderAmount upgrade and rejects legacy patches on ladder skills', () => {
+    expect(
+      errorsFor({
+        cost: 1,
+        successFace: 'heads',
+        successLadder: [[], [{ kind: 'damage', amount: 4 }]],
+        upgrade: {
+          name: 'trained',
+          description: 'damage 5',
+          patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 }
+        }
+      })
+    ).toEqual([]);
+    expect(
+      errorsFor({
+        cost: 1,
+        successFace: 'heads',
+        successLadder: [[], [{ kind: 'damage', amount: 4 }]],
+        upgrade: { name: 'invalid', description: 'invalid', patch: { kind: 'baseAmount', index: 0, delta: 1 } }
+      })
+    ).toContainEqual(expect.stringContaining('ladderAmount'));
+  });
+
+  it('validates ladderAmount tier, atom, amount, and delta contracts', () => {
+    const errors = (patch: Record<string, unknown>, successLadder: unknown[][] = [[], [{ kind: 'damage', amount: 4 }]]) =>
+      errorsFor({
+        cost: 1,
+        successFace: 'heads',
+        successLadder,
+        upgrade: { name: 'invalid', description: 'invalid', patch }
+      });
+
+    expect(errors({ kind: 'ladderAmount', tier: 2, index: 0, delta: 1 })).toContainEqual(expect.stringContaining('tier 2'));
+    expect(errors({ kind: 'ladderAmount', tier: 1, index: 1, delta: 1 })).toContainEqual(expect.stringContaining('index 1'));
+    expect(
+      errors({ kind: 'ladderAmount', tier: 1, index: 0, delta: 1 }, [[], [{ kind: 'grantElement', element: 'fire', scope: 'allBasicInHand' }]])
+    ).toContainEqual(expect.stringContaining('has no amount'));
+    expect(errors({ kind: 'ladderAmount', tier: 1, index: 0, delta: 0 })).toContainEqual(expect.stringContaining('nonzero integer'));
+
+    const legacy = {
+      ...legacyStrike,
+      upgrade: {
+        name: 'invalid',
+        description: 'invalid',
+        patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 }
+      }
+    } as unknown as SkillDef;
+    expect(testDb([legacy]).validate()).toContainEqual(expect.stringContaining('requires a success-ladder'));
+  });
+});
+
+describe('success-ladder upgrades', () => {
+  it('changes only the selected ladder atom and leaves the authored skill immutable', () => {
+    const authored = ladderSkill('upgradeable-basic', {
+      cost: 1,
+      successFace: 'heads',
+      successLadder: [[], [{ kind: 'damage', amount: 4 }]],
+      upgrade: {
+        name: 'trained',
+        description: 'damage 5',
+        patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 }
+      }
+    });
+
+    const upgraded = deriveUpgradedSkill(authored);
+    expect(upgraded).toMatchObject({ successLadder: [[], [{ kind: 'damage', amount: 5 }]] });
+    expect(authored.successLadder).toEqual([[], [{ kind: 'damage', amount: 4 }]]);
   });
 });

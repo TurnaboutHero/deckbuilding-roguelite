@@ -1,3 +1,4 @@
+import { isSuccessLadderFlipSkill } from "../content-types";
 import type { ContentDb, EventDef, SkillDef } from "../content-types";
 import type {
   CharacterId,
@@ -411,6 +412,31 @@ export const deriveUpgradedSkill = (def: SkillDef): SkillDef => {
       consume: { ...def.consume, count: def.consume.count + patch.delta },
     };
   }
+  if (patch.kind === "ladderAmount") {
+    if (def.type !== "flip" || !isSuccessLadderFlipSkill(def)) {
+      throw new Error(
+        `upgrade ladderAmount requires a success-ladder flip skill: ${String(def.id)}`,
+      );
+    }
+    const ladder = def.successLadder.map((tier) => [...tier]);
+    const tier = ladder[patch.tier];
+    const atom = tier?.[patch.index];
+    if (
+      tier === undefined ||
+      atom === undefined ||
+      !("amount" in atom) ||
+      typeof atom.amount !== "number"
+    ) {
+      throw new Error(
+        `upgrade ladderAmount target is invalid: ${String(def.id)}`,
+      );
+    }
+    tier[patch.index] = {
+      ...atom,
+      amount: atom.amount + patch.delta,
+    } as typeof atom;
+    return { ...def, successLadder: ladder };
+  }
   if (patch.kind === "addCoinOnUse") {
     const atom = {
       kind: "addCoin" as const,
@@ -418,7 +444,7 @@ export const deriveUpgradedSkill = (def: SkillDef): SkillDef => {
       zone: patch.zone,
       count: patch.count,
     };
-    if (def.type === "flip") return { ...def, base: [...def.base, atom] };
+    if (def.type === "flip") return { ...def, base: [...(def.base ?? []), atom] };
     return { ...def, effects: [...def.effects, atom] };
   }
   if (patch.kind === "addFaceEffect") {
@@ -454,7 +480,7 @@ export const deriveUpgradedSkill = (def: SkillDef): SkillDef => {
   }
   if (patch.kind === "replaceEffect") {
     if (patch.section === "base") {
-      const atoms = def.type === "flip" ? [...def.base] : [...def.effects];
+      const atoms = def.type === "flip" ? [...(def.base ?? [])] : [...def.effects];
       if (atoms[patch.index] === undefined)
         throw new Error(
           `upgrade replaceEffect target is invalid: ${String(def.id)}`,
@@ -509,7 +535,7 @@ export const deriveUpgradedSkill = (def: SkillDef): SkillDef => {
     };
   }
   // baseAmount — 지정 인덱스 원자의 수치 가산 (콘텐츠 검증이 인덱스/원자 종류를 보증)
-  const atoms = def.type === "flip" ? [...def.base] : [...def.effects];
+  const atoms = def.type === "flip" ? [...(def.base ?? [])] : [...def.effects];
   const atom = atoms[patch.index];
   if (
     atom === undefined ||

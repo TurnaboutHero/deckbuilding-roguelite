@@ -1,3 +1,4 @@
+import { isSuccessLadderFlipSkill } from '@game/core';
 import type { CombatEvent, EffectAtom, Face, SkillDef } from '@game/core';
 
 export interface ResolutionSummary {
@@ -128,10 +129,25 @@ export function buildResolutionSummary(
 ): ResolutionSummary {
   const faces = events.flatMap((event) => (event.type === 'coinFlipped' ? [event.face] : []));
   const kind = skill.type;
-  const baseLines = (skill.type === 'consume' ? skill.effects : skill.base).map(effectLine);
+  const ladderSkill = skill.type === 'flip' && isSuccessLadderFlipSkill(skill) ? skill : undefined;
+  const successCount = ladderSkill === undefined ? 0 : faces.filter((face) => face === ladderSkill.successFace).length;
+  const resolvedAtoms =
+    skill.type === 'consume'
+      ? skill.effects
+      : ladderSkill === undefined
+        ? (skill.base ?? [])
+        : (ladderSkill.successLadder[successCount] ?? []);
+  const baseLines = resolvedAtoms.map(effectLine);
   const bonusLines: string[] = [];
 
-  if (skill.type === 'flip') {
+  if (ladderSkill !== undefined) {
+    const resonanceFired = events.some(
+      (event) => event.type === 'resonanceTriggered' && event.skill === ladderSkill.id
+    );
+    if (resonanceFired && ladderSkill.resonance !== undefined) {
+      bonusLines.push(`공명: ${ladderSkill.resonance.effects.map(effectLine).join(' / ')}`);
+    }
+  } else if (skill.type === 'flip') {
     const addBonus = (face: Face, bonus: typeof skill.heads): void => {
       const count = faces.filter((candidate) => candidate === face).length;
       if (bonus === undefined || count === 0) return;
@@ -150,7 +166,7 @@ export function buildResolutionSummary(
     costNote:
       skill.type === 'consume' ? `${elementKo(skill.consume.element)} ×${skill.consume.count} 지불 — 플립 없음` : null,
     baseLines,
-    bonusLines: skill.type === 'flip' && bonusLines.length === 0 ? ['면 보너스 없음'] : bonusLines,
+    bonusLines: skill.type === 'flip' && ladderSkill === undefined && bonusLines.length === 0 ? ['면 보너스 없음'] : bonusLines,
     triggerLines: triggerLines(events),
     statusLines: statusLines(events),
     totalLine: totalLine(events)

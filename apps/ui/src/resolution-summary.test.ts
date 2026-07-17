@@ -43,6 +43,26 @@ const testDb = (): ContentDb => ({
       base: [{ kind: 'block', amount: 5 }],
       tails: { mode: 'any', effects: [{ kind: 'block', amount: 3 }] }
     },
+    ladderFlame: {
+      id: id<SkillId>('ladderFlame'),
+      name: '화격권',
+      type: 'flip',
+      rarity: 'common',
+      tags: ['attack'],
+      targetType: 'single-enemy',
+      element: 'fire',
+      cost: 2,
+      successFace: 'heads',
+      successLadder: [
+        [{ kind: 'damage', amount: 2 }],
+        [{ kind: 'damage', amount: 4 }, { kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }],
+        [{ kind: 'damage', amount: 7 }, { kind: 'applyStatus', status: 'burn', stacks: 2, to: 'target' }]
+      ],
+      resonance: {
+        element: 'fire',
+        effects: [{ kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }]
+      }
+    },
     strike: {
       id: id<SkillId>('strike'),
       name: '불타는 일격',
@@ -117,6 +137,36 @@ const testDb = (): ContentDb => ({
 });
 
 describe('buildResolutionSummary', () => {
+  it('summarizes only the resolved ladder tier without resonance when it did not fire', () => {
+    const skill = skillOf(testDb(), 'ladderFlame');
+    const summary = buildResolutionSummary(skill, [
+      { type: 'skillUsed', slot: slot(0), skill: skill.id, kind: 'flip' },
+      { type: 'coinFlipped', coin: coin(1), face: 'heads' },
+      { type: 'coinFlipped', coin: coin(2), face: 'tails' },
+      { type: 'damageDealt', target: { type: 'enemy', index: 0 }, amount: 4, blocked: 0, source: 'skill' },
+      { type: 'statusApplied', target: { type: 'enemy', index: 0 }, status: 'burn', stacks: 1 }
+    ]);
+
+    expect(summary.baseLines).toEqual(['피해 4', '화상 1']);
+    expect(summary.bonusLines).toEqual([]);
+  });
+
+  it('adds configured resonance effects only when resonanceTriggered is present', () => {
+    const skill = skillOf(testDb(), 'ladderFlame');
+    const summary = buildResolutionSummary(skill, [
+      { type: 'skillUsed', slot: slot(0), skill: skill.id, kind: 'flip' },
+      { type: 'coinFlipped', coin: coin(1), face: 'heads' },
+      { type: 'coinFlipped', coin: coin(2), face: 'heads' },
+      { type: 'damageDealt', target: { type: 'enemy', index: 0 }, amount: 7, blocked: 0, source: 'skill' },
+      { type: 'statusApplied', target: { type: 'enemy', index: 0 }, status: 'burn', stacks: 2 },
+      { type: 'resonanceTriggered', skill: skill.id, element: 'fire' },
+      { type: 'statusApplied', target: { type: 'enemy', index: 0 }, status: 'burn', stacks: 1 }
+    ]);
+
+    expect(summary.baseLines).toEqual(['피해 7', '화상 2']);
+    expect(summary.bonusLines).toEqual(['공명: 화상 1']);
+  });
+
   it('summarizes one-coin slash heads with one bonus and damage 10', () => {
     const skill = skillOf(testDb(), 'slash');
     const summary = buildResolutionSummary(skill, [

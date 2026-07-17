@@ -86,7 +86,11 @@ export const skills = {
   slash: {
     id: skill('slash'),
     name: '공격',
-    upgrade: { name: '단련된 공격', description: '기본 피해 +2', patch: { kind: 'baseAmount', index: 0, delta: 2 } },
+    upgrade: {
+      name: '단련된 공격',
+      description: '성공 피해 4 → 5',
+      patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 }
+    },
     type: 'flip',
     rarity: 'common',
     tags: ['attack'],
@@ -94,21 +98,25 @@ export const skills = {
     // P7 D2 — 반복 기본기 (쿨다운 0): 코인이 남는 한 같은 턴 반복 사용
     cooldown: 0,
     cost: 1,
-    base: [{ kind: 'damage', amount: 4 }],
-    heads: { mode: 'any', effects: [{ kind: 'damage', amount: 3 }] }
+    successFace: 'heads',
+    successLadder: [[], [{ kind: 'damage', amount: 4 }]]
   },
   guard: {
     id: skill('guard'),
     name: '방어',
-    upgrade: { name: '견고한 방어', description: '기본 방어 +2', patch: { kind: 'baseAmount', index: 0, delta: 2 } },
+    upgrade: {
+      name: '견고한 방어',
+      description: '성공 방어 4 → 5',
+      patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 }
+    },
     type: 'flip',
     rarity: 'common',
     tags: ['defense'],
     targetType: 'self',
     cooldown: 0,
     cost: 1,
-    base: [{ kind: 'block', amount: 4 }],
-    tails: { mode: 'any', effects: [{ kind: 'block', amount: 3 }] }
+    successFace: 'tails',
+    successLadder: [[], [{ kind: 'block', amount: 4 }]]
   },
   'burning-strike': {
     id: skill('burning-strike'),

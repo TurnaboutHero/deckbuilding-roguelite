@@ -6,6 +6,7 @@ export type CombatEvent =
   | { type: 'coinPlaced'; coin: CoinUid; slot: SlotId }
   | { type: 'coinUnplaced'; coin: CoinUid; slot: SlotId }
   | { type: 'coinFlipped'; coin: CoinUid; face: Face }
+  | { type: 'resonanceTriggered'; skill: SkillId; element: Element }
   | { type: 'skillUsed'; slot: SlotId; skill: SkillId; kind: 'flip' | 'consume' }
   | {
       type: 'damageDealt';
