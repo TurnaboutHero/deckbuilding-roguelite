@@ -5,7 +5,7 @@ import { rngFrom } from '../../rng';
 import { drawCards, drawSpecificCoin, HAND_LIMIT } from '../draw';
 import type { CombatEvent, DamageSource } from '../events';
 import { assertCoinEnchantEligibility, firstUseEchoCoins, rollEnchantedFace } from '../enchant';
-import { MAX_PRESERVED_COINS, statusStacks, statusTurns } from '../state';
+import { activeSkillSeal, assertCombatCoinZoneInvariant, isSkillCommandSealed, MAX_PRESERVED_COINS, recordRecentSkillUse, statusStacks, statusTurns } from '../state';
 import type { CombatState, StatusState, TurnTriggerInstance } from '../state';
 import { actSummon, addSummon, defaultEquipmentId, tickSummonDuration } from '../summons';
 
@@ -29,6 +29,95 @@ interface ApplyEffectOptions {
   desiredCoin?: import('../../ids').CoinDefId;
   consumedCount?: number;
 }
+
+export const scaleSkillAuthoredEffect = (atom: EffectAtom, multiplier: number | undefined): EffectAtom => {
+  if (multiplier === undefined || multiplier === 1) return atom;
+  const scale = (value: number) => Math.max(0, Math.floor(value * multiplier));
+  switch (atom.kind) {
+    case 'damage':
+    case 'block':
+    case 'heal':
+    case 'lifesteal':
+    case 'prepareNextAttackDamage':
+    case 'damageIfTargetShocked':
+    case 'damageIfReused':
+      return { ...atom, amount: scale(atom.amount) };
+    case 'applyStatus':
+      return { ...atom, stacks: scale(atom.stacks) };
+    case 'damageByConsumed':
+      return {
+        ...atom,
+        base: scale(atom.base),
+        perCoin: scale(atom.perCoin),
+        ...(atom.frostbittenBonusPerCoin === undefined ? {} : { frostbittenBonusPerCoin: scale(atom.frostbittenBonusPerCoin) })
+      };
+    case 'damageByTargetFrostbite':
+      return { ...atom, base: scale(atom.base), multiplier: scale(atom.multiplier), cap: scale(atom.cap) };
+    case 'damageByBloodSword':
+      return { ...atom, base: scale(atom.base), multiplier: scale(atom.multiplier) };
+    case 'damagePlusBlock':
+      return { ...atom, base: scale(atom.base), cap: scale(atom.cap) };
+    case 'damagePlusEcho':
+    case 'aoeDamagePlusEcho':
+      return { ...atom, base: scale(atom.base) };
+    case 'blockPerTargetShock':
+      return { ...atom, base: scale(atom.base), cap: scale(atom.cap) };
+    case 'damagePerTargetBurn':
+      return { ...atom, amountPerStack: scale(atom.amountPerStack) };
+    case 'lifestealByConsumed':
+      return { ...atom, amountPerCoin: scale(atom.amountPerCoin) };
+    case 'damagePerBlock':
+      return { ...atom, amountPerBlock: scale(atom.amountPerBlock) };
+    case 'blockFromCurrent':
+    case 'scheduleEndTurnBlockAoe':
+      return { ...atom, cap: scale(atom.cap) };
+    case 'commandChosenSummon':
+      return { ...atom, bonusPerTails: scale(atom.bonusPerTails) };
+    case 'virtualManaSwordVolley':
+      return { ...atom, baseDamage: scale(atom.baseDamage) };
+    case 'addTurnTrigger':
+      return {
+        ...atom,
+        trigger: { ...atom.trigger, effects: atom.trigger.effects.map((effect) => scaleSkillAuthoredEffect(effect, multiplier)) }
+      };
+    // Coin-native output is intentionally never reduced by a skill seal.
+    case 'coinDamage':
+      return atom;
+    // These costs/losses and non-output utility atoms are not skill effects
+    // measured by the seal's damage/block/heal/status rule.
+    case 'selfDamage':
+    case 'loseHp':
+    case 'payHp':
+    case 'draw':
+    case 'drawSpecific':
+    case 'returnDiscardCoin':
+    case 'nextTurnDraw':
+    case 'preserveChosenCoin':
+    case 'increasePreserveCapacity':
+    case 'reduceCooldown':
+    case 'enterOverheat':
+    case 'scheduleOverheat':
+    case 'addCoin':
+    case 'grantElement':
+    case 'investBloodSword':
+    case 'bloodOffering':
+    case 'echoPreheat':
+    case 'precisionDefenseArm':
+    case 'summonEquipment':
+    case 'empowerSummons':
+    case 'increaseWeaponOutput':
+    case 'extendAllSummons':
+    case 'extendChosenSummon':
+    case 'grantChosenSummonAoe':
+    case 'cloneChosenSummon':
+    case 'doubleTargetShock':
+      return atom;
+    // Execution/discharge is determined entirely by current target HP/shock.
+    case 'executeOrDischargeShock':
+    case 'readyRemise':
+      return atom;
+  }
+};
 
 const isAliveEnemy = (state: CombatState, index: number): boolean => {
   const enemy = state.enemies[index];
@@ -223,6 +312,9 @@ const applyEnemyDamage = (
 /** Remove source-owned effects in the same damage resolution as the death. */
 export const cleanupDeadEnemies = (state: CombatState, events: CombatEvent[]): CombatState => {
   let enemies = state.enemies;
+  let custody = state.custody;
+  let discard = state.zones.discard;
+  let returnedCustody = false;
   for (let source = 0; source < enemies.length; source += 1) {
     const dead = enemies[source];
     if (dead === undefined || dead.hp > 0 || dead.deathCleanupComplete === true) continue;
@@ -243,9 +335,20 @@ export const cleanupDeadEnemies = (state: CombatState, events: CombatEvent[]): C
       }
     }
     if (dead.warBannerAuraPercent !== undefined) events.push({ type: 'enemyAuraRemoved', source });
+    const returned = custody.filter((entry) => entry.sourceEnemy === source).sort((left, right) => left.seizureOrder - right.seizureOrder);
+    returnedCustody = returnedCustody || returned.length > 0;
+    for (const entry of returned) {
+      discard = [...discard, ...entry.coins];
+      const event: CombatEvent = { type: 'coinsReturned', sourceEnemy: source, coins: [...entry.coins] };
+      events.push(event);
+    }
+    custody = custody.filter((entry) => entry.sourceEnemy !== source);
     enemies = enemies.map((candidate, index) => index === source ? { ...candidate, deathCleanupComplete: true } : candidate);
   }
-  return enemies === state.enemies ? state : { ...state, enemies };
+  if (enemies === state.enemies) return state;
+  const next = { ...state, enemies, custody, zones: { ...state.zones, discard } };
+  if (returnedCustody) assertCombatCoinZoneInvariant(next);
+  return next;
 };
 
 /** Attack skills wear a guard once, even if that skill has multiple hits. */
@@ -1080,6 +1183,7 @@ export const resolveFlip = (
   const slotState = input.slots[Number(slot)];
   if (slotState === undefined) throw new Error('slot does not exist');
   if (slotState.cooldownRemaining > 0) throw new Error('skill is cooling down');
+  if (isSkillCommandSealed(input, slot)) throw new Error('skill is sealed');
   if (skill.oncePerCombat === true && slotState.usedThisCombat) throw new Error('skill already used this combat');
 
   const placed = input.zones.placed[slot] ?? [];
@@ -1116,6 +1220,7 @@ export const resolveFlip = (
       : undefined;
   // P7 D5 — 과열 강화 분기 보유 스킬이 성공 해결되면 해결 후 과열 소비 (finish 단일 경로)
   const consumesOverheat = input.player.overheat && (skill.overheatBonus?.length ?? 0) > 0;
+  const effectMultiplier = activeSkillSeal(input, slot)?.effectMultiplier;
   const finish = (finishedState: CombatState): ResolveResult => {
     const echoed = firstUseEchoCoins(finishedState, placed, events);
     const echoCoins = new Set(echoed.coins);
@@ -1171,7 +1276,7 @@ export const resolveFlip = (
       events.push({ type: 'overheatConsumed', skill: skill.id });
       state = { ...state, player: { ...state.player, overheat: false } };
     }
-    return { state, events };
+    return { state: recordRecentSkillUse(state, slot), events };
   };
 
   let state: CombatState = {
@@ -1235,8 +1340,11 @@ export const resolveFlip = (
     const tailsCount = resolutionFaces.filter((face) => face === 'tails').length;
     const headsCount = resolutionFaces.length - tailsCount;
     const resolutionSkill = includeBase ? effectSkill : { ...effectSkill, base: [] };
-    let effects = collectEffects(resolutionSkill, resolutionFaces, resolutionElements, includeBase && input.player.overheat);
-    if (includeBase && !isReuse && usedPreserved) effects.push(...(effectSkill.preservedBonus ?? []));
+    let effects = collectEffects(resolutionSkill, resolutionFaces, resolutionElements, includeBase && input.player.overheat)
+      .map((atom) => scaleSkillAuthoredEffect(atom, effectMultiplier));
+    if (includeBase && !isReuse && usedPreserved) {
+      effects.push(...(effectSkill.preservedBonus ?? []).map((atom) => scaleSkillAuthoredEffect(atom, effectMultiplier)));
+    }
     if (includeBase && !isReuse && usedPreserved && !state.player.maturedHandUsedThisTurn && passiveMechanics.has('maturedHand')) {
       effects = applyMaturedHandBonus(effects);
       state = { ...state, player: { ...state.player, maturedHandUsedThisTurn: true } };
@@ -1396,7 +1504,8 @@ export const resolveFlip = (
           };
       }
     }
-    const resolvedResonance = resonanceEffects(effectSkill, resolutionFaces, resolutionElements);
+    const resolvedResonance = resonanceEffects(effectSkill, resolutionFaces, resolutionElements)
+      .map((atom) => scaleSkillAuthoredEffect(atom, effectMultiplier));
     if (resolvedResonance.length > 0 && effectSkill.resonance !== undefined) {
       events.push({ type: 'resonanceTriggered', skill: effectSkill.id, element: effectSkill.resonance.element });
     }
@@ -1482,7 +1591,7 @@ export const resolveFlip = (
     const repeatContinues = applyResolution(reuseFaces, coinElements, true, true, placed, repeatSkill, repeatTarget);
     fireAttackResolved(repeatTarget);
     if (repeatContinues) {
-      for (const atom of skill.remise?.onRepeatFinish ?? []) {
+      for (const atom of (skill.remise?.onRepeatFinish ?? []).map((candidate) => scaleSkillAuthoredEffect(candidate, effectMultiplier))) {
         for (const effectTarget of targetsForSkillEffect(state, atom, skill, repeatTarget)) {
           state = applyEffectAtom(state, atom, effectTarget, db, events, chosen, {
             turnTriggerScope,

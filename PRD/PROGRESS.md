@@ -133,5 +133,5 @@ goal-command.md 규약 "요구사항이 충돌하면 자체 수정을 멈추고 
 
 - 설계 정본: [P13_REVISION_DESIGN_SYNC.md](./P13_REVISION_DESIGN_SYNC.md) · 계획: [P13_IMPLEMENTATION_PLAN.md](./P13_IMPLEMENTATION_PLAN.md)
 - 구현 완료: 기본기 표시명 공격/방어 통일, 전속성 가중 동전 보상·상점, 상점 스킬 효과 표기, 3~5적 레이아웃, 스택형 르미즈, 과열 예약+안티터틀, 갑주 반향, 몬스터 배치 A 6종, warrior 유지·sorcerer/arcanist 스프라이트 재생성, 수호자 삭제(저장 v9 retired-character), 콘텐츠 1.7.0-revision
-- 후속 Directive 12: 몬스터 배치 B(M-11·M-12·M-14) 구현. 후속 Directive 13: 배치 C(M-05·M-06·M-08) 구현 — 보호 재지정·석화 파쇄·전쟁기 오라/행군·같은 해결의 사망 정리, 2·3막 풀 편입, 라이브 최대 3적 유지. 수치와 경험은 balance-provisional / experience-unverified.
-- 몬스터 배치 D~F는 미구현 — 배치 E의 사망 정리 선행 조건은 충족했지만 적측 소환 자체는 대기. 현재 진입 조건은 설계 정본 §6.4.
+- 후속 Directive 12: 몬스터 배치 B(M-11·M-12·M-14) 구현. Directive 13: 배치 C(M-05·M-06·M-08) 구현. Directive 14: 배치 D 기반 M-09·M-10 구현 — 전투 한정 동전 압수/동일 해결 반환, 최근 2턴 사용 가능 스킬 봉인, 유일 스킬 25% 효과 감소, 2·3막 풀 편입, 라이브 최대 3적 유지. 수치와 경험은 balance-provisional / experience-unverified.
+- 미구현 몬스터는 M-15~M-20 6종이며 M-17·M-18도 Directive 14 범위 밖이다. 배치 E의 사망 정리 선행 조건은 충족했지만 적측 소환 자체는 대기. 현재 진입 조건은 설계 정본 §6.4.

@@ -2,7 +2,7 @@ import type { ContentDb, EffectAtom, FlipSkillDef, SkillDef } from '../content-t
 import { effectiveElements, flipSkillEffects, isSuccessLadderFlipSkill } from '../content-types';
 import type { CoinDefId, CoinUid, EquipmentDefId, SlotId } from '../ids';
 import { consumeRequirementFor } from './consume-requirement';
-import { MAX_PRESERVED_COINS } from './state';
+import { isSkillCommandSealed, MAX_PRESERVED_COINS } from './state';
 import type { CombatState } from './state';
 
 export type Command =
@@ -158,6 +158,7 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
     const slotState = state.slots[i];
     // P7 D1 — 캡 폐지: 쿨다운 0(가용) 슬롯만. 빈 슬롯(null)은 제안 없음
     if (slotState === undefined || slotState.skillId === null || slotState.cooldownRemaining > 0) continue;
+    if (isSkillCommandSealed(state, slot)) continue;
     const skill = db.skills[String(slotState.skillId)];
     if (skill === undefined || (skill.oncePerCombat === true && slotState.usedThisCombat)) continue;
     const effects = skillEffects(skill);
@@ -241,4 +242,20 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
   }
 
   return commands;
+};
+
+/** Whether an equipped slot has a legal current command or can be legally prepared. */
+export const isSlotUsableNow = (state: CombatState, db: ContentDb, slot: SlotId): boolean => {
+  const slotState = state.slots[Number(slot)];
+  if (slotState === undefined || slotState.skillId === null || isSkillCommandSealed(state, slot)) return false;
+  const skill = db.skills[String(slotState.skillId)];
+  if (skill === undefined || slotState.cooldownRemaining > 0 || (skill.oncePerCombat === true && slotState.usedThisCombat)) return false;
+  if (skill.targetType === 'single-enemy' && livingEnemyTargets(state).length === 0) return false;
+  // A flip skill is usable when equipped, off cooldown, and targetable; coin
+  // placement is preparatory rather than a distinct skill availability gate.
+  if (skill.type === 'flip') return true;
+  return legalCommands(state, db).some(
+    (command) =>
+      command.type === 'useConsumeSkill' && command.slot === slot
+  );
 };

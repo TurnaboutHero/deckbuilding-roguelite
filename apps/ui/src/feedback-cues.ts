@@ -100,6 +100,13 @@ export const feedbackCuesFor = (event: CombatEvent): FeedbackCue[] => {
       return [cue(`unit-enemy-${event.source}`, 320)];
     case "enemyMarchRemoved":
       return [cue(`unit-enemy-${event.target}`, 320)];
+    case "coinSeizureTelegraphed":
+    case "coinsSeized":
+    case "coinsReturned":
+    case "skillSealed":
+    case "skillSealFallbackReduced":
+    case "placedCoinsReturned":
+    case "skillSealRepeatStruck":
     case "coinFlipped":
     case "bloodCoinFizzle":
     case "resonanceTriggered":

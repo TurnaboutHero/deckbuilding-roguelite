@@ -339,6 +339,8 @@ export interface CharacterDef {
 
 export type EnemyAction =
   | { kind: 'attack'; damage: number; hits?: number; damagePerGrowthPercent?: number }
+  | { kind: 'seizeCustody' }
+  | { kind: 'sealRecentSkill' }
   | { kind: 'conditionalAttack'; damage: number; bonusDamage: number; condition: 'playerHpBelowHalf' }
   | { kind: 'block'; amount: number }
   | { kind: 'nextDrawPenalty'; amount: number }
@@ -427,6 +429,20 @@ export interface EnemyRoundGrowthDef {
   removeTwoAtHpFraction: number;
 }
 
+/** Data contract for an enemy that telegraphs and then holds hand coins locally. */
+export interface EnemyCoinSeizureDef {
+  target: 'mostNumerousPublicElementInHand';
+  maxCoins: number;
+  capFraction: number;
+}
+
+/** Data contract for an enemy that seals the player's recently repeated skill. */
+export interface EnemySkillSealDef {
+  recentPlayerTurns: number;
+  turns: number;
+  uniqueSkillEffectMultiplier: number;
+}
+
 export interface EnemyDef {
   id: EnemyDefId;
   name: string;
@@ -437,6 +453,8 @@ export interface EnemyDef {
   passive?: EnemyPassiveDef;
   playerTurnEndPunishment?: PlayerTurnEndPunishmentDef;
   roundGrowth?: EnemyRoundGrowthDef;
+  coinSeizure?: EnemyCoinSeizureDef;
+  skillSeal?: EnemySkillSealDef;
   /** Batch C data-driven mechanics. */
   threat?: number;
   protectionLink?: EnemyProtectionLinkDef;

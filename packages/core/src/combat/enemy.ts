@@ -1,9 +1,11 @@
 import { DURATION_STATUS_IDS } from '../content-types';
 import type { ContentDb, EnemyIntent, StatusId } from '../content-types';
+import type { Element, SlotId } from '../ids';
+import { isSlotUsableNow } from './commands';
 import { rngFrom } from '../rng';
 import type { CombatEvent } from './events';
 import { applyBlock, applyDamage, applyEffectAtom, checkCombatEnd } from './resolve/flip';
-import { statusStacks, statusTurns } from './state';
+import { aggregateSkillSeal, assertCombatCoinZoneInvariant, skillSealOwners, statusStacks, statusTurns } from './state';
 import type { CombatState } from './state';
 
 export const nextIntent = (state: CombatState, enemyIndex: number, db: ContentDb): { intent: EnemyIntent; index: number } => {
@@ -127,8 +129,104 @@ const tickMarchAfterEnemyTurn = (state: CombatState, enemyIndex: number, events:
 };
 
 const CLEANSE_ORDER: readonly StatusId[] = ['burn', 'poison', 'frostbite', 'shock', 'healLock'];
+const PUBLIC_ELEMENT_ORDER: readonly Element[] = ['fire', 'mana', 'frost', 'lightning', 'blood'];
 
-const maybeStartWindup = (state: CombatState, enemyIndex: number, events: CombatEvent[]): { state: CombatState; started: boolean } => {
+const beginCoinSeizureTelegraph = (state: CombatState, enemyIndex: number, db: ContentDb, events: CombatEvent[]): CombatState => {
+  const enemy = state.enemies[enemyIndex];
+  const seizure = enemy === undefined ? undefined : db.enemies[String(enemy.defId)]?.coinSeizure;
+  if (enemy === undefined || seizure === undefined || enemy.coinSeizure !== undefined) return state;
+  const counts = new Map<Element, number>();
+  for (const coinUid of state.zones.hand) {
+    const element = db.coins[String(state.coins[Number(coinUid)]?.defId)]?.element;
+    if (element !== null && element !== undefined) counts.set(element, (counts.get(element) ?? 0) + 1);
+  }
+  const element = PUBLIC_ELEMENT_ORDER.find((candidate) => (counts.get(candidate) ?? 0) > 0 && (counts.get(candidate) ?? 0) === Math.max(...counts.values()));
+  if (element === undefined) return state;
+  const nominated = state.zones.hand
+    .filter((coinUid) => db.coins[String(state.coins[Number(coinUid)]?.defId)]?.element === element);
+  const quantity = Math.min(seizure.maxCoins, Math.floor(state.zones.hand.length * seizure.capFraction));
+  const telegraph = {
+    element,
+    nominated,
+    handCountAtTelegraph: state.zones.hand.length,
+    cap: quantity,
+    quantity
+  };
+  events.push({ type: 'coinSeizureTelegraphed', sourceEnemy: enemyIndex, ...telegraph });
+  return withEnemy(state, enemyIndex, (candidate) => ({ ...candidate, coinSeizure: telegraph }));
+};
+
+const seizeCustody = (state: CombatState, enemyIndex: number, events: CombatEvent[]): CombatState => {
+  const telegraph = state.enemies[enemyIndex]?.coinSeizure;
+  if (telegraph === undefined) return state;
+  const coins = telegraph.nominated
+    .filter((coin) => state.zones.hand.includes(coin))
+    .slice(0, Math.min(2, telegraph.quantity));
+  if (coins.length === 0) return withEnemy(state, enemyIndex, (candidate) => ({ ...candidate, coinSeizure: undefined }));
+  const seizureOrder = state.custody.reduce((maximum, entry) => Math.max(maximum, entry.seizureOrder + 1), 0);
+  events.push({ type: 'coinsSeized', sourceEnemy: enemyIndex, coins, element: telegraph.element, seizureOrder });
+  const next = {
+    ...withEnemy(state, enemyIndex, (candidate) => ({ ...candidate, coinSeizure: undefined })),
+    custody: [...state.custody, { sourceEnemy: enemyIndex, coins, element: telegraph.element, seizureOrder }],
+    zones: { ...state.zones, hand: state.zones.hand.filter((coin) => !coins.includes(coin)) }
+  };
+  assertCombatCoinZoneInvariant(next);
+  return next;
+};
+
+const repeatedRecentSlot = (state: CombatState, db: ContentDb, turns: number): SlotId | undefined => {
+  const recent = state.player.recentSkillUses
+    .filter((use) => use.turn >= state.turn - Math.max(0, turns - 1))
+    .map((use) => use.slot);
+  const usable = state.player.usableSkillSlotsAtTurnEnd.length > 0
+    ? state.player.usableSkillSlotsAtTurnEnd
+    : state.slots.flatMap((_, index) => isSlotUsableNow(state, db, index as SlotId) ? [index as SlotId] : []);
+  const usableSkills = new Map<string, SlotId>();
+  for (const slot of [...usable].sort((left, right) => Number(left) - Number(right))) {
+    const skillId = state.slots[Number(slot)]?.skillId;
+    if (skillId !== null && skillId !== undefined && !usableSkills.has(String(skillId))) usableSkills.set(String(skillId), slot);
+  }
+  const counts = new Map<string, number>();
+  for (const slot of recent) {
+    const skillId = state.slots[Number(slot)]?.skillId;
+    if (skillId !== null && skillId !== undefined && usableSkills.has(String(skillId))) {
+      counts.set(String(skillId), (counts.get(String(skillId)) ?? 0) + 1);
+    }
+  }
+  const selected = [...counts.entries()].sort((left, right) => right[1] - left[1] || Number(usableSkills.get(left[0])) - Number(usableSkills.get(right[0])))[0]?.[0];
+  return selected === undefined ? undefined : usableSkills.get(selected);
+};
+
+const sealRecentSkill = (state: CombatState, enemyIndex: number, db: ContentDb, events: CombatEvent[]): CombatState => {
+  const def = db.enemies[String(state.enemies[enemyIndex]?.defId ?? '')]?.skillSeal;
+  if (def === undefined) return state;
+  if (Object.values(state.player.skillSeals).some((seal) => seal !== undefined && skillSealOwners(seal).some((owner) => owner.sourceEnemy === enemyIndex && owner.turns > 0))) {
+    const damage = 6;
+    events.push({ type: 'skillSealRepeatStruck', sourceEnemy: enemyIndex, damage });
+    return applyDamage(state, { type: 'player' }, damage, 'enemy', events, { type: 'enemy', index: enemyIndex });
+  }
+  const selected = repeatedRecentSlot(state, db, def.recentPlayerTurns);
+  if (selected === undefined) return state;
+  const usable = state.player.usableSkillSlotsAtTurnEnd.length > 0
+    ? state.player.usableSkillSlotsAtTurnEnd
+    : state.slots.flatMap((_, index) => isSlotUsableNow(state, db, index as SlotId) ? [index as SlotId] : []);
+  const slot = selected;
+  const returned = state.player.pendingPlacedReturns[Number(selected)] ?? [];
+  if (returned.length > 0) events.push({ type: 'placedCoinsReturned', slot, coins: [...returned], reason: 'skillSeal' });
+  const existing = state.player.skillSeals[Number(selected)];
+  if (usable.length === 1) {
+    const owner = { turns: 1, effectMultiplier: def.uniqueSkillEffectMultiplier, fallback: true, sourceEnemy: enemyIndex };
+    const seal = aggregateSkillSeal([...(existing === undefined ? [] : skillSealOwners(existing)), owner]);
+    events.push({ type: 'skillSealFallbackReduced', sourceEnemy: enemyIndex, slot, multiplier: owner.effectMultiplier, turns: owner.turns });
+    return seal === undefined ? state : { ...state, player: { ...state.player, skillSeals: { ...state.player.skillSeals, [Number(selected)]: seal } } };
+  }
+  const owner = { turns: def.turns, sourceEnemy: enemyIndex };
+  const seal = aggregateSkillSeal([...(existing === undefined ? [] : skillSealOwners(existing)), owner]);
+  events.push({ type: 'skillSealed', sourceEnemy: enemyIndex, slot, turns: owner.turns });
+  return seal === undefined ? state : { ...state, player: { ...state.player, skillSeals: { ...state.player.skillSeals, [Number(selected)]: seal } } };
+};
+
+const maybeStartWindup = (state: CombatState, enemyIndex: number, db: ContentDb, events: CombatEvent[]): { state: CombatState; started: boolean } => {
   const enemy = state.enemies[enemyIndex];
   if (
     enemy === undefined ||
@@ -153,7 +251,8 @@ const maybeStartWindup = (state: CombatState, enemyIndex: number, events: Combat
     turnsLeft: windup.turnsLeft,
     ...(windup.cancelThreshold === undefined ? {} : { cancelThreshold: windup.cancelThreshold })
   });
-  return { state: withEnemy(state, enemyIndex, (candidate) => ({ ...candidate, windup, boundHealAlly })), started: true };
+  const started = withEnemy(state, enemyIndex, (candidate) => ({ ...candidate, windup, boundHealAlly }));
+  return { state: beginCoinSeizureTelegraph(started, enemyIndex, db, events), started: true };
 };
 
 const maybeChangePhase = (state: CombatState, enemyIndex: number, db: ContentDb, events: CombatEvent[]): CombatState => {
@@ -273,7 +372,7 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
         }
       }
     }
-    const started = maybeStartWindup(state, enemyIndex, events);
+    const started = maybeStartWindup(state, enemyIndex, db, events);
     state = started.state;
     if (started.started) {
       state = tickMarchAfterEnemyTurn(state, enemyIndex, events);
@@ -331,7 +430,12 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
     for (const action of state.enemies[enemyIndex]?.intent.actions ?? []) {
       const actingEnemy = state.enemies[enemyIndex];
       if (actingEnemy === undefined || actingEnemy.hp <= 0) break;
-      if (action.kind === 'attack') {
+      if (action.kind === 'seizeCustody') {
+        state = seizeCustody(state, enemyIndex, events);
+      } else if (action.kind === 'sealRecentSkill') {
+        state = sealRecentSkill(state, enemyIndex, db, events);
+        if (state.phase === 'defeat') return { state, events };
+      } else if (action.kind === 'attack') {
         const hits = action.hits ?? 1;
         const bonus = actingEnemy.nextAttackBonus;
         if (bonus > 0) {

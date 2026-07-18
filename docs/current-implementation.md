@@ -240,6 +240,15 @@ Drive v1.2의 화염 격투가 범위에는 과열이 없으므로 신규 보상
 - 공통 사망 정리는 같은 피해 해결 안에서 보호 링크와 전쟁기수 원천의 행군 보호막·공격 버프를 제거한다. 이벤트는 `damageRedirected`, `protectionLinkBroken/Removed`, `petrifyProgressed/Shattered`, `enemyAuraApplied/Removed`, `enemyMarchRemoved`로 원인과 정리 결과를 남긴다.
 - 배치 C 몬스터는 2·3막 조우 풀에 편입되어 있으며 라이브 조우는 최대 3적을 유지한다. 수치와 실제 체감은 `balance-provisional` / `experience-unverified`다.
 
+## 7.0.5 동전 압수·스킬 봉인 원자 (P13 배치 D 기반)
+
+- `EnemyDef.coinSeizure`와 적 행동 `seizeCustody`는 예고 시점 손패에서 최다 공개 속성·대상 동전 ID·상한을 동결한다. 해결 때 아직 손에 남은 지정 동전만 최대 2개, 예고 시 손패 절반의 내림값까지만 전투 한정 `custody` 영역으로 옮긴다. 다른 동전으로 재지정하지 않으며 원래 ID·속성·임시 여부·인챈트를 보존한다.
+- M-09 `검은주머니 동전도둑`이 사망하면 자신이 압수한 동전을 압수 순서대로 같은 해결 안에서 버린 더미로 반환한다. 압수 영역은 드로우·셔플에서 제외되고 전투가 런의 영구 동전 가방을 변경하지 않는다.
+- `EnemyDef.skillSeal`과 적 행동 `sealRecentSkill`은 최근 플레이어 2턴의 실제 스킬 사용을 기록해 현재 합법적으로 사용할 수 있는 최다 반복 스킬을 고른다. 봉인은 플레이어 턴 2회 동안 해당 스킬의 배치·플립·소비 명령을 코어에서 거부하지만 `턴 종료`는 항상 유지한다.
+- 사용 가능한 스킬이 하나뿐이면 봉인 대신 다음 플레이어 턴 1회 동안 해당 스킬 고유 피해·방어·회복·상태이상 스택에 ×0.75(내림)를 적용한다. 코인 고유 피해·속성 효과는 감소시키지 않는다. 이미 같은 M-10의 봉인이 남아 있을 때 재시전하면 봉인을 갱신하지 않고 피해 6만 준다.
+- 이벤트 `coinSeizureTelegraphed`, `coinsSeized/Returned`, `skillSealed`, `skillSealFallbackReduced`, `placedCoinsReturned`, `skillSealRepeatStruck`가 예고·발동·방어 정리의 원인을 남긴다. UI는 압수 더미와 소유 적, 봉인/감소 종류와 남은 플레이어 턴을 텍스트·배지로 표시한다.
+- M-09/M-10은 2·3막 조우 풀에만 편입되며 라이브 조우는 최대 3적이다. 수치와 실제 체감은 `balance-provisional` / `experience-unverified`다.
+
 ## 7.1 P10 캐릭터 전투 상태
 
 - 화염 전사는 첫 피해 감소, 체력 50% 진입 회복, 첫 화상 증가, 화상 턴 종료 방어를 전투·턴 플래그로 제한한다.

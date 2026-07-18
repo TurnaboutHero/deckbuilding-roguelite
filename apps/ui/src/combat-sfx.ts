@@ -114,6 +114,13 @@ export const sfxCuesFor = (event: CombatEvent): SfxKind[] => {
     case "enemyAuraRemoved":
     case "enemyMarchRemoved":
       return [];
+    case "coinSeizureTelegraphed":
+    case "coinsSeized":
+    case "coinsReturned":
+    case "skillSealed":
+    case "skillSealFallbackReduced":
+    case "placedCoinsReturned":
+    case "skillSealRepeatStruck":
     case "coinsDrawn":
     case "bloodCoinFizzle":
     case "coinsDiscarded":

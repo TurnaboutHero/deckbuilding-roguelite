@@ -81,5 +81,12 @@ export type CombatEvent =
   | { type: 'enemyAuraApplied'; source: number; target: number; percent: number }
   | { type: 'enemyAuraRemoved'; source: number }
   | { type: 'enemyMarchRemoved'; source: number; target: number }
+  | { type: 'coinSeizureTelegraphed'; sourceEnemy: number; element: Element; nominated: CoinUid[]; handCountAtTelegraph: number; cap: number; quantity: number }
+  | { type: 'coinsSeized'; sourceEnemy: number; coins: CoinUid[]; element: Element; seizureOrder: number }
+  | { type: 'coinsReturned'; sourceEnemy: number; coins: CoinUid[] }
+  | { type: 'skillSealed'; sourceEnemy: number; slot: SlotId; turns: number }
+  | { type: 'skillSealFallbackReduced'; sourceEnemy: number; slot: SlotId; multiplier: number; turns: number }
+  | { type: 'placedCoinsReturned'; slot: SlotId; coins: CoinUid[]; reason: 'skillSeal' }
+  | { type: 'skillSealRepeatStruck'; sourceEnemy: number; damage: number }
   | { type: 'turnStarted'; turn: number }
   | { type: 'combatEnded'; result: 'victory' | 'defeat'; turns: number };

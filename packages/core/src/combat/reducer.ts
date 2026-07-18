@@ -12,7 +12,7 @@ import type {
   SlotId
 } from '../ids';
 import { derive, rngFrom, seedFromString } from '../rng';
-import { coinSatisfiesFlipRequirement, flipSkillRequiresEnemyTarget, skillRequiresSummonChoice } from './commands';
+import { coinSatisfiesFlipRequirement, flipSkillRequiresEnemyTarget, isSlotUsableNow, skillRequiresSummonChoice } from './commands';
 import type { Command } from './commands';
 import { drawCards, drawSpecificCoin } from './draw';
 import { initialIntent, runEnemyPhase } from './enemy';
@@ -20,7 +20,7 @@ import { runSummonPhase } from './summons';
 import type { CombatEvent } from './events';
 import { resolveConsume } from './resolve/consume';
 import { applyBlock, applyDamage, applyEffectAtom, checkCombatEnd, resolveFlip } from './resolve/flip';
-import { bloodSwordPowerFor, cloneState, MAX_PRESERVED_COINS, MAX_SKILL_SLOTS, statusStacks } from './state';
+import { aggregateSkillSeal, bloodSwordPowerFor, cloneState, isSkillCommandSealed, MAX_PRESERVED_COINS, MAX_SKILL_SLOTS, skillSealOwners, statusStacks } from './state';
 import type { CombatState, CombatZones } from './state';
 
 export { MAX_SKILL_SLOTS } from './state';
@@ -145,7 +145,10 @@ const startPlayerTurn = (input: CombatState, db: ContentDb, clearBlock = true): 
       bloodSwordDiscountUsedThisTurn: false,
       concentratedBloodUsedThisTurn: false,
       redRefluxUsedThisTurn: false,
-      nextAttackDamageBonus: 0
+      nextAttackDamageBonus: 0,
+      pendingPlacedReturns: {},
+      usableSkillSlotsAtTurnEnd: [],
+      recentSkillUses: input.player.recentSkillUses.filter((use) => use.turn >= input.turn - 1)
     },
     enemies: input.enemies.map((enemy) => ({ ...enemy, crackedTurns: Math.max(0, (enemy.crackedTurns ?? 0) - 1) })),
     slots: input.slots.map((candidate) => ({
@@ -373,7 +376,11 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
       armorEchoAbsorbedThisEnemyTurn: 0,
       echoPreheat: 0,
       precisionDefenseArmed: false,
-      precisionDefenseSatisfied: false
+      precisionDefenseSatisfied: false,
+      recentSkillUses: [],
+      skillSeals: {},
+      pendingPlacedReturns: {},
+      usableSkillSlotsAtTurnEnd: []
     },
     enemies: linkedEnemies,
     coins,
@@ -403,7 +410,8 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
     lastTargetedEnemy: null,
     summons: [],
     nextSummonUid: 1,
-    events: []
+    events: [],
+    custody: []
   };
 
   let bloodSwordState = base;
@@ -519,6 +527,7 @@ const placeCoin = (input: CombatState, coin: CoinUid, slotId: SlotId, db: Conten
   if (!input.zones.hand.includes(coin)) return { ok: false, error: 'coin is not in hand' };
   const slotState = input.slots[Number(slotId)];
   if (slotState === undefined) return { ok: false, error: 'slot does not exist' };
+  if (isSkillCommandSealed(input, slotId)) return { ok: false, error: 'skill is sealed' };
   if (slotState.skillId === null) return { ok: false, error: 'slot is empty' };
   const skill = db.skills[String(slotState.skillId)];
   if (skill?.type === 'flip' && !coinSatisfiesFlipRequirement(input, db, skill, coin)) {
@@ -569,11 +578,35 @@ const unplaceCoin = (input: CombatState, coin: CoinUid): StepResult => {
 const endTurn = (input: CombatState, db: ContentDb, preserveChoice?: readonly CoinUid[]): StepResult => {
   const events: CombatEvent[] = [];
   let state = input;
+  const usableSkillSlotsAtTurnEnd = input.slots.flatMap((_, index) =>
+    isSlotUsableNow(input, db, slot(index)) ? [slot(index)] : []
+  );
   const returned = Object.values(state.zones.placed).flat();
+  const pendingPlacedReturns = Object.fromEntries(
+    Object.entries(state.zones.placed)
+      .filter(([, coins]) => coins.length > 0)
+      .map(([slotId, coins]) => [Number(slotId), [...coins]])
+  );
   const placed = emptyPlaced();
   state = {
     ...state,
-    player: { ...state.player, remiseCharges: 0, armorEcho: 0, armorEchoAvailable: false },
+    player: {
+      ...state.player,
+      remiseCharges: 0,
+      armorEcho: 0,
+      armorEchoAvailable: false,
+      pendingPlacedReturns,
+      usableSkillSlotsAtTurnEnd,
+      skillSeals: Object.fromEntries(
+        Object.entries(state.player.skillSeals).flatMap(([slotId, seal]) => {
+          if (seal === undefined) return [];
+          const next = aggregateSkillSeal(
+            skillSealOwners(seal).map((owner) => ({ ...owner, turns: Math.max(0, owner.turns - 1) }))
+          );
+          return next === undefined ? [] : [[Number(slotId), next]];
+        })
+      )
+    },
     zones: { ...state.zones, hand: [...state.zones.hand, ...returned], placed }
   };
   const passiveMechanics = new Set(
@@ -725,6 +758,7 @@ export const step = (state: CombatState, cmd: Command, db: ContentDb): StepResul
     if (cmd.type === 'useFlipSkill') {
       const slotState = input.slots[Number(cmd.slot)];
       if (slotState === undefined) return { ok: false, error: 'slot does not exist' };
+      if (isSkillCommandSealed(input, cmd.slot)) return { ok: false, error: 'skill is sealed' };
       const skill = db.skills[String(slotState.skillId)];
       if (skill === undefined || skill.type !== 'flip') return { ok: false, error: 'slot is not a flip skill' };
       if (skill.targetType === 'single-enemy') {
@@ -752,6 +786,7 @@ export const step = (state: CombatState, cmd: Command, db: ContentDb): StepResul
     if (cmd.type === 'useConsumeSkill') {
       const slotState = input.slots[Number(cmd.slot)];
       if (slotState === undefined) return { ok: false, error: 'slot does not exist' };
+      if (isSkillCommandSealed(input, cmd.slot)) return { ok: false, error: 'skill is sealed' };
       const skill = db.skills[String(slotState.skillId)];
       if (skill === undefined || skill.type !== 'consume') return { ok: false, error: 'slot is not a consume skill' };
       if (skill.targetType === 'single-enemy') {
@@ -775,9 +810,10 @@ export const step = (state: CombatState, cmd: Command, db: ContentDb): StepResul
   }
 };
 
-export const zoneCoinCount = (zones: CombatZones): number =>
+export const zoneCoinCount = (zones: CombatZones, custody: readonly { coins: readonly CoinUid[] }[] = []): number =>
   zones.draw.length +
   zones.hand.length +
   Object.values(zones.placed).reduce((sum, coins) => sum + coins.length, 0) +
   zones.discard.length +
-  zones.exhausted.length;
+  zones.exhausted.length +
+  custody.reduce((sum, entry) => sum + entry.coins.length, 0);

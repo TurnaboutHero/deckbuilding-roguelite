@@ -2197,6 +2197,41 @@ export const enemies = {
       }
     ]
   },
+  // Directive 14 Batch D — the mechanics are declared through generic action
+  // markers so combat resolution stays independent of individual enemy ids.
+  'black-pouch-coin-thief': {
+    id: enemy('black-pouch-coin-thief'),
+    name: '검은 주머니 동전 도둑',
+    maxHp: 44,
+    coinSeizure: {
+      target: 'mostNumerousPublicElementInHand',
+      maxCoins: 2,
+      capFraction: 0.5
+    },
+    intents: [
+      {
+        id: 'seize-purse',
+        windup: { turns: 1, revealAtStart: true },
+        actions: [{ kind: 'seizeCustody' }, { kind: 'attack', damage: 4 }]
+      },
+      { id: 'cutpurse-strike', actions: [{ kind: 'attack', damage: 6 }] }
+    ]
+  },
+  'grey-tower-sealer': {
+    id: enemy('grey-tower-sealer'),
+    name: '회색 탑의 봉인술사',
+    maxHp: 46,
+    skillSeal: {
+      recentPlayerTurns: 2,
+      turns: 2,
+      uniqueSkillEffectMultiplier: 0.75
+    },
+    intents: [
+      { id: 'cast-seal', actions: [{ kind: 'sealRecentSkill' }] },
+      { id: 'arcane-bolt', actions: [{ kind: 'attack', damage: 7 }] },
+      { id: 'greater-bolt', actions: [{ kind: 'attack', damage: 5 }] }
+    ]
+  },
   'ember-archmage': {
     id: enemy('ember-archmage'),
     name: '잿불 마도왕',

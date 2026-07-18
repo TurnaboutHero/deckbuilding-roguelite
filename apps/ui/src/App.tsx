@@ -519,6 +519,7 @@ export const IntentBadge = ({
   const boundHealAlly = windup?.boundHealAlly ?? enemy.boundHealAlly;
   const boundHealAllyName = boundHealAlly === undefined ? undefined : enemyDisplayName(enemies[boundHealAlly]);
   const enemyDef = contentDb.enemies[String(enemy.defId)];
+  const coinSeizure = enemy.coinSeizure;
   const growthLabel = enemyDef?.growthLabel ?? "성장";
   return (
     <div aria-label="다음 행동 의도" className="intent">
@@ -542,6 +543,14 @@ export const IntentBadge = ({
             </Keyword>
           ) : null}
         </>
+      ) : null}
+      {coinSeizure !== undefined ? (
+        <span
+          aria-label={`동전 압수 예고: ${elementKo(coinSeizure.element)} 속성 ${Math.min(2, coinSeizure.cap, coinSeizure.nominated.length)}개, 예고 시 손패 ${coinSeizure.handCountAtTelegraph}개 기준으로 지정`}
+          data-testid="coin-seizure-telegraph"
+        >
+          압수 예고 · {elementKo(coinSeizure.element)} {Math.min(2, coinSeizure.cap, coinSeizure.nominated.length)}개
+        </span>
       ) : null}
       {intent.entersPetrify === true && enemyDef?.petrify !== undefined ? (
         <span
@@ -612,6 +621,14 @@ export const IntentBadge = ({
             <SwordIcon scale={1.6} />
             {action.damage}+{action.bonusDamage}
           </span>
+        ) : action.kind === "seizeCustody" ? (
+          <span key={index} aria-label="예고한 동전을 압수하고 전투 중 보관합니다" data-testid="coin-seizure-intent">
+            동전 압수
+          </span>
+        ) : action.kind === "sealRecentSkill" ? (
+          <span key={index} aria-label="최근 반복 사용한 스킬을 봉인합니다" data-testid="skill-seal-intent">
+            최근 스킬 봉인
+          </span>
         ) : action.kind === "growOnUnblockedDamage" ? (
           <span
             key={index}
@@ -675,6 +692,33 @@ export const RemiseStackChip = ({ charges }: { charges: number }): JSX.Element =
   );
 };
 
+export const SkillSealBadges = ({
+  seals,
+}: {
+  seals: readonly { slot: number; name: string; turns: number; effectMultiplier?: number }[];
+}): JSX.Element | null => {
+  if (seals.length === 0) return null;
+  return (
+    <span aria-label="스킬 봉인 및 효과 감소 상태" className="skill-seal-badges">
+      {seals.map((seal) => {
+        const multiplier = seal.effectMultiplier;
+        const reduced = multiplier !== undefined;
+        const label = reduced ? `효과 ${Math.round(multiplier * 100)}%` : "봉인";
+        return (
+          <em
+            aria-label={`${seal.name} ${label}, 남은 플레이어 턴 ${seal.turns}`}
+            className={`skill-seal-chip ${reduced ? "reduced" : "sealed"}`}
+            data-testid={`skill-seal-status-${seal.slot}`}
+            key={seal.slot}
+          >
+            {label} · {seal.name} · {seal.turns}턴
+          </em>
+        );
+      })}
+    </span>
+  );
+};
+
 export const RemiseSpendBadge = ({
   displaySkillName,
   isSorcerer,
@@ -718,6 +762,25 @@ const remiseResolutionLines = (events: readonly CombatEvent[]): string[] =>
 
 const combatEventResolutionLines = (events: readonly CombatEvent[]): string[] =>
   events.flatMap((event) => {
+    if (event.type === "coinSeizureTelegraphed")
+      return [
+        `적 ${event.sourceEnemy + 1} 압수 예고 · ${elementKo(event.element)} ${Math.min(2, event.cap, event.nominated.length)}개 (예고 시 손패 ${event.handCountAtTelegraph}개)`,
+      ];
+    if (event.type === "coinsSeized")
+      return [
+        `적 ${event.sourceEnemy + 1} 동전 ${event.coins.length}개 압수 · 처치 또는 전투 종료 시 버린 더미로 반환`,
+      ];
+    if (event.type === "coinsReturned")
+      return [`적 ${event.sourceEnemy + 1} 압수 동전 ${event.coins.length}개를 버린 더미로 반환`];
+    if (event.type === "skillSealed")
+      return [`스킬 ${Number(event.slot) + 1} 봉인 · 남은 플레이어 턴 ${event.turns}`];
+    if (event.type === "skillSealFallbackReduced")
+      return [
+        `스킬 ${Number(event.slot) + 1} 효과 ${Math.round(event.multiplier * 100)}%로 감소 · 남은 플레이어 턴 ${event.turns}`,
+      ];
+    if (event.type === "placedCoinsReturned")
+      return [`스킬 ${Number(event.slot) + 1} 장착 동전 ${event.coins.length}개 반환 · 봉인으로 사용 취소`];
+    if (event.type === "skillSealRepeatStruck") return [`적 ${event.sourceEnemy + 1} 봉인 반복 시전 · 피해 ${event.damage}`];
     if (event.type === "overheatScheduled") return ["과열 예약 — 다음 플레이어 턴 과열 예정"];
     if (event.type === "overheatActivated") return ["과열 활성 — 예약된 과열 시작"];
     if (event.type === "echoComputed")
@@ -2538,14 +2601,18 @@ const CombatBoard = ({
     () =>
       state.slots.map((slotState, index) => {
         const skill = contentDb.skills[String(slotState.skillId)];
+        const loadedCount = state.zones.placed[slot(index)]?.length ?? 0;
         return {
           slot: slot(index),
-          loadedCount: state.zones.placed[slot(index)]?.length ?? 0,
+          loadedCount,
           requiredCount: skill?.type === "flip" ? skill.cost : 0,
-          queueable: skill?.type === "flip",
+          queueable:
+            skill?.type === "flip" &&
+            (loadedCount < skill.cost ||
+              legal.some((command) => command.type === "useFlipSkill" && command.slot === slot(index))),
         };
       }),
-    [state.slots, state.zones.placed],
+    [legal, state.slots, state.zones.placed],
   );
   const executionSnapshot = useMemo(
     () => executionQueueSnapshot(executionOrder, executionLoads),
@@ -2565,6 +2632,8 @@ const CombatBoard = ({
     [executionSnapshot, preserveSelection, state],
   );
   const unusedElementalCoins = useMemo(() => unusedElementalCoinCount(state), [state]);
+  const custodyCoinCount = state.custody.reduce((count, entry) => count + entry.coins.length, 0);
+  const custodyOwners = [...new Set(state.custody.map((entry) => enemyDisplayName(state.enemies[entry.sourceEnemy])))];
 
   const selectCoin = (coin: CoinUid | null) => setSelectedCoin(coin);
 
@@ -3859,6 +3928,19 @@ const CombatBoard = ({
           maxHp={state.player.maxHp}
           block={state.player.block}
           statuses={state.player.statuses}
+          skillSeals={Object.entries(state.player.skillSeals).flatMap(([slotIndex, seal]) => {
+            if (seal === undefined || seal.turns <= 0) return [];
+            const slotState = state.slots[Number(slotIndex)];
+            const skill = contentDb.skills[String(slotState?.skillId)];
+            return [
+              {
+                effectMultiplier: seal.effectMultiplier,
+                name: skill === undefined ? `스킬 ${Number(slotIndex) + 1}` : skillDisplayName(skill, state.player.bloodSwordPower),
+                slot: Number(slotIndex),
+                turns: seal.turns,
+              },
+            ];
+          })}
           pendingOverheat={shouldShowOverheatBadges(run.character) ? state.player.pendingOverheat : false}
           overheat={shouldShowOverheatBadges(run.character) ? state.player.overheat : false}
           armorEchoHud={
@@ -4178,6 +4260,14 @@ const CombatBoard = ({
               ? consumeUse !== undefined
               : fuelSelection?.slot === slot(index) && fuelCommand(fuelSelection, state, contentDb) !== null);
           const selectingFuel = skill?.type === "consume" && fuelSelection?.slot === slot(index);
+          const activeSkillSeal = state.player.skillSeals[index];
+          const hardSealed = activeSkillSeal !== undefined && activeSkillSeal.turns > 0 && activeSkillSeal.effectMultiplier === undefined;
+          const skillSealLabel =
+            activeSkillSeal === undefined || activeSkillSeal.turns <= 0
+              ? null
+              : activeSkillSeal.effectMultiplier === undefined
+                ? `봉인 · ${activeSkillSeal.turns}턴`
+                : `효과 ${Math.round(activeSkillSeal.effectMultiplier * 100)}% · ${activeSkillSeal.turns}턴`;
           const lockedOnce = skill?.oncePerCombat === true && slotState.usedThisCombat;
           const isResolving = resolving !== null && resolving.slot === index;
           const socketCoins = isResolving ? resolving.coins : placed;
@@ -4210,7 +4300,13 @@ const CombatBoard = ({
           const action =
             skill === undefined
               ? null
-              : choosingCoin
+              : hardSealed
+                ? {
+                    actionable: false,
+                    label: skillSealLabel ?? "봉인",
+                    tone: "idle" as const,
+                  }
+                : choosingCoin
                 ? {
                     actionable: coinChoiceCommand(coinChoice, state, contentDb) !== null,
                     label: coinChoice.coins.length > 0 ? "선택 확정" : "발동 코인 선택",
@@ -4281,7 +4377,7 @@ const CombatBoard = ({
           };
           return (
             <article
-              className={`skill-card ${action?.tone === "ready" ? "ready" : ""} ${slotState.cooldownRemaining > 0 ? "spent" : ""} ${slotState.skillId === null ? "empty-slot" : ""} ${lockedOnce ? "combat-locked" : ""} ${placed.length > 0 || isResolving ? "lifted" : ""} ${isResolving ? "resolving" : ""} ${dropTarget && drag?.over === index ? "drop-target" : ""}`}
+              className={`skill-card ${action?.tone === "ready" ? "ready" : ""} ${slotState.cooldownRemaining > 0 ? "spent" : ""} ${slotState.skillId === null ? "empty-slot" : ""} ${lockedOnce ? "combat-locked" : ""} ${hardSealed ? "skill-sealed" : ""} ${placed.length > 0 || isResolving ? "lifted" : ""} ${isResolving ? "resolving" : ""} ${dropTarget && drag?.over === index ? "drop-target" : ""}`}
               data-slot={index}
               key={`${index}-${String(slotState.skillId)}`}
               style={vfx.has(`skill-slot-${index}`) || vfx.has(`cooldown-slot-${index}`) ? feedbackPulse : undefined}
@@ -4356,7 +4452,7 @@ const CombatBoard = ({
                       }
                       className={`socket ${coin !== undefined ? "loaded" : ""} ${coin === undefined && canPlace ? "accept" : ""} ${swapAccept ? "swap-accept" : ""} ${swapOver ? "swap-over" : ""}`}
                       data-coin={coin === undefined ? undefined : Number(coin)}
-                      disabled={executionBusy || locked}
+                      disabled={executionBusy || locked || hardSealed}
                       key={socketIndex}
                       type="button"
                       onClick={(event) => {
@@ -4470,6 +4566,15 @@ const CombatBoard = ({
                 </span>
               ) : null}
               {lockedOnce ? <span className="locked-label">잠금</span> : null}
+              {skillSealLabel !== null ? (
+                <span
+                  aria-label={`${displaySkillName} ${skillSealLabel}, 남은 플레이어 턴 동안 적용`}
+                  className={`sealed-skill-label ${hardSealed ? "sealed" : "reduced"}`}
+                  data-testid={`skill-seal-card-${index}`}
+                >
+                  {skillSealLabel}
+                </span>
+              ) : null}
               {action !== null ? (
                 <button
                   aria-disabled={!action.actionable || !cardActionAllowed}
@@ -4569,6 +4674,17 @@ const CombatBoard = ({
               </button>
             ) : null}
           </div>
+        ) : null}
+        {state.custody.length > 0 ? (
+          <section
+            aria-label={`압수 동전 ${custodyCoinCount}개, 소유 적 ${custodyOwners.join(", ")}`}
+            className="custody-pile"
+            data-testid="custody-pile"
+          >
+            <strong>압수 동전 {custodyCoinCount}개</strong>
+            <span>소유 적: {custodyOwners.join(", ")}</span>
+            <small>압수자를 처치하거나 전투가 끝나면 버린 더미로 돌아갑니다.</small>
+          </section>
         ) : null}
         <div className="pouch" ref={pouchRef}>
           <button
@@ -4834,6 +4950,7 @@ interface UnitPanelProps {
   warBannerAuraPercent?: number;
   auraSourceName?: string;
   auraSourcePercent?: number;
+  skillSeals?: readonly { slot: number; name: string; turns: number; effectMultiplier?: number }[];
 }
 
 export const ArmorEchoHud = ({
@@ -4916,6 +5033,7 @@ export const UnitPanel = ({
   warBannerAuraPercent,
   auraSourceName,
   auraSourcePercent,
+  skillSeals,
 }: UnitPanelProps) => (
   <div
     className={`unit ${side} ${vfx.has(`unit-${unitKey}`) ? "vfx-hit" : ""} ${targeting ? "targetable" : ""} ${targetSelected ? "target-selected" : ""}`}
@@ -5163,6 +5281,7 @@ export const UnitPanel = ({
             </em>
           </Keyword>
         ) : null}
+        {skillSeals !== undefined ? <SkillSealBadges seals={skillSeals} /> : null}
         {armorEchoHud !== undefined ? <ArmorEchoHud hud={armorEchoHud} /> : null}
         {weaponOutput !== undefined ? (
           <em aria-label={`병기 출력 ${weaponOutput}/5`} className="passive-chip">

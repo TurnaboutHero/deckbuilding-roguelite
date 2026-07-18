@@ -3,6 +3,7 @@ import { effectiveElements, skillCooldown } from '../../content-types';
 import type { CoinDefId, CoinUid, SlotId } from '../../ids';
 import type { CombatEvent } from '../events';
 import { assertCoinEnchantEligibility, firstUseEchoCoins } from '../enchant';
+import { activeSkillSeal, isSkillCommandSealed, recordRecentSkillUse } from '../state';
 import type { CombatState } from '../state';
 import { consumeRequirementFor } from '../consume-requirement';
 import {
@@ -13,6 +14,7 @@ import {
   checkCombatEnd,
   currentEnemyTargetForPassive,
   fireTurnTriggers,
+  scaleSkillAuthoredEffect,
   targetsForSkillEffect
 } from './flip';
 
@@ -57,6 +59,7 @@ export const resolveConsume = (
   const slotState = input.slots[Number(slot)];
   if (slotState === undefined) throw new Error('slot does not exist');
   if (slotState.cooldownRemaining > 0) throw new Error('skill is cooling down');
+  if (isSkillCommandSealed(input, slot)) throw new Error('skill is sealed');
   if (skill.oncePerCombat === true && slotState.usedThisCombat) throw new Error('skill already used this combat');
   const requirement = consumeRequirementFor(input, skill);
   if (requirement.mode === 'all') {
@@ -95,6 +98,7 @@ export const resolveConsume = (
   ];
   // P7 D5 — 소비 스킬도 과열 강화 분기 지원 (해결 후 소비, 단일 finish 경로)
   const consumesOverheat = input.player.overheat && (skill.overheatBonus?.length ?? 0) > 0;
+  const effectMultiplier = activeSkillSeal(input, slot)?.effectMultiplier;
   const finish = (finishedState: CombatState): ResolveConsumeResult => {
     let state = finishedState;
     if (consumesOverheat && state.player.overheat) {
@@ -115,7 +119,7 @@ export const resolveConsume = (
     } else {
       state = echoed.state;
     }
-    return { state, events };
+    return { state: recordRecentSkillUse(state, slot), events };
   };
 
   let state: CombatState = {
@@ -194,8 +198,10 @@ export const resolveConsume = (
   }
 
   // 피해 전용 과열 보너스는 기본 피해와 같은 타격으로 합산 (flip과 동일 규칙)
-  const overheatBonus = input.player.overheat ? (skill.overheatBonus ?? []) : [];
-  let effects = [...skill.effects, ...(consumedPreserved ? (skill.preservedBonus ?? []) : [])];
+  const overheatBonus = (input.player.overheat ? (skill.overheatBonus ?? []) : [])
+    .map((atom) => scaleSkillAuthoredEffect(atom, effectMultiplier));
+  let effects = [...skill.effects, ...(consumedPreserved ? (skill.preservedBonus ?? []) : [])]
+    .map((atom) => scaleSkillAuthoredEffect(atom, effectMultiplier));
   if (consumedPreserved && !state.player.maturedHandUsedThisTurn && passiveMechanics.has('maturedHand')) {
     effects = applyMaturedHandBonus(effects);
     state = { ...state, player: { ...state.player, maturedHandUsedThisTurn: true } };

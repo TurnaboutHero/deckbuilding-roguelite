@@ -101,6 +101,12 @@ const BATCH_C_THREE_POOL = [
   [enemy("fortress-guard"), enemy("silverbell-healer")],
   [enemy("war-banner-rider"), enemy("gate-pikeman"), enemy("slime")],
 ] as const;
+// Directive 14 Batch D: each encounter introduces one denial mechanic and
+// remains below the three-enemy encounter cap.
+const BATCH_D_POOL = [
+  [enemy("black-pouch-coin-thief")],
+  [enemy("grey-tower-sealer")],
+] as const;
 const ELITE_POOL = [[enemy("raider-plus")], [enemy("gatekeeper-plus")]] as const;
 
 // 막 보스 (P6 D1 — 재사용+수치 변형, balance-provisional):
@@ -118,12 +124,13 @@ const combatPoolFor = (act: number, visit: number): readonly (readonly EnemyDefI
     if (visit <= 5) return TWO_POOL;
     return [...TWO_POOL, ...THREE_POOL];
   }
-  if (visit <= 5) return [...TWO_POOL, ...BATCH_A_TWO_POOL, ...BATCH_B_TWO_POOL, ...BATCH_C_TWO_POOL];
+  if (visit <= 5) return [...TWO_POOL, ...BATCH_A_TWO_POOL, ...BATCH_B_TWO_POOL, ...BATCH_C_TWO_POOL, ...BATCH_D_POOL];
   return [
     ...TWO_POOL,
     ...BATCH_A_TWO_POOL,
     ...BATCH_B_TWO_POOL,
     ...BATCH_C_TWO_POOL,
+    ...BATCH_D_POOL,
     ...THREE_POOL,
     ...BATCH_A_THREE_POOL,
     ...BATCH_B_THREE_POOL,

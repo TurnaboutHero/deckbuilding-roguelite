@@ -124,11 +124,28 @@ describe('armor echo', () => {
     expect(first.state.player.armorEcho).toBe(4);
     expect(first.state.player.armorEchoAvailable).toBe(false);
 
-    state = { ...first.state, zones: { ...first.state.zones, hand: [2 as CoinUid] } };
+    state = first.state;
     const beforeSecond = state;
     const second = useConsume(state, db, 1);
     expect(hpLoss(beforeSecond, second.state)).toBe(4);
     expect(second.events.some((event) => event.type === 'echoSpent')).toBe(false);
+  });
+
+  it('reduces Armor Smash authored base before adding the unscaled echo contribution', () => {
+    const db = dbFor([consume('armor-smash', [{ kind: 'damagePlusEcho', base: 6 }])], [{ kind: 'attack', damage: 4 }]);
+    const echoed = endTurnWithBlock(combat(db), db, 10).state;
+    const sealed = {
+      ...echoed,
+      player: {
+        ...echoed.player,
+        skillSeals: { 0: { turns: 1, effectMultiplier: 0.75, fallback: true } }
+      }
+    };
+
+    const used = useConsume(sealed, db, 0);
+
+    expect(hpLoss(sealed, used.state)).toBe(8);
+    expect(used.events).toContainEqual({ type: 'echoSpent', skill: id<SkillId>('armor-smash'), amount: 4 });
   });
 
   it('does not consume current block when echo damage atoms resolve', () => {

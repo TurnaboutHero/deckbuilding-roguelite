@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ContentDb, EnemyDef } from '../content-types';
 import { validateContentDb } from '../content-types';
-import type { CharacterId, CoinDefId, EnemyDefId, SlotId } from '../ids';
+import type { CharacterId, CoinDefId, CoinUid, EnemyDefId, SlotId } from '../ids';
 import { createCombat, step } from './reducer';
 import { applyDamage, applyEffectAtom } from './resolve/flip';
 import { statusStacks, statusTurns } from './state';
@@ -61,9 +61,10 @@ const endTurn = (state: CombatState, db: ContentDb) => {
 };
 
 const prepareElementalHand = (input: CombatState, grants: readonly string[][]): CombatState => {
+  const available = Object.keys(input.coins).map((coin) => Number(coin) as CoinUid);
   const coins = Object.fromEntries(
     grants.map((coinGrants, index) => {
-      const coin = input.zones.draw[index]!;
+      const coin = available[index]!;
       return [
         Number(coin),
         {
@@ -76,15 +77,18 @@ const prepareElementalHand = (input: CombatState, grants: readonly string[][]): 
       ];
     })
   );
-  const hand = input.zones.draw.slice(0, grants.length - 1);
-  const placedCoin = input.zones.draw[grants.length - 1]!;
+  const hand = available.slice(0, grants.length - 1);
+  const placedCoin = available[grants.length - 1]!;
+  const prepared = new Set(available.slice(0, grants.length));
   return {
     ...input,
     coins: { ...input.coins, ...coins },
     zones: {
       ...input.zones,
-      draw: input.zones.draw.slice(grants.length),
+      draw: available.filter((coin) => !prepared.has(coin)),
       hand,
+      discard: [],
+      exhausted: [],
       placed: { ...input.zones.placed, [slot(0)]: [placedCoin] }
     }
   } as CombatState;

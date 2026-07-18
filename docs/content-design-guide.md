@@ -284,6 +284,9 @@ intents, 패시브, 등장 구간, 보상 가치
 - P13 배치 C 필드: `threat`, `protectionLink {target: 'highestThreatAlly', redirectFraction, durability, brokenTurns, damageTakenMultiplierWhileBroken}`, `petrify {damageReduction, shatterRawDamageFraction, crackedTurns, crackedDamageTakenMultiplier, cancelWindupIntentId}`, `warBanner {attackAuraPercent, march {attackPercent, turns, shieldMaxHpFraction}}`. `petrify` 의도에는 `entersPetrify: true`, 집단 행군 의도에는 `groupMarch: true`를 사용한다.
 - 보호 링크는 전투 시작 시 가장 높은 `threat`의 살아 있는 다른 적을 하나만 연결한다. 피해 재지정은 공유 피해 해결기를 통해 처리하므로 상태 피해와 방어 상호작용도 같은 규칙을 쓴다. 링크 내구도는 보호자 자신을 대상으로 한 공격 스킬당 한 번만 줄어든다.
 - 전쟁기수의 오라는 자신을 제외한 살아 있는 적에게만 적용한다. 반대로 행군은 전쟁기수 자신을 포함한 모든 살아 있는 적에게 적용한다. 행군의 보호막·공격 증가는 원천 적을 기록해야 하며, 원천이 사망하면 같은 해결 안에서 남은 보호막과 공격 증가를 제거한다. 새 몬스터가 원천 소유 효과를 추가하면 사망 정리 이벤트와 회귀 테스트를 함께 추가한다.
+- P13 배치 D 기반 필드: `coinSeizure {target: 'mostNumerousPublicElementInHand', maxCoins, capFraction}`와 `skillSeal {recentPlayerTurns, turns, uniqueSkillEffectMultiplier}`. 압수 의도는 `windup`과 같은 의도 안에 `seizeCustody` 뒤 공격을 두어 예고 다음 적 행동에 해결하고, 봉인 의도는 `sealRecentSkill`을 사용한다. 몬스터 ID나 의도 ID로 런타임 분기하지 않는다.
+- 압수는 예고 시 대상 속성·동전 ID·상한을 확정하고 해결 때 남은 지정 동전만 옮긴다. 압수 동전은 전투 한정 정확히 한 영역에 있어야 하며 ID·임시 여부·인챈트를 유지한다. 원천 사망 반환, 영구 가방 불변, 홀수 절반 내림, 소비 후 미재지정을 각각 회귀 테스트로 고정한다.
+- 봉인 대상은 최근 사용 횟수뿐 아니라 현재 명령 합법성(장착·쿨다운·전투당 1회·소비 코인·대상 가능)을 만족해야 한다. 유일 스킬 보호는 스킬 고유 효과만 감소시키고 코인 고유 효과를 건드리지 않는다. 봉인 중 직접 명령 우회와 `턴 종료` 소프트락을 함께 테스트한다.
 - `growthLabel`은 동일 런타임 스택을 몬스터 콘셉트 용어(예: 기세·만찬)로 표시한다. `growthBranch`는 기본 패턴 인덱스를 유지한 채 공개 시점의 스택으로 대체 의도를 확정하므로, 분기 결과와 준비 행동이 플레이어에게 먼저 보인다.
 - 강공은 windup 예고를 경유해야 하고, 일반 조우의 핵심 위협은 1~2개다(교란 축 3중첩 금지).
 - 의도만 보고 대응 결정을 내릴 수 있어야 한다.

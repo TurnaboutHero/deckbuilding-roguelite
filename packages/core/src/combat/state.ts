@@ -1,5 +1,5 @@
 import type { CoinInstance, EnemyIntent, EnemyRoundGrowthDef, StatusId, TurnTriggerDef } from '../content-types';
-import type { CharacterId, PassiveId, EquipmentDefId, CoinUid, EnemyDefId, SkillId, SlotId } from '../ids';
+import type { CharacterId, PassiveId, EquipmentDefId, CoinUid, Element, EnemyDefId, SkillId, SlotId } from '../ids';
 import type { Rng, RngSnapshot } from '../rng';
 import type { CombatEvent } from './events';
 
@@ -92,6 +92,40 @@ export interface PlayerState extends UnitState {
   echoPreheat: number;
   precisionDefenseArmed: boolean;
   precisionDefenseSatisfied: boolean;
+  /** Skill uses from the current and immediately preceding player turn. */
+  recentSkillUses: Array<{ turn: number; slot: SlotId }>;
+  skillSeals: Partial<Record<number, SkillSealState>>;
+  /** Coins returned from placements during this turn, keyed by slot for seal narration. */
+  pendingPlacedReturns: Partial<Record<number, CoinUid[]>>;
+  /** Slots with a legal player command immediately before the enemy phase. */
+  usableSkillSlotsAtTurnEnd: SlotId[];
+}
+
+export interface SkillSealOwner {
+  turns: number;
+  effectMultiplier?: number;
+  fallback?: boolean;
+  sourceEnemy?: number;
+}
+
+export interface SkillSealState extends SkillSealOwner {
+  /** Independent ownership prevents one sealer from replacing another. */
+  owners?: SkillSealOwner[];
+}
+
+export interface CoinCustody {
+  sourceEnemy: number;
+  coins: CoinUid[];
+  element: Element;
+  seizureOrder: number;
+}
+
+export interface CoinSeizureTelegraph {
+  element: Element;
+  nominated: CoinUid[];
+  handCountAtTelegraph: number;
+  cap: number;
+  quantity: number;
 }
 
 export interface EnemyState extends UnitState {
@@ -128,6 +162,7 @@ export interface EnemyState extends UnitState {
   marchSource?: number;
   warBannerAuraPercent?: number;
   deathCleanupComplete?: boolean;
+  coinSeizure?: CoinSeizureTelegraph;
 }
 
 // P7 D1/D2 — usedThisTurn(턴당 1회) 폐지 → cooldownRemaining(0=가용, 턴 시작 감소).
@@ -176,7 +211,43 @@ export interface CombatState {
   summons: SummonState[];
   nextSummonUid: number;
   events: CombatEvent[];
+  /** A combat-only coin zone. Every custody coin is absent from ordinary zones. */
+  custody: CoinCustody[];
 }
+
+export const activeSkillSeal = (state: CombatState, slot: SlotId): SkillSealState | undefined => {
+  const seal = state.player.skillSeals[Number(slot)];
+  return seal !== undefined && seal.turns > 0 ? seal : undefined;
+};
+
+export const skillSealOwners = (seal: SkillSealState): SkillSealOwner[] =>
+  seal.owners === undefined ? [{ turns: seal.turns, effectMultiplier: seal.effectMultiplier, fallback: seal.fallback, sourceEnemy: seal.sourceEnemy }] : seal.owners;
+
+export const aggregateSkillSeal = (owners: readonly SkillSealOwner[]): SkillSealState | undefined => {
+  const active = owners.filter((owner) => owner.turns > 0).map((owner) => ({ ...owner }));
+  if (active.length === 0) return undefined;
+  const allReduced = active.every((owner) => owner.effectMultiplier !== undefined);
+  const sourceEnemy = active.length === 1 ? active[0]?.sourceEnemy : undefined;
+  return {
+    turns: Math.max(...active.map((owner) => owner.turns)),
+    ...(allReduced ? { effectMultiplier: Math.min(...active.map((owner) => owner.effectMultiplier ?? 1)), fallback: true } : {}),
+    ...(sourceEnemy === undefined ? {} : { sourceEnemy }),
+    owners: active
+  };
+};
+
+export const isSkillCommandSealed = (state: CombatState, slot: SlotId): boolean => {
+  const seal = activeSkillSeal(state, slot);
+  return seal !== undefined && seal.effectMultiplier === undefined;
+};
+
+export const recordRecentSkillUse = (state: CombatState, slot: SlotId): CombatState => {
+  const recentSkillUses = [...state.player.recentSkillUses.filter((use) => use.turn >= state.turn - 1), { turn: state.turn, slot }];
+  return {
+    ...state,
+    player: { ...state.player, recentSkillUses }
+  };
+};
 
 export interface SummonState {
   uid: number;
@@ -196,7 +267,21 @@ export const clonePlaced = (placed: Record<SlotId, CoinUid[]>): Record<SlotId, C
 
 export const cloneState = (state: CombatState): CombatState => ({
   ...state,
-  player: { ...state.player, statuses: { ...state.player.statuses } },
+  player: {
+    ...state.player,
+    statuses: { ...state.player.statuses },
+    recentSkillUses: state.player.recentSkillUses.map((use) => ({ ...use })),
+    skillSeals: Object.fromEntries(
+      Object.entries(state.player.skillSeals).map(([slot, seal]) => [
+        slot,
+        seal === undefined ? seal : { ...seal, owners: seal.owners?.map((owner) => ({ ...owner })) }
+      ])
+    ),
+    pendingPlacedReturns: Object.fromEntries(
+      Object.entries(state.player.pendingPlacedReturns).map(([slot, coins]) => [slot, [...(coins ?? [])]])
+    ),
+    usableSkillSlotsAtTurnEnd: [...state.player.usableSkillSlotsAtTurnEnd]
+  },
   enemies: state.enemies.map((enemy) => ({
     ...enemy,
     statuses: { ...enemy.statuses },
@@ -222,5 +307,21 @@ export const cloneState = (state: CombatState): CombatState => ({
     ai: { s: [...state.rng.ai.s] as [number, number, number, number] }
   },
   rngImpl: state.rngImpl,
-  events: [...state.events]
+  events: [...state.events],
+  custody: state.custody.map((entry) => ({ ...entry, coins: [...entry.coins] }))
 });
+
+/** Throws if a coin is absent from, or duplicated across, combat-local zones. */
+export const assertCombatCoinZoneInvariant = (state: CombatState): void => {
+  const locations = [
+    ...state.zones.draw,
+    ...state.zones.hand,
+    ...Object.values(state.zones.placed).flat(),
+    ...state.zones.discard,
+    ...state.zones.exhausted,
+    ...state.custody.flatMap((entry) => entry.coins)
+  ];
+  if (locations.length !== Object.keys(state.coins).length || new Set(locations).size !== locations.length) {
+    throw new Error('combat coin zone invariant violated');
+  }
+};
