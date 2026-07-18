@@ -1,6 +1,6 @@
 # Coin Combat 콘텐츠 작성 가이드 v3.0
 
-> 2026-07-13 · PRD v2.0 / P12 기준
+> 2026-07-18 · PRD v2.1 / P13 + D19 확정 데이터 동기화 기준
 > 실제 허용 필드와 상한은 `packages/core/src/content-types.ts`와 `validateContentDb()`가 최종 계약이다.
 
 이 문서는 신규 코인·스킬·패시브·캐릭터·적을 현재 데이터 중심 구조에 추가하는 방법을 정한다. 제품 의도는 [`PRD.md`](./PRD.md), 실제 해결 순서는 [`current-implementation.md`](./current-implementation.md)를 따른다.

@@ -1,6 +1,6 @@
 # 문서 안내
 
-> 마지막 동기화: 2026-07-16 · 기준: PRD v2.1 / P13
+> 마지막 동기화: 2026-07-18 · 기준: PRD v2.1 / P13 + D19 확정 데이터 동기화
 
 문서의 역할을 제품 정본, 구현 스냅샷, 콘텐츠 작성 가이드, 결정 기록으로 분리한다. 같은 규칙을 여러 문서에서 독립적으로 수정하지 않는다.
 
@@ -22,7 +22,8 @@
 | [`PRD.md`](./PRD.md) | 브랜드 코어, 전투·런·보상·캐릭터·UX 규칙 | **제품 단일 정본** |
 | [`current-implementation.md`](./current-implementation.md) | 현재 코드의 상태·명령·해결 순서·저장·검증 안내 | **기술 스냅샷** |
 | [`content-design-guide.md`](./content-design-guide.md) | 코인·스킬·패시브·캐릭터·몬스터 작성 규칙 | **작성 계약** |
-| [`../PRD/P13_REVISION_DESIGN_SYNC.md`](../PRD/P13_REVISION_DESIGN_SYNC.md) | 스택 르미즈·과열 예약·갑주 반향·전속성 보상·몬스터 배치 A·수호자 삭제 | **최신 결정 기록** |
+| [`../PRD/D19_CHARACTER_DATA_DESIGN_SYNC.md`](../PRD/D19_CHARACTER_DATA_DESIGN_SYNC.md) | Drive v1.2와 캐릭터 데이터 테이블 확정 행의 권한·구현 대조 | **최신 결정 기록** |
+| [`../PRD/P13_REVISION_DESIGN_SYNC.md`](../PRD/P13_REVISION_DESIGN_SYNC.md) | 스택 르미즈·과열 예약·갑주 반향·전속성 보상·몬스터 20종·수호자 삭제 | 결정 기록 |
 | [`../PRD/P12_BLOOD_SPELLBLADE_DESIGN_SYNC.md`](../PRD/P12_BLOOD_SPELLBLADE_DESIGN_SYNC.md) | 혈액 마검사와 혈마검 런 성장의 구현 근거 | 결정 기록 |
 | [`../PRD/P11_COLD_ROGUE_DESIGN_SYNC.md`](../PRD/P11_COLD_ROGUE_DESIGN_SYNC.md) | 냉기 도적·보존·지정 드로우 구현 근거 | 결정 기록 |
 | [`../PRD/P10_CHARACTER_DESIGN_SYNC.md`](../PRD/P10_CHARACTER_DESIGN_SYNC.md) | 화염 격투가·마도기사 구현 근거 | 결정 기록 |

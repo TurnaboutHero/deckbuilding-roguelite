@@ -64,7 +64,7 @@ const withHandDefs = (state: CombatState, defs: readonly string[]): CombatState 
 };
 
 describe('P9 latest design sync', () => {
-  it('ships the v1.2 neutral basics as one-success ladders with exact upgrades and no legacy fields', () => {
+  it('ships the confirmed neutral basics as one-success ladders with exact upgrades and no legacy fields', () => {
     expect(skills.slash).toMatchObject({
       name: '공격',
       type: 'flip',
@@ -72,7 +72,7 @@ describe('P9 latest design sync', () => {
       cost: 1,
       successFace: 'heads',
       successLadder: [[], [{ kind: 'damage', amount: 4 }]],
-      upgrade: { patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 } }
+      upgrade: { patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 2 } }
     });
     expect(skills.guard).toMatchObject({
       name: '방어',
@@ -81,15 +81,15 @@ describe('P9 latest design sync', () => {
       cost: 1,
       successFace: 'tails',
       successLadder: [[], [{ kind: 'block', amount: 4 }]],
-      upgrade: { patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 } }
+      upgrade: { patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 2 } }
     });
     for (const basic of [skills.slash, skills.guard]) {
       expect(Object.hasOwn(basic, 'base')).toBe(false);
       expect(Object.hasOwn(basic, 'heads')).toBe(false);
       expect(Object.hasOwn(basic, 'tails')).toBe(false);
     }
-    expect((deriveUpgradedSkill(skills.slash) as FlipSkillDef).successLadder).toEqual([[], [{ kind: 'damage', amount: 5 }]]);
-    expect((deriveUpgradedSkill(skills.guard) as FlipSkillDef).successLadder).toEqual([[], [{ kind: 'block', amount: 5 }]]);
+    expect((deriveUpgradedSkill(skills.slash) as FlipSkillDef).successLadder).toEqual([[], [{ kind: 'damage', amount: 6 }]]);
+    expect((deriveUpgradedSkill(skills.guard) as FlipSkillDef).successLadder).toEqual([[], [{ kind: 'block', amount: 6 }]]);
   });
 
   it('keeps end turn legal when an element-heavy hand cannot fund neutral ladder basics', () => {
@@ -2048,7 +2048,7 @@ describe('P9 shipped content goldens (1.3.0-p9)', () => {
       cost: 1,
       successFace: 'heads',
       successLadder: [[], [{ kind: 'damage', amount: 4 }]],
-      upgrade: { patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 } }
+      upgrade: { patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 2 } }
     });
     expect(contentDb.skills.jab).not.toHaveProperty('base');
     expect(contentDb.skills.jab).not.toHaveProperty('heads');
@@ -2057,15 +2057,15 @@ describe('P9 shipped content goldens (1.3.0-p9)', () => {
       cost: 1,
       successFace: 'tails',
       successLadder: [[], [{ kind: 'block', amount: 4 }]],
-      upgrade: { patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 } }
+      upgrade: { patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 2 } }
     });
     expect(contentDb.skills['fist-guard']).not.toHaveProperty('base');
     expect(contentDb.skills['fist-guard']).not.toHaveProperty('tails');
     expect((deriveUpgradedSkill(contentDb.skills.jab!) as FlipSkillDef).successLadder?.[1]).toEqual([
-      { kind: 'damage', amount: 5 }
+      { kind: 'damage', amount: 6 }
     ]);
     expect((deriveUpgradedSkill(contentDb.skills['fist-guard']!) as FlipSkillDef).successLadder?.[1]).toEqual([
-      { kind: 'block', amount: 5 }
+      { kind: 'block', amount: 6 }
     ]);
   });
 

@@ -1,6 +1,6 @@
 # PRD 작업 문서 안내
 
-> 마지막 동기화: 2026-07-13 · 현재 기준: P7 / PRD v1.3
+> 마지막 동기화: 2026-07-18 · 현재 기준: P13 + D19 / PRD v2.1
 
 이 디렉터리에는 초기 바이브코딩용 문서, 단계별 결정 로그, 검증 증거, 사람 플레이테스트 자료가 함께 있다. 생성 시점이 다르므로 `01_PRD.md`~`04_PROJECT_SPEC.md`를 현재 규칙 정본으로 단독 사용하지 않는다.
 
@@ -10,8 +10,9 @@
 
 | 문서 | 역할 |
 |---|---|
-| [`../docs/PRD.md`](../docs/PRD.md) | 브랜드 코어, 제품 요구사항, 게임 규칙 정본. v1.3 변경 이력이 본문 충돌보다 우선 |
-| [`P7_NEW_DESIGN_DECISIONS.md`](./P7_NEW_DESIGN_DECISIONS.md) | 쿨다운·8슬롯·양면 속성 코인·과열 등 최신 설계 오버라이드 |
+| [`../docs/PRD.md`](../docs/PRD.md) | 브랜드 코어, 제품 요구사항, 게임 규칙의 단일 정본. 결정 로그는 본문을 조용히 덮어쓰지 않음 |
+| [`D19_CHARACTER_DATA_DESIGN_SYNC.md`](./D19_CHARACTER_DATA_DESIGN_SYNC.md) | Drive v1.2·캐릭터 데이터 테이블 revision 148의 권한과 확정 행 구현 대조 |
+| [`P13_REVISION_DESIGN_SYNC.md`](./P13_REVISION_DESIGN_SYNC.md) | 전속성 보상·캐릭터 개정·몬스터 20종·수호자 삭제 결정 기록 |
 | [`../docs/current-implementation.md`](../docs/current-implementation.md) | 현재 코드의 전투·런·저장·UI·CI 구현 스냅샷 |
 | [`../docs/content-design-guide.md`](../docs/content-design-guide.md) | 신규 콘텐츠 작성 규칙과 템플릿 |
 | [`PLAYTEST_KIT.md`](./PLAYTEST_KIT.md) | 사람 플레이테스트 실행 절차 |
@@ -27,7 +28,7 @@
 | [`03_PHASES.md`](./03_PHASES.md) | M0~M6 3-Phase 계획 | 이미 완료된 항목이 체크리스트·미래 범위로 남아 있음 |
 | [`04_PROJECT_SPEC.md`](./04_PROJECT_SPEC.md) | 초기 AI 작업 규율 | 오래된 SSoT 경로, 명령, MVP 전용 제한 |
 
-역사 문서를 참고해 구현할 때는 반드시 P7 결정 로그와 현재 구현 문서를 함께 읽는다.
+역사 문서를 참고해 구현할 때는 반드시 현재 제품 정본과 구현 문서를 함께 읽는다.
 
 ## 결정·검증 자료
 
@@ -37,6 +38,10 @@
 | [`M5_PLAYTEST_NOTES.md`](./M5_PLAYTEST_NOTES.md) | 초기 체감 리뷰와 사람 질문 |
 | [`M6_BALANCE_REPORT.md`](./M6_BALANCE_REPORT.md) | 정책별 시뮬레이션 결과와 밸런스 유보 근거 |
 | [`P7_NEW_DESIGN_DECISIONS.md`](./P7_NEW_DESIGN_DECISIONS.md) | P7 요구·채택 결정·감사 보정 |
+| [`P10_CHARACTER_DESIGN_SYNC.md`](./P10_CHARACTER_DESIGN_SYNC.md) | 화염 격투가·마도기사 결정 근거와 당시 시뮬레이션 기준선 |
+| [`P11_COLD_ROGUE_DESIGN_SYNC.md`](./P11_COLD_ROGUE_DESIGN_SYNC.md) | 냉기 도적 결정 근거 |
+| [`P12_BLOOD_SPELLBLADE_DESIGN_SYNC.md`](./P12_BLOOD_SPELLBLADE_DESIGN_SYNC.md) | 혈액 마검사 결정 근거 |
+| [`P13_REVISION_DESIGN_SYNC.md`](./P13_REVISION_DESIGN_SYNC.md) | 현재 개정 캠페인 결정 근거 |
 
 단계별 보고서는 당시 증거 스냅샷이다. 이후 코드가 바뀌어도 과거 결과를 현재 수치처럼 덮어쓰지 않고, 새 보고서를 추가하거나 명확한 후속 절을 기록한다.
 
@@ -47,7 +52,8 @@
 ```text
 @docs/README.md
 @docs/PRD.md
-@PRD/P7_NEW_DESIGN_DECISIONS.md
+@PRD/P13_REVISION_DESIGN_SYNC.md
+@PRD/D19_CHARACTER_DATA_DESIGN_SYNC.md
 @docs/current-implementation.md
 @docs/content-design-guide.md   # 콘텐츠 작업일 때
 ```

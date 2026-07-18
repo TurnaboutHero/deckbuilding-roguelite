@@ -152,8 +152,8 @@ export const skills = {
     name: '공격',
     upgrade: {
       name: '단련된 공격',
-      description: '성공 피해 4 → 5',
-      patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 }
+      description: '성공 피해 4 → 6',
+      patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 2 }
     },
     type: 'flip',
     rarity: 'common',
@@ -170,8 +170,8 @@ export const skills = {
     name: '방어',
     upgrade: {
       name: '견고한 방어',
-      description: '성공 방어 4 → 5',
-      patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 }
+      description: '성공 방어 4 → 6',
+      patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 2 }
     },
     type: 'flip',
     rarity: 'common',
@@ -845,8 +845,8 @@ export const skills = {
     successLadder: [[], [{ kind: 'damage', amount: 4 }]],
     upgrade: {
       name: '묵직한 공격',
-      description: '성공 피해 4 → 5',
-      patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 }
+      description: '성공 피해 4 → 6',
+      patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 2 }
     }
   },
   'fist-guard': {
@@ -863,8 +863,8 @@ export const skills = {
     successLadder: [[], [{ kind: 'block', amount: 4 }]],
     upgrade: {
       name: '철벽 방어',
-      description: '성공 방어 4 → 5',
-      patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 1 }
+      description: '성공 방어 4 → 6',
+      patch: { kind: 'ladderAmount', tier: 1, index: 0, delta: 2 }
     }
   },
   'burning-fist': {

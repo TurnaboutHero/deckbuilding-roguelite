@@ -132,6 +132,6 @@ goal-command.md 규약 "요구사항이 충돌하면 자체 수정을 멈추고 
 ## P13 설계 개정 캠페인 (2026-07-16)
 
 - 설계 정본: [P13_REVISION_DESIGN_SYNC.md](./P13_REVISION_DESIGN_SYNC.md) · 계획: [P13_IMPLEMENTATION_PLAN.md](./P13_IMPLEMENTATION_PLAN.md)
-- 구현 완료: 기본기 표시명 공격/방어 통일, 전속성 가중 동전 보상·상점, 상점 스킬 효과 표기, 3~5적 레이아웃, 스택형 르미즈, 과열 예약+안티터틀, 갑주 반향, 몬스터 배치 A 6종, warrior 유지·sorcerer/arcanist 스프라이트 재생성, 수호자 삭제(저장 v9 retired-character), 콘텐츠 1.7.0-revision
-- 후속 Directive 12: 몬스터 배치 B(M-11·M-12·M-14) 구현. Directive 13: 배치 C(M-05·M-06·M-08) 구현. Directive 14: 배치 D 기반 M-09·M-10 구현 — 전투 한정 동전 압수/동일 해결 반환, 최근 2턴 사용 가능 스킬 봉인, 유일 스킬 25% 효과 감소, 2·3막 풀 편입, 라이브 최대 3적 유지. 수치와 경험은 balance-provisional / experience-unverified.
-- 미구현 몬스터는 M-15~M-20 6종이며 M-17·M-18도 Directive 14 범위 밖이다. 배치 E의 사망 정리 선행 조건은 충족했지만 적측 소환 자체는 대기. 현재 진입 조건은 설계 정본 §6.4.
+- 구현 완료: 기본기 표시명 공격/방어 통일, 전속성 가중 동전 보상·상점, 상점 스킬 효과 표기, 3~5적 반응형 레이아웃(라이브 상한 3적), 스택형 르미즈, 과열 예약+안티터틀, 갑주 반향, warrior 유지·sorcerer/arcanist 스프라이트 재생성, 수호자 삭제(저장 v9 retired-character), 콘텐츠 1.7.0-revision
+- Directives 12~18: 배치 B(M-11·M-12·M-14), C(M-05·M-06·M-08), D 교란형(M-09·M-10)·엘리트(M-17·M-18), E 소환형(M-15·M-16), F 보스(M-19·M-20)를 구현했다. 20종 카탈로그 전체가 일반·선택·엘리트·보스 조우에 편입됐고 라이브 적 상한은 소환물을 포함해 3이다.
+- Directive 19: Drive v1.2와 캐릭터 데이터 테이블 revision 148을 재감사했다. `DesignState=확정`만 적용하며 공용 공격/방어 강화 4→6을 정렬했다. 나머지 확정 행은 구현 일치, 비확정 행은 적용하지 않았다. 근거: [D19_CHARACTER_DATA_DESIGN_SYNC.md](./D19_CHARACTER_DATA_DESIGN_SYNC.md). 수치와 경험은 balance-provisional / experience-unverified.
