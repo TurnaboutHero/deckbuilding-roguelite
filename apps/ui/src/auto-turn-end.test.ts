@@ -116,6 +116,20 @@ describe("execution queue snapshots", () => {
       slot(2),
     ]);
   });
+
+  it("excludes reservations that have no currently legal execution command", () => {
+    const snapshot = executionQueueSnapshot(
+      ["slot-0:illegal", "slot-1:legal"],
+      [
+        reservation("slot-0:illegal", 0, [10]),
+        reservation("slot-1:legal", 1, [11]),
+      ],
+      ["slot-1:legal"],
+    );
+
+    expect(snapshot.order).toEqual(["slot-1:legal"]);
+    expect(snapshot.loaded.map((entry) => entry.id)).toEqual(["slot-1:legal"]);
+  });
 });
 
 describe("automatic turn-end workflow", () => {

@@ -116,8 +116,15 @@ export const swapExecutionSlots = (
 export const executionQueueSnapshot = (
   currentOrder: readonly string[],
   reservations: readonly ExecutionReservation[],
+  executableReservationIds?: readonly string[],
 ): ExecutionQueueSnapshot => {
-  const availableReservations = uniqueReservations(reservations);
+  const executable =
+    executableReservationIds === undefined
+      ? null
+      : new Set(executableReservationIds);
+  const availableReservations = uniqueReservations(reservations).filter(
+    (reservation) => executable === null || executable.has(reservation.id),
+  );
   const order = reconcileExecutionOrder(currentOrder, availableReservations);
   const byId = new Map(
     availableReservations.map((reservation) => [reservation.id, reservation]),

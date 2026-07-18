@@ -3134,9 +3134,23 @@ const CombatBoard = ({
   const launchedExecutionTokens = useRef<Set<string>>(new Set());
   const preserveWorkflowRequested = useRef<string | null>(null);
   const legal = useMemo(() => legalCommands(state, combatDb), [combatDb, state]);
+  const executableReservationIds = useMemo(
+    () =>
+      legal.flatMap((command) =>
+        command.type === "useFlipSkill" && command.reservationId !== undefined
+          ? [command.reservationId]
+          : [],
+      ),
+    [legal],
+  );
   const executionSnapshot = useMemo(
-    () => executionQueueSnapshot(executionOrder, state.flipReservations),
-    [executionOrder, state.flipReservations],
+    () =>
+      executionQueueSnapshot(
+        executionOrder,
+        state.flipReservations,
+        executableReservationIds,
+      ),
+    [executableReservationIds, executionOrder, state.flipReservations],
   );
   const executionBusy =
     autoTurnEnd.phase === "running" ||

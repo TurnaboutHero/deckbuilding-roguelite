@@ -407,7 +407,7 @@ try {
     );
     check(
       "첫 스킬 승리 시 남은 큐와 적 턴 즉시 중단",
-      (await card(page, 1).locator(".socket.loaded").count()) === 1 &&
+      (await page.getByTestId("execution-rail").count()) === 0 &&
         (await page.locator(".unit.player .hp-num").innerText()) === playerHpBefore,
     );
     check("승리 단축 에러 0", errors.length === 0, errors.join(" | "));
@@ -475,11 +475,12 @@ try {
 
   {
     const { page, errors } = await boot();
-    await placeInto(page, 0);
+    await placeInto(page, 2, 0);
+    await placeInto(page, 2, 1);
     await page.locator(".hand-tray .coin").first().click();
-    await card(page, 0).locator(".card-art").click();
+    await card(page, 2).locator(".card-art").click();
     const text = await chipText(page);
-    check("가득 찬 소켓 사유 표시", /소켓.*가득/.test(text), text);
+    check("제한 스킬의 가득 찬 소켓 사유 표시", /소켓.*가득/.test(text), text);
     check("소켓 거부 후 셸 생존", await shellAlive(page));
     check("소켓 시나리오 에러 0", errors.length === 0, errors.join(" | "));
     await page.context().close();
