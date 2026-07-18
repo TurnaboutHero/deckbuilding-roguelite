@@ -347,16 +347,19 @@ try {
     await page.locator(".skill-card").first().locator(".socket").click();
 
     await page.locator(".end-turn").click();
-    await page.locator(".unit.enemy.vfx-hit").waitFor({
-      state: "visible",
-      timeout: 10000,
-    });
-    const visibleText = await page
-      .locator(".unit.enemy .float-text")
-      .innerText();
-    const vfxTarget = await page
-      .locator(".unit.enemy.vfx-hit")
-      .evaluate((element) => element.classList.contains("vfx-hit"));
+    const feedbackHandle = await page.waitForFunction(
+      () => {
+        const enemy = document.querySelector(".unit.enemy.vfx-hit");
+        if (!(enemy instanceof HTMLElement)) return null;
+        const visibleText = enemy.querySelector(".float-text")?.textContent ?? "";
+        if (!/^-[0-9]+$/.test(visibleText.trim())) return null;
+        return { vfxTarget: true, visibleText };
+      },
+      undefined,
+      { timeout: 10000 },
+    );
+    const { visibleText, vfxTarget } = await feedbackHandle.jsonValue();
+    await feedbackHandle.dispose();
     await waitForVisualStability(page);
     await page.screenshot({ path: resolve(outputDir, "combat-feedback.png") });
     const audioAfterAction = await readAudio(page);
