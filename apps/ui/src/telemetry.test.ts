@@ -172,7 +172,7 @@ describe("human telemetry capture", () => {
     const initial = bootCombat();
     expect(trace).toMatchObject({
       // P6: UI 텔레메트리 스키마 v3 (rest/treasure/passive-reward 경로 사실 가산)
-      schemaVersion: 4,
+      schemaVersion: 5,
       source: "human",
       runSeed: "telemetry-seed",
       contentVersion: "test-content",
@@ -218,6 +218,10 @@ describe("human telemetry capture", () => {
         enemiesAfter: initial.enemies.map((enemy) => enemy.hp),
         enemyFurnaceBefore: initial.enemies.map((enemy) => enemy.furnaceTemperature ?? 0),
         enemyFurnaceAfter: initial.enemies.map((enemy) => enemy.furnaceTemperature ?? 0),
+        enemyRoyalVaultBefore: [],
+        enemyRoyalVaultAfter: [],
+        enemyLeadBefore: [],
+        enemyLeadAfter: [],
       },
     });
   });
@@ -270,6 +274,10 @@ describe("human telemetry capture", () => {
       enemiesAfter: result.state.enemies.map((enemy) => enemy.hp),
       enemyFurnaceBefore: combat.enemies.map((enemy) => enemy.furnaceTemperature ?? 0),
       enemyFurnaceAfter: result.state.enemies.map((enemy) => enemy.furnaceTemperature ?? 0),
+      enemyRoyalVaultBefore: [],
+      enemyRoyalVaultAfter: [],
+      enemyLeadBefore: [],
+      enemyLeadAfter: [],
     });
   });
 
@@ -307,6 +315,42 @@ describe("human telemetry capture", () => {
       enemiesAfter: after.enemies.map((enemy) => enemy.hp),
       enemyFurnaceBefore: [6],
       enemyFurnaceAfter: [3],
+    });
+  });
+
+  it("captures complete ordered vault, cancellation, and active Lead facts before and after a custody-only change", () => {
+    const base = createCombat(
+      { character: "warrior" as never, enemies: ["uncrowned-coin-king-aurel" as never] },
+      contentDb,
+      "telemetry-aurel",
+    );
+    const [first, second, third] = base.zones.hand;
+    const crown = contentDb.enemies["uncrowned-coin-king-aurel"]?.royalVault?.atCapacityIntent;
+    if (first === undefined || second === undefined || third === undefined || crown === undefined) throw new Error("missing Aurel setup");
+    const before: CombatState = {
+      ...base,
+      custody: [
+        { sourceEnemy: 0, sourceEnemyUid: base.enemies[0]!.enemyUid, kind: "royalVault", element: "fire", seizureOrder: 1, coins: [first] },
+        { sourceEnemy: 0, sourceEnemyUid: base.enemies[0]!.enemyUid, kind: "royalVault", element: "frost", seizureOrder: 2, coins: [second] },
+      ],
+      enemies: base.enemies.map((enemy) => ({ ...enemy, intent: crown, windup: { intent: crown, turnsLeft: 1, startHp: enemy.hp }, royalVaultSeizure: { nominated: [third], capacity: 6 }, royalVaultRecoveredThisWindup: 1, leadDecree: { initial: 3, remaining: 3, active: true, weakenedThisTurn: 0, weakenedTotal: 0 } })),
+    };
+    const after: CombatState = {
+      ...before,
+      custody: [...before.custody, { sourceEnemy: 0, sourceEnemyUid: before.enemies[0]!.enemyUid, kind: "royalVault", element: "fire", seizureOrder: 3, coins: [third] }],
+      enemies: before.enemies.map((enemy) => ({ ...enemy, windup: undefined, royalVaultSeizure: undefined, royalVaultRecoveredThisWindup: 2, cancelledWindupIntentId: crown.id, leadDecree: { initial: 3, remaining: 1, weakenedThisTurn: 2, weakenedTotal: 2 } })),
+    };
+    const started = beginHumanCombat(
+      createHumanRunTrace({ runSeed: "telemetry-aurel", contentVersion: "test-content", maxHp: before.player.maxHp, startedAt: fixedStart }),
+      { combatIndex: 0, attempt: 0, combat: before },
+    );
+    const trace = recordHumanDecision(started, { combatIndex: 0, attempt: 0, before, commands: [], after, events: [] });
+
+    expect(trace.combats[0]?.decisions[0]?.hp).toMatchObject({
+      enemyRoyalVaultBefore: [{ sourceEnemyUid: before.enemies[0]!.enemyUid, coins: [Number(first), Number(second)], nominated: [Number(third)], recovered: 1, cancelOn: [{ kind: "vaultCoinsRecovered", count: 2 }, { kind: "skillDamage", threshold: 10 }] }],
+      enemyRoyalVaultAfter: [{ sourceEnemyUid: before.enemies[0]!.enemyUid, coins: [Number(first), Number(second), Number(third)], nominated: [], recovered: 2, cancelOn: [], cancelledWindupIntentId: crown.id }],
+      enemyLeadBefore: [{ sourceEnemyUid: before.enemies[0]!.enemyUid, initial: 3, remaining: 3, active: true, weakenedThisTurn: 0, weakenedTotal: 0 }],
+      enemyLeadAfter: [{ sourceEnemyUid: before.enemies[0]!.enemyUid, initial: 3, remaining: 1, active: false, weakenedThisTurn: 2, weakenedTotal: 2 }],
     });
   });
 });

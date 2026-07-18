@@ -7,6 +7,7 @@ import { rngFrom } from '../rng';
 import type { CombatEvent } from './events';
 import { createEnemyState, MAX_ENEMY_SLOTS } from './enemy-state';
 import { applyFurnaceActionResolved, cancelWindupIfNeeded, setFurnaceTemperature } from './furnace';
+import { applyRoyalVaultBarrier, clearLeadCoins, createCounterfeits, forecloseRoyalVault, nominateExactRoyalVaultSeizure, removeCounterfeits, resolveRoyalVaultSeizure, returnOldestRoyalVaultCoin, royalVaultCoinCount, startLeadDecree } from './directive18';
 import { applyBlock, applyDamage, applyEffectAtom, checkCombatEnd } from './resolve/flip';
 import { aggregateSkillSeal, assertCombatCoinZoneInvariant, skillSealOwners, statusStacks, statusTurns } from './state';
 import type { CombatState } from './state';
@@ -24,6 +25,10 @@ export const nextIntent = (state: CombatState, enemyIndex: number, db: ContentDb
     enemy.cancelledWindupIntentId !== atMaxIntent.id
   ) {
     return { intent: atMaxIntent, index: enemy.intentIndex };
+  }
+  const vaultAtCapacity = def.royalVault?.atCapacityIntent;
+  if (vaultAtCapacity !== undefined && def.royalVault !== undefined && royalVaultCoinCount(state, enemyIndex) >= def.royalVault.capacity && enemy.cancelledWindupIntentId !== vaultAtCapacity.id) {
+    return { intent: vaultAtCapacity, index: enemy.intentIndex };
   }
   const repeat = def.repeatSkillPressure;
   if ((enemy.repeatSkillPressure?.zeal ?? 0) >= (repeat?.threshold ?? Number.POSITIVE_INFINITY)) {
@@ -357,8 +362,13 @@ const maybeStartWindup = (state: CombatState, enemyIndex: number, db: ContentDb,
       events.push({ type: 'enemySummonTelegraphed', sourceEnemyUid: enemyUid(enemy, enemyIndex), enemy: String(action.enemy), maxCount: action.maxCount });
     }
   }
-  const started = withEnemy(state, enemyIndex, (candidate) => ({ ...candidate, windup, boundHealAlly }));
-  return { state: beginCoinSeizureTelegraph(started, enemyIndex, db, events), started: true };
+  const started = withEnemy(state, enemyIndex, (candidate) => ({ ...candidate, windup, boundHealAlly, ...(db.enemies[String(candidate.defId)]?.royalVault === undefined ? {} : { royalVaultRecoveredThisWindup: 0 }) }));
+  let next = beginCoinSeizureTelegraph(started, enemyIndex, db, events);
+  if (enemy.intent.actions.some((action) => action.kind === 'leadDecree')) next = startLeadDecree(next, enemyIndex, db, events);
+  if (enemy.intent.actions.some((action) => action.kind === 'royalVaultForeclose')) next = forecloseRoyalVault(next, enemyIndex, db, events);
+  const exact = enemy.intent.actions.find((action): action is Extract<EnemyAction, { kind: 'royalVaultExactSeizure' }> => action.kind === 'royalVaultExactSeizure');
+  if (exact !== undefined) next = nominateExactRoyalVaultSeizure(next, enemyIndex, exact.maxCoins, db, events);
+  return { state: next, started: true };
 };
 
 const nextPhaseIndexFor = (state: CombatState, enemyIndex: number, db: ContentDb): number => {
@@ -404,6 +414,12 @@ const maybeChangePhase = (state: CombatState, enemyIndex: number, db: ContentDb,
       next = { ...next, player: { ...next.player, statuses } };
     } else if (action.kind === 'summonEnemies') {
       next = summonEnemies(next, enemyIndex, String(action.enemy), action.maxCount, db, events);
+    } else if (action.kind === 'returnOldestRoyalVaultCoin') {
+      next = returnOldestRoyalVaultCoin(next, enemyIndex, events, action.reason ?? 'phaseEntry');
+    } else if (action.kind === 'clearLeadCoins') {
+      next = clearLeadCoins(next, enemyIndex, db, events);
+    } else if (action.kind === 'removeCounterfeits') {
+      next = removeCounterfeits(next, action.count, events);
     } else {
       throw new Error(`phase entry action ${action.kind} is not supported`);
     }
@@ -628,6 +644,22 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
         }
       } else if (action.kind === 'resetRoyalTaxDefaults') {
         state = resetRoyalTaxDefaults(state, enemyIndex);
+      } else if (action.kind === 'royalVaultForeclose') {
+        state = resolveRoyalVaultSeizure(state, enemyIndex, db, events);
+      } else if (action.kind === 'royalVaultExactSeizure') {
+        state = resolveRoyalVaultSeizure(state, enemyIndex, db, events);
+      } else if (action.kind === 'royalVaultBarrier') {
+        state = applyRoyalVaultBarrier(state, enemyIndex, action.blockPerStoredCoin, events);
+      } else if (action.kind === 'leadDecree') {
+        state = startLeadDecree(state, enemyIndex, db, events);
+      } else if (action.kind === 'returnOldestRoyalVaultCoin') {
+        state = returnOldestRoyalVaultCoin(state, enemyIndex, events, action.reason ?? 'phaseEntry');
+      } else if (action.kind === 'clearLeadCoins') {
+        state = clearLeadCoins(state, enemyIndex, db, events);
+      } else if (action.kind === 'createCounterfeit') {
+        state = createCounterfeits(state, String(action.coin), action.count, events);
+      } else if (action.kind === 'removeCounterfeits') {
+        state = removeCounterfeits(state, action.count, events);
       } else if (action.kind === 'sealRecentSkill') {
         state = sealRecentSkill(state, enemyIndex, db, events);
         if (state.phase === 'defeat') return { state, events };
@@ -649,7 +681,9 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
           action.damagePerGrowthPercent === undefined
             ? action.damage + growthStacks
             : Math.round(action.damage * (1 + growthStacks * action.damagePerGrowthPercent));
-        const scaledDamage = scaledEnemyAttackDamage(state, enemyIndex, baseDamage, db, events);
+        const paidReduction = action.ordinary === true ? actingEnemy.royalTaxPaidAttackReduction ?? 0 : 0;
+        const scaledDamage = scaledEnemyAttackDamage(state, enemyIndex, Math.max(0, baseDamage - paidReduction), db, events);
+        if (paidReduction > 0) state = withEnemy(state, enemyIndex, (candidate) => ({ ...candidate, royalTaxPaidAttackReduction: undefined }));
         for (let hit = 0; hit < hits; hit += 1) {
           const beforeEventCount = events.length;
           // P6 D1 — 막별 스케일은 공격 피해에만 적용(버프 보너스는 원수치 가산)

@@ -141,6 +141,22 @@ export const sfxCuesFor = (event: CombatEvent): SfxKind[] => {
       return ["flip-tails", "block"];
     case "royalTaxSeizureScheduled":
       return ["cooldown"];
+    case "royalVaultForeclosed":
+      return ["cooldown"];
+    case "royalVaultSeized":
+      return ["coin-place"];
+    case "royalVaultReturned":
+    case "royalVaultRecoveryProgressed":
+      return ["coin-consume"];
+    case "leadDecreeStarted":
+      return ["mana"];
+    case "leadDecreeWeakened":
+      return ["skill"];
+    case "leadCoinTransformed":
+    case "leadCoinsCleared":
+    case "leadCoinsExhausted":
+    case "counterfeitsCreated":
+      return ["coin-consume"];
     case "counterfeitExhausted":
     case "counterfeitsRemoved":
       return ["coin-consume"];

@@ -1,5 +1,6 @@
 import type { ContentDb, EnemyAction, EnemyCancelPredicate, EnemyFurnaceReason } from '../content-types';
 import { resetRepeatSkillPressure } from './directive15';
+import { returnOldestRoyalVaultCoin } from './directive18';
 import type { CombatEvent } from './events';
 import type { CombatState, EnemyState } from './state';
 
@@ -12,7 +13,8 @@ const predicatesFor = (predicate: EnemyCancelPredicate | readonly EnemyCancelPre
   predicate === undefined ? [] : 'kind' in predicate ? [predicate] : predicate;
 
 const resourceCancelMatches = (enemy: EnemyState): boolean => predicatesFor(enemy.windup?.intent.cancelOn).some((predicate) =>
-  predicate.kind === 'enemyResourceAtMost' && predicate.resource === 'furnaceTemperature' && (enemy.furnaceTemperature ?? 0) <= predicate.value
+  (predicate.kind === 'enemyResourceAtMost' && predicate.resource === 'furnaceTemperature' && (enemy.furnaceTemperature ?? 0) <= predicate.value) ||
+  (predicate.kind === 'vaultCoinsRecovered' && (enemy.royalVaultRecoveredThisWindup ?? 0) >= predicate.count)
 );
 
 export const skillDamageCancelMatches = (enemy: EnemyState, nextHp: number): boolean => predicatesFor(enemy.windup?.intent.cancelOn).some((predicate) =>
@@ -29,6 +31,9 @@ const applyCancelAction = (state: CombatState, enemyIndex: number, action: Enemy
   }
   if (action.kind === 'reduceGrowthStacks') {
     return withEnemy(state, enemyIndex, (enemy) => ({ ...enemy, growthStacks: Math.max(0, (enemy.growthStacks ?? 0) - action.amount) }));
+  }
+  if (action.kind === 'returnOldestRoyalVaultCoin') {
+    return returnOldestRoyalVaultCoin(state, enemyIndex, events, action.reason ?? 'crownCancelled');
   }
   throw new Error(`windup cancel action ${action.kind} is not supported`);
 };

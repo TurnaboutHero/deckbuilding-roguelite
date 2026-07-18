@@ -2,8 +2,8 @@ import type { CombatEvent, CombatState, Command } from "@game/core";
 
 // v2 (P4.3): 런 그래프 경로 사실(path) 추가 — 갈림길 선택·상점 행동이 없으면
 // 리플레이가 비전투 노드를 통과할 수 없다. v1은 그래프 이전 세대라 거부한다.
-// v4 (D17): enemy furnace snapshots detect temperature-only combat divergence.
-export const HUMAN_RUN_SCHEMA_VERSION = 4 as const;
+// v5 (D18): windup nominations, recovery/cancellation, and full Lead state detect every Aurel-only divergence.
+export const HUMAN_RUN_SCHEMA_VERSION = 5 as const;
 export const UI_BUILD_IDENTIFIER = "m6-ui-local-telemetry";
 
 type RunResult = "in-progress" | "victory" | "defeat";
@@ -58,6 +58,10 @@ export interface HumanDecisionFact {
     enemiesAfter: number[];
     enemyFurnaceBefore: number[];
     enemyFurnaceAfter: number[];
+    enemyRoyalVaultBefore: Array<{ sourceEnemyUid: number; coins: number[]; nominated: number[]; recovered: number; cancelOn: Array<{ kind: "vaultCoinsRecovered"; count: number } | { kind: "skillDamage"; threshold: number }>; cancelledWindupIntentId?: string }>;
+    enemyRoyalVaultAfter: Array<{ sourceEnemyUid: number; coins: number[]; nominated: number[]; recovered: number; cancelOn: Array<{ kind: "vaultCoinsRecovered"; count: number } | { kind: "skillDamage"; threshold: number }>; cancelledWindupIntentId?: string }>;
+    enemyLeadBefore: Array<{ sourceEnemyUid: number; initial: number; remaining: number; active: boolean; weakenedThisTurn: number; weakenedTotal: number }>;
+    enemyLeadAfter: Array<{ sourceEnemyUid: number; initial: number; remaining: number; active: boolean; weakenedThisTurn: number; weakenedTotal: number }>;
   };
 }
 
@@ -177,6 +181,25 @@ export const localTimestamp = (date: Date): string =>
 
 const hpList = (state: CombatState): number[] =>
   state.enemies.map((enemy) => enemy.hp);
+
+const royalVaultSnapshot = (state: CombatState): HumanDecisionFact["hp"]["enemyRoyalVaultBefore"] =>
+  state.enemies.flatMap((enemy) => {
+    const cancelOn = (enemy.windup?.intent.cancelOn === undefined ? [] : Array.isArray(enemy.windup.intent.cancelOn) ? enemy.windup.intent.cancelOn : [enemy.windup.intent.cancelOn])
+      .filter((predicate): predicate is { kind: "vaultCoinsRecovered"; count: number } | { kind: "skillDamage"; threshold: number } => predicate.kind === "vaultCoinsRecovered" || predicate.kind === "skillDamage");
+    const coins = state.custody.filter((entry) => entry.kind === "royalVault" && entry.sourceEnemyUid === enemy.enemyUid).sort((left, right) => left.seizureOrder - right.seizureOrder).flatMap((entry) => entry.coins.map(Number));
+    const nominated = enemy.royalVaultSeizure?.nominated.map(Number) ?? [];
+    const recovered = enemy.royalVaultRecoveredThisWindup ?? 0;
+    return coins.length + nominated.length + recovered + cancelOn.length === 0 && enemy.cancelledWindupIntentId === undefined
+      ? []
+      : [{ sourceEnemyUid: enemy.enemyUid, coins, nominated, recovered, cancelOn, ...(enemy.cancelledWindupIntentId === undefined ? {} : { cancelledWindupIntentId: enemy.cancelledWindupIntentId }) }];
+  });
+
+const leadSnapshot = (state: CombatState): HumanDecisionFact["hp"]["enemyLeadBefore"] =>
+  state.enemies.flatMap((enemy) =>
+    enemy.leadDecree === undefined
+      ? []
+      : [{ sourceEnemyUid: enemy.enemyUid, initial: enemy.leadDecree.initial, remaining: enemy.leadDecree.remaining, active: enemy.leadDecree.active === true, weakenedThisTurn: enemy.leadDecree.weakenedThisTurn, weakenedTotal: enemy.leadDecree.weakenedTotal }],
+  );
 
 const commandFact = (command: Command): TelemetryCommand => {
   if (command.type === "placeCoin") {
@@ -319,6 +342,10 @@ export const recordHumanDecision = (
       enemiesAfter: hpList(input.after),
       enemyFurnaceBefore: input.before.enemies.map((enemy) => enemy.furnaceTemperature ?? 0),
       enemyFurnaceAfter: input.after.enemies.map((enemy) => enemy.furnaceTemperature ?? 0),
+      enemyRoyalVaultBefore: royalVaultSnapshot(input.before),
+      enemyRoyalVaultAfter: royalVaultSnapshot(input.after),
+      enemyLeadBefore: leadSnapshot(input.before),
+      enemyLeadAfter: leadSnapshot(input.after),
     },
   };
 
@@ -556,6 +583,56 @@ const numberArray = (value: unknown, label: string): number[] => {
   });
 };
 
+const booleanValue = (object: JsonObject, key: string, label: string): boolean => {
+  if (typeof object[key] !== "boolean") throw new Error(`${label}.${key} must be a boolean`);
+  return object[key];
+};
+
+const royalVaultArray = (
+  value: unknown,
+  label: string,
+): HumanDecisionFact["hp"]["enemyRoyalVaultBefore"] => {
+  if (!Array.isArray(value) || value.length > 3) throw new Error(`${label} must be a bounded array`);
+  return value.map((item, index) => {
+    const entry = objectValue(item, `${label}[${index}]`);
+    const cancelOn = entry.cancelOn;
+    if (!Array.isArray(cancelOn) || cancelOn.length > 2) throw new Error(`${label}[${index}].cancelOn must be a bounded array`);
+    return {
+      sourceEnemyUid: nonNegativeInteger(entry, "sourceEnemyUid", `${label}[${index}]`),
+      coins: numberArray(entry.coins, `${label}[${index}].coins`),
+      nominated: numberArray(entry.nominated, `${label}[${index}].nominated`),
+      recovered: nonNegativeInteger(entry, "recovered", `${label}[${index}]`),
+      cancelOn: cancelOn.map((predicate, cancelIndex) => {
+        const cancel = objectValue(predicate, `${label}[${index}].cancelOn[${cancelIndex}]`);
+        return cancel.kind === "vaultCoinsRecovered"
+          ? { kind: "vaultCoinsRecovered" as const, count: nonNegativeInteger(cancel, "count", `${label}[${index}].cancelOn[${cancelIndex}]`) }
+          : cancel.kind === "skillDamage"
+            ? { kind: "skillDamage" as const, threshold: nonNegativeInteger(cancel, "threshold", `${label}[${index}].cancelOn[${cancelIndex}]`) }
+            : (() => { throw new Error(`${label}[${index}].cancelOn[${cancelIndex}].kind is invalid`); })();
+      }),
+      ...(entry.cancelledWindupIntentId === undefined ? {} : { cancelledWindupIntentId: stringValue(entry, "cancelledWindupIntentId", `${label}[${index}]`) }),
+    };
+  });
+};
+
+const leadArray = (
+  value: unknown,
+  label: string,
+): HumanDecisionFact["hp"]["enemyLeadBefore"] => {
+  if (!Array.isArray(value) || value.length > 3) throw new Error(`${label} must be a bounded array`);
+  return value.map((item, index) => {
+    const entry = objectValue(item, `${label}[${index}]`);
+    return {
+      sourceEnemyUid: nonNegativeInteger(entry, "sourceEnemyUid", `${label}[${index}]`),
+      initial: nonNegativeInteger(entry, "initial", `${label}[${index}]`),
+      remaining: nonNegativeInteger(entry, "remaining", `${label}[${index}]`),
+      active: booleanValue(entry, "active", `${label}[${index}]`),
+      weakenedThisTurn: nonNegativeInteger(entry, "weakenedThisTurn", `${label}[${index}]`),
+      weakenedTotal: nonNegativeInteger(entry, "weakenedTotal", `${label}[${index}]`),
+    };
+  });
+};
+
 const literalValue = <T extends string>(
   value: unknown,
   allowed: readonly T[],
@@ -730,6 +807,10 @@ const sanitizeDecision = (value: unknown, label: string): HumanDecisionFact => {
       enemiesAfter: numberArray(hp.enemiesAfter, `${label}.hp.enemiesAfter`),
       enemyFurnaceBefore: numberArray(hp.enemyFurnaceBefore, `${label}.hp.enemyFurnaceBefore`),
       enemyFurnaceAfter: numberArray(hp.enemyFurnaceAfter, `${label}.hp.enemyFurnaceAfter`),
+      enemyRoyalVaultBefore: royalVaultArray(hp.enemyRoyalVaultBefore, `${label}.hp.enemyRoyalVaultBefore`),
+      enemyRoyalVaultAfter: royalVaultArray(hp.enemyRoyalVaultAfter, `${label}.hp.enemyRoyalVaultAfter`),
+      enemyLeadBefore: leadArray(hp.enemyLeadBefore, `${label}.hp.enemyLeadBefore`),
+      enemyLeadAfter: leadArray(hp.enemyLeadAfter, `${label}.hp.enemyLeadAfter`),
     },
   };
 };

@@ -70,6 +70,7 @@ const isBasicCoinInHand = (state: CombatState, db: ContentDb, coin: CoinUid): bo
 
 export const coinSatisfiesFlipRequirement = (state: CombatState, db: ContentDb, skill: FlipSkillDef, coin: CoinUid): boolean => {
   const instance = state.coins[Number(coin)];
+  if (instance?.lead === true) return skill.requiredElement === undefined && skill.requiredCoin === undefined && skill.element === null;
   if (isSuccessLadderFlipSkill(skill)) {
     const coinDef = instance === undefined ? undefined : db.coins[String(instance.defId)];
     if (coinDef === undefined) return false;

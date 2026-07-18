@@ -38,6 +38,8 @@ import {
 } from "@game/core";
 import type { CombatEvent, CombatState, Command, EnemyAction, SkillDef } from "@game/core";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+
+declare const __VITE_PRODUCTION_BUILD__: boolean;
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, RefObject } from "react";
 
 import "./App.css";
@@ -512,9 +514,13 @@ const enemyNameByDefId = (defId: string): string => contentDb.enemies[defId]?.na
 export const IntentBadge = ({
   enemy,
   enemies = [],
+  custody = [],
+  coins = {},
 }: {
   enemy: CombatState["enemies"][number];
   enemies?: readonly CombatState["enemies"][number][];
+  custody?: CombatState["custody"];
+  coins?: CombatState["coins"];
 }) => {
   const windup = enemy.windup;
   const intent = windup?.intent ?? enemy.intent;
@@ -524,19 +530,34 @@ export const IntentBadge = ({
   const coinSeizure = enemy.coinSeizure;
   const repeatPressure = enemy.repeatSkillPressure;
   const royalTax = enemy.royalTaxPending;
+  const royalVaultLabels = custody
+    .filter((entry) => entry.kind === "royalVault" && entry.sourceEnemyUid === enemy.enemyUid)
+    .sort((left, right) => left.seizureOrder - right.seizureOrder)
+    .flatMap((entry) => entry.coins.map((coinUid) => {
+      const coin = coins[Number(coinUid)];
+      const element = entry.element ?? (coin === undefined ? "unknown" : String(contentDb.coins[String(coin.defId)]?.element ?? "basic"));
+      return `${Number(coinUid)}:${elementKo(element)}`;
+    }));
+  const leadDecree = enemy.leadDecree;
   const hatch = enemy.hatch;
   const furnaceTemperature = enemy.furnaceTemperature;
   const furnaceMaxTemperature = enemy.furnaceMaxTemperature ?? 6;
-  const furnaceCancelAt = (intent.cancelOn === undefined
+  const windupCancelPredicates = intent.cancelOn === undefined
     ? []
     : Array.isArray(intent.cancelOn)
       ? intent.cancelOn
-      : [intent.cancelOn]
-  ).find(
+      : [intent.cancelOn];
+  const furnaceCancelAt = windupCancelPredicates.find(
     (predicate) =>
       predicate.kind === "enemyResourceAtMost" &&
       predicate.resource === "furnaceTemperature",
   )?.value;
+  const vaultRecoveryCancelAt = windupCancelPredicates.find(
+    (predicate) => predicate.kind === "vaultCoinsRecovered",
+  )?.count;
+  const skillDamageCancelAt = windupCancelPredicates.find(
+    (predicate) => predicate.kind === "skillDamage",
+  )?.threshold;
   const repeatConfig = enemyDef?.repeatSkillPressure;
   const taxConfig = enemyDef?.royalTax;
   const repeatedSlot = repeatPressure?.triggeringSlot ?? -1;
@@ -580,6 +601,26 @@ export const IntentBadge = ({
                 data-testid="enemy-furnace-cancel-condition"
               >
                 용광로 {furnaceCancelAt} 이하 시 취소
+              </span>
+            </Keyword>
+          ) : null}
+          {vaultRecoveryCancelAt !== undefined ? (
+            <Keyword term="windup">
+              <span
+                aria-label={`금고 동전 ${vaultRecoveryCancelAt}개 회수 시 취소`}
+                data-testid="royal-vault-cancel-recovery-condition"
+              >
+                금고 동전 {vaultRecoveryCancelAt}개 회수 시 취소
+              </span>
+            </Keyword>
+          ) : null}
+          {skillDamageCancelAt !== undefined ? (
+            <Keyword term="windup">
+              <span
+                aria-label={`스킬 실제 피해 ${skillDamageCancelAt} 시 취소`}
+                data-testid="royal-vault-cancel-damage-condition"
+              >
+                스킬 실제 피해 {skillDamageCancelAt} 시 취소
               </span>
             </Keyword>
           ) : null}
@@ -637,6 +678,30 @@ export const IntentBadge = ({
       {royalTax !== undefined ? (
         <span aria-label={`왕실 세금: ${elementKo(royalTax.element)} ${royalTax.paid}/${taxDenomination}, ${royalTax.deadlineTurn}턴 마감, ${taxStatus}`} data-testid="royal-tax-demand">
           왕실 세금 · {elementKo(royalTax.element)} {royalTax.paid}/{taxDenomination} · {royalTax.deadlineTurn}턴 마감 · {taxStatus}
+        </span>
+      ) : null}
+      {enemyDef?.royalVault !== undefined ? (
+        <span
+          aria-label={`왕실 금고 ${royalVaultLabels.length}/${enemyDef.royalVault.capacity}: ${royalVaultLabels.join(", ") || "비어 있음"}`}
+          data-testid="royal-vault-status"
+        >
+          왕실 금고 {royalVaultLabels.length}/{enemyDef.royalVault.capacity} · {royalVaultLabels.join(", ") || "비어 있음"}
+        </span>
+      ) : null}
+      {enemy.royalVaultSeizure !== undefined ? (
+        <span
+          aria-label={`왕실 금고 압류 대상: ${enemy.royalVaultSeizure.nominated.map(Number).join(", ")}`}
+          data-testid="royal-vault-seizure-nominations"
+        >
+          압류 대상 · {enemy.royalVaultSeizure.nominated.map(Number).join(", ")}
+        </span>
+      ) : null}
+      {leadDecree !== undefined ? (
+        <span
+          aria-label={`납화폐 칙령: ${leadDecree.remaining}/${leadDecree.initial}, 약화 ${leadDecree.weakenedTotal}`}
+          data-testid="lead-decree-status"
+        >
+          납화폐 칙령 · {leadDecree.remaining}/{leadDecree.initial} · 약화 {leadDecree.weakenedTotal}
         </span>
       ) : null}
       {intent.entersPetrify === true && enemyDef?.petrify !== undefined ? (
@@ -731,6 +796,38 @@ export const IntentBadge = ({
         ) : action.kind === "resetRoyalTaxDefaults" ? (
           <span key={index} aria-label="왕실 세금 체납 누적을 초기화합니다" data-testid="royal-tax-reset-intent">
             체납 누적 초기화
+          </span>
+        ) : action.kind === "royalVaultForeclose" ? (
+          <span key={index} aria-label="왕실 금고 압류: 공개된 손패 동전 1개를 금고에 보관합니다" data-testid="royal-vault-foreclose-intent">
+            왕실 금고 압류 · 손패 1개
+          </span>
+        ) : action.kind === "royalVaultExactSeizure" ? (
+          <span key={index} aria-label={`왕실 금고 정확 압류: 지정된 손패 동전 최대 ${action.maxCoins}개`} data-testid="royal-vault-exact-seizure-intent">
+            정확 압류 · 최대 {action.maxCoins}개
+          </span>
+        ) : action.kind === "royalVaultBarrier" ? (
+          <span key={index} aria-label={`왕실 금고 방벽: 보관 동전 1개당 방어 ${action.blockPerStoredCoin}, 최대 18`} data-testid="royal-vault-barrier-intent">
+            금고 방벽 · 동전당 방어 {action.blockPerStoredCoin} · 최대 18
+          </span>
+        ) : action.kind === "leadDecree" ? (
+          <span key={index} aria-label="납화폐 칙령: 다음 생성 속성 동전 3개를 납화폐로 바꿉니다" data-testid="lead-decree-intent">
+            납화폐 칙령 · 다음 속성 동전 3개
+          </span>
+        ) : action.kind === "returnOldestRoyalVaultCoin" ? (
+          <span key={index} aria-label="왕실 금고에서 가장 오래된 동전 1개를 반환합니다" data-testid="royal-vault-return-intent">
+            금고 동전 반환
+          </span>
+        ) : action.kind === "clearLeadCoins" ? (
+          <span key={index} aria-label="남은 납화폐를 해제합니다" data-testid="lead-decree-clear-intent">
+            납화폐 해제
+          </span>
+        ) : action.kind === "createCounterfeit" ? (
+          <span key={index} aria-label={`위조 동전 ${action.count}개를 추가합니다`} data-testid="royal-vault-counterfeit-intent">
+            위조 동전 {action.count}개
+          </span>
+        ) : action.kind === "removeCounterfeits" ? (
+          <span key={index} aria-label={`위조 동전 ${action.count}개를 제거합니다`} data-testid="royal-vault-counterfeit-remove-intent">
+            위조 동전 {action.count}개 제거
           </span>
         ) : action.kind === "growOnUnblockedDamage" ? (
           <span
@@ -957,6 +1054,22 @@ const combatEventResolutionLines = (events: readonly CombatEvent[]): string[] =>
       return [`적 ${event.sourceEnemy + 1} 왕실 세금 체납 · ${elementKo(event.element)} ${event.paid}/${event.denomination}, 위조 동전 ${event.counterfeits.length}개, 방어도 +${event.shield}, 체납 ${event.defaultStreak}회`];
     if (event.type === "royalTaxSeizureScheduled")
       return [`적 ${event.sourceEnemy + 1} 체납 압수 예고 · ${event.intent.windup?.turns ?? 0}턴 후 압수 실행`];
+    if (event.type === "royalVaultForeclosed")
+      return [`적 ${event.sourceEnemy + 1} 왕실 금고 압류 예고 · ${elementKo(event.element)} ${event.nominated.map(Number).join(", ")} · 금고 ${event.capacity}칸`];
+    if (event.type === "royalVaultSeized")
+      return [`적 ${event.sourceEnemy + 1} 왕실 금고 압류 · ${event.elements.map(({ coin, element }) => `${Number(coin)}:${elementKo(element)}`).join(", ")} · ${event.before}→${event.after}`];
+    if (event.type === "royalVaultReturned")
+      return [`적 ${event.sourceEnemy + 1} 왕실 금고 반환 · ${Number(event.coin)} · ${event.before}→${event.after} · ${event.reason}`];
+    if (event.type === "royalVaultRecoveryProgressed")
+      return [`적 ${event.sourceEnemy + 1} 왕실 금고 회수 · ${event.recovered}${event.required === undefined ? "" : `/${event.required}`}`];
+    if (event.type === "leadDecreeStarted")
+      return [`적 ${event.sourceEnemy + 1} 납화폐 칙령 · ${event.initial}개 · 남음 ${event.remaining}`];
+    if (event.type === "leadDecreeWeakened")
+      return [`적 ${event.sourceEnemy + 1} 납화폐 칙령 약화 · ${event.before}→${event.after} · ${event.reason}`];
+    if (event.type === "leadCoinTransformed")
+      return [`납화폐 변질 · ${Number(event.coin)} · ${event.before}→${event.after}`];
+    if (event.type === "leadCoinsCleared")
+      return [`납화폐 해제 · ${event.coins.map(Number).join(", ") || "없음"}`];
     if (event.type === "counterfeitExhausted") return [`위조 동전 ${Number(event.coin)} 소진 · 손패에 들어오지 않고 제거`];
     if (event.type === "counterfeitsRemoved") return [`위조 동전 ${event.coins.length}개 전투 종료로 제거`];
     if (event.type === "coinSeizureTelegraphed")
@@ -1252,7 +1365,174 @@ const testEncounterFromUrl = (): readonly EnemyDefId[] | null => {
   if (encounter === "slime") return ["slime" as EnemyDefId] as const; // 자동 실행 승리 단축 회귀용 저체력 단일 적
   if (encounter === "ghoul") return ["ghoul" as EnemyDefId] as const; // S32 몬스터 패시브 앵커
   if (encounter === "ash-duke-valdemar") return ["ash-duke-valdemar" as EnemyDefId] as const;
+  if (
+    !__VITE_PRODUCTION_BUILD__ &&
+    encounter === "uncrowned-coin-king-aurel" &&
+    new URL(window.location.href).searchParams.get("testMode") === "d18" &&
+    ["127.0.0.1", "localhost"].includes(window.location.hostname)
+  )
+    return ["uncrowned-coin-king-aurel" as EnemyDefId] as const;
   return null;
+};
+
+const testD18CombatStateFromUrl = (combat: CombatState): CombatState => {
+  if (__VITE_PRODUCTION_BUILD__) return combat;
+  const url = new URL(window.location.href);
+  if (
+    url.searchParams.get("testMode") !== "d18" ||
+    !["127.0.0.1", "localhost"].includes(window.location.hostname)
+  )
+    return combat;
+  const scenario = url.searchParams.get("d18");
+  if (scenario === null) return combat;
+  const enemyDef = contentDb.enemies["uncrowned-coin-king-aurel"];
+  const enemy = combat.enemies[0];
+  if (enemyDef === undefined || enemy === undefined) return combat;
+  const phaseTwo = enemyDef.phases?.[0];
+  const phaseThree = enemyDef.phases?.[1];
+  const intent = (id: string) =>
+    [
+      ...enemyDef.intents,
+      ...(phaseTwo?.intents ?? []),
+      ...(phaseThree?.intents ?? []),
+      ...(enemyDef.royalVault?.atCapacityIntent === undefined
+        ? []
+        : [enemyDef.royalVault.atCapacityIntent]),
+      ...(enemyDef.royalTax?.foreclosureIntent === undefined
+        ? []
+        : [enemyDef.royalTax.foreclosureIntent]),
+    ].find((candidate) => candidate.id === id);
+  const coin = (uid: number, defId: CoinDefId) => ({
+    uid: uid as CoinUid,
+    defId,
+    grants: [],
+    permanent: false as const,
+  });
+  const coins = (...defs: CoinDefId[]) =>
+    Object.fromEntries(defs.map((defId, index) => [index + 1, coin(index + 1, defId)]));
+  const withState = (
+    defs: CoinDefId[],
+    hand: number[],
+    enemyState: Partial<CombatState["enemies"][number]>,
+    custody: CombatState["custody"] = [],
+  ): CombatState => ({
+    ...combat,
+    turn: 1,
+    nextUid: defs.length + 1,
+    coins: coins(...defs),
+    custody,
+    zones: {
+      ...combat.zones,
+      draw: [],
+      hand: hand.map((uid) => uid as CoinUid),
+      discard: [],
+      exhausted: [],
+    },
+    player: { ...combat.player, hp: 500, maxHp: 500 },
+    enemies: [{ ...enemy, ...enemyState }],
+  });
+  const vault = (uids: number[]) =>
+    uids.map((uid, index) => ({
+      sourceEnemy: 0,
+      sourceEnemyUid: enemy.enemyUid,
+      kind: "royalVault" as const,
+      coins: [uid as CoinUid],
+      element: index % 2 === 0 ? ("fire" as const) : ("frost" as const),
+      seizureOrder: index,
+    }));
+  const ordinary = intent("royal-strike");
+  const foreclose = intent("royal-vault-foreclose");
+  const seizure = intent("royal-seizure");
+  const crown = intent("crown-confiscation");
+  if (ordinary === undefined || foreclose === undefined || seizure === undefined || crown === undefined)
+    return combat;
+  if (scenario === "tax-paid")
+    return withState(
+      ["fire" as CoinDefId, "fire" as CoinDefId],
+      [1, 2],
+      { intent: ordinary, royalTaxPending: { element: "fire", paid: 0, deadlineTurn: 2 } },
+    );
+  if (scenario === "tax-default")
+    return withState(
+      ["fire" as CoinDefId],
+      [1],
+      { intent: ordinary, royalTaxPending: { element: "fire", paid: 0, deadlineTurn: 1 } },
+    );
+  if (scenario === "foreclose")
+    return withState(
+      ["fire" as CoinDefId, "fire" as CoinDefId],
+      [1, 2],
+      {
+        intent: foreclose,
+        windup: { intent: foreclose, turnsLeft: 1, startHp: enemy.hp },
+        royalTaxForeclosureElement: "fire",
+        royalVaultSeizure: { nominated: [1 as CoinUid], capacity: 6 },
+      },
+    );
+  if (scenario === "lead")
+    return withState(
+      ["fire" as CoinDefId, "frost" as CoinDefId, "fire" as CoinDefId, "fire" as CoinDefId, "fire" as CoinDefId, "fire" as CoinDefId, "fire" as CoinDefId, "fire" as CoinDefId],
+      [1, 2, 3, 4, 5, 6, 7, 8],
+      {
+        intent: intent("lead-decree") ?? ordinary,
+        phaseIndex: 0,
+        windup: {
+          intent: intent("lead-decree") ?? ordinary,
+          turnsLeft: 1,
+          startHp: enemy.hp,
+        },
+        leadDecree: { initial: 3, remaining: 3, active: true, weakenedThisTurn: 0, weakenedTotal: 0 },
+      },
+    );
+  if (scenario === "seizure")
+    return withState(
+      ["fire" as CoinDefId, "frost" as CoinDefId, "fire" as CoinDefId, "frost" as CoinDefId],
+      [1, 2, 3, 4],
+      {
+        intent: seizure,
+        phaseIndex: 1,
+        windup: { intent: seizure, turnsLeft: 1, startHp: enemy.hp },
+        royalVaultSeizure: { nominated: [1 as CoinUid, 2 as CoinUid], capacity: 6 },
+      },
+    );
+  if (scenario === "crown-recovery")
+    return withState(
+      ["fire" as CoinDefId, "frost" as CoinDefId],
+      [],
+      {
+        intent: crown,
+        windup: { intent: crown, turnsLeft: 1, startHp: enemy.hp },
+        royalVaultRecoveredThisWindup: 2,
+      },
+      vault([1, 2]),
+    );
+  if (scenario === "crown-damage")
+    return withState(
+      ["fire" as CoinDefId, "fire" as CoinDefId, "fire" as CoinDefId, "fire" as CoinDefId, "frost" as CoinDefId, "frost" as CoinDefId],
+      [1, 2, 3, 4],
+      {
+        intent: crown,
+        windup: { intent: crown, turnsLeft: 1, startHp: enemy.hp },
+      },
+      vault([5, 6]),
+    );
+  if (scenario === "crown-resolve")
+    return withState(
+      ["fire", "frost", "fire", "frost", "fire", "frost"].map((defId) => defId as CoinDefId),
+      [],
+      { intent: crown, windup: { intent: crown, turnsLeft: 1, startHp: enemy.hp } },
+      vault([1, 2, 3, 4, 5, 6]),
+    );
+  if (scenario === "victory")
+    return {
+      ...withState(
+      ["fire" as CoinDefId, "fire" as CoinDefId],
+      [1, 2],
+      { hp: 1, intent: ordinary },
+      ),
+      player: combat.player,
+    };
+  return combat;
 };
 
 const testCombatHpFromUrl = (): number | null => {
@@ -1351,7 +1631,7 @@ const freshSession = (seed: string, character: CharacterId = "warrior" as Charac
       seed,
     );
     const testCombatHp = testCombatHpFromUrl();
-    const testEnemyState = testEnemyStateFromUrl(combat);
+    const testEnemyState = testD18CombatStateFromUrl(testEnemyStateFromUrl(combat));
     return {
       run,
       combat:
@@ -4282,7 +4562,7 @@ const CombatBoard = ({
                 maxHp={enemy.maxHp}
                 block={enemy.block}
                 statuses={enemy.statuses}
-                intent={<IntentBadge enemies={state.enemies} enemy={enemy} />}
+                intent={<IntentBadge enemies={state.enemies} enemy={enemy} custody={state.custody} coins={state.coins} />}
                 floats={floats}
                 motion={enemyMotion}
                 playKey={enemyMotion === "idle" ? 0 : spritePlayKey}

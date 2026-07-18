@@ -120,7 +120,7 @@ const DIRECTIVE15_ELITE_POOL = [[enemy("blackthorn-inquisitor-roderick")], [enem
 // act1 수문장+ 단일 승격 / act2 약탈자+·수문장+ 2체 / act3 잿불 마도왕.
 const ACT_BOSSES = [
   [enemy("gatekeeper-plus")],
-  [enemy("raider-plus"), enemy("gatekeeper-plus")],
+  [enemy("uncrowned-coin-king-aurel")],
   [enemy("ash-duke-valdemar")],
 ] as const;
 
@@ -128,10 +128,12 @@ const ACT_BOSSES = [
 // minimal legacy graph fixtures that predate Valdemar's content definition.
 // A full content database always takes the preferred encounter above.
 const LEGACY_ACT3_BOSS = [enemy("ember-archmage")] as const;
+const LEGACY_ACT2_BOSS = [enemy("raider-plus"), enemy("gatekeeper-plus")] as const;
 
 const bossEncounterFor = (db: ContentDb, act: number): readonly EnemyDefId[] => {
   const preferred = ACT_BOSSES[act]!;
   if (hasEnemies(db, preferred)) return preferred;
+  if (act === 1 && hasEnemies(db, LEGACY_ACT2_BOSS)) return LEGACY_ACT2_BOSS;
   if (act === 2 && hasEnemies(db, LEGACY_ACT3_BOSS)) return LEGACY_ACT3_BOSS;
   return preferred;
 };

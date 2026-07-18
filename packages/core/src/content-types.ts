@@ -61,6 +61,9 @@ interface CoinInstanceBase {
   preserved?: boolean;
   /** Combat-only false coin. It has no face, element, value, enchant, or custody eligibility. */
   counterfeit?: boolean;
+  /** Combat-only degradation. Runtime only applies it to temporary instances. */
+  lead?: true;
+  leadSourceEnemyUid?: number;
 }
 
 export interface PermanentCoinInstance extends CoinInstanceBase {
@@ -343,13 +346,21 @@ export interface CharacterDef {
 }
 
 export type EnemyAction =
-  | { kind: 'attack'; damage: number; hits?: number; damagePerGrowthPercent?: number }
+  | { kind: 'attack'; damage: number; hits?: number; damagePerGrowthPercent?: number; ordinary?: true }
   | { kind: 'seizeCustody' }
   | { kind: 'sealRecentSkill' }
   | { kind: 'sealTriggeredSkill'; turns: number }
   | { kind: 'resetRepeatSkillPressure' }
   | { kind: 'royalTax'; degradedDamage: number }
   | { kind: 'resetRoyalTaxDefaults' }
+  | { kind: 'royalVaultForeclose' }
+  | { kind: 'royalVaultExactSeizure'; maxCoins: number; selection: 'handFraction' }
+  | { kind: 'royalVaultBarrier'; blockPerStoredCoin: number }
+  | { kind: 'leadDecree' }
+  | { kind: 'returnOldestRoyalVaultCoin'; reason?: 'phaseEntry' | 'crownCancelled' | 'crownResolved' }
+  | { kind: 'clearLeadCoins' }
+  | { kind: 'createCounterfeit'; coin: CoinDefId; count: number }
+  | { kind: 'removeCounterfeits'; count: number }
   | { kind: 'conditionalAttack'; damage: number; bonusDamage: number; condition: 'playerHpBelowHalf' }
   | { kind: 'block'; amount: number }
   | { kind: 'nextDrawPenalty'; amount: number }
@@ -437,7 +448,8 @@ export interface EnemyVassalGuardDef {
 
 export type EnemyCancelPredicate =
   | { kind: 'skillDamage'; threshold: number }
-  | { kind: 'enemyResourceAtMost'; resource: 'furnaceTemperature'; value: number };
+  | { kind: 'enemyResourceAtMost'; resource: 'furnaceTemperature'; value: number }
+  | { kind: 'vaultCoinsRecovered'; count: number };
 
 export interface EnemyIntent {
   id: string;
@@ -521,8 +533,27 @@ export interface EnemyRoyalTaxDef {
   counterfeitCoin: CoinDefId;
   counterfeitCount: number;
   defaultShield: number;
-  seizureAfterDefaults: number;
-  seizureIntent: EnemyIntent;
+  seizureAfterDefaults?: number;
+  seizureIntent?: EnemyIntent;
+  /** Optional hand-only escalation. Omitted fields preserve the existing M18 contract. */
+  foreclosureAfterDefaults?: number;
+  foreclosureIntent?: EnemyIntent;
+  foreclosureMaxCoins?: number;
+  paidNextOrdinaryAttackReduction?: number;
+}
+
+/** A source-UID-bound custody vault. It deliberately reuses normal custody semantics. */
+export interface EnemyRoyalVaultDef {
+  capacity: number;
+  blockLostPerRecovery?: number;
+  atCapacityIntent?: EnemyIntent;
+  lead?: {
+    generatedTemporaryElementalCount: number;
+    minRemaining: number;
+    maxWeakensPerTurn: number;
+    maxWeakensPerWindup: number;
+    damageWeakeningThreshold?: number;
+  };
 }
 
 export interface EnemyDef {
@@ -539,6 +570,7 @@ export interface EnemyDef {
   skillSeal?: EnemySkillSealDef;
   repeatSkillPressure?: EnemyRepeatSkillPressureDef;
   royalTax?: EnemyRoyalTaxDef;
+  royalVault?: EnemyRoyalVaultDef;
   /** Batch C data-driven mechanics. */
   threat?: number;
   protectionLink?: EnemyProtectionLinkDef;
@@ -898,14 +930,16 @@ const validateEnemyIntents = (enemies: Record<string, EnemyDef>, coins: Record<s
     for (const predicate of intent.cancelOn === undefined ? [] : Array.isArray(intent.cancelOn) ? intent.cancelOn : [intent.cancelOn]) {
       if (predicate.kind === 'skillDamage') {
         if (!Number.isInteger(predicate.threshold) || predicate.threshold <= 0) errors.push(`${owner}: cancelOn skillDamage threshold must be a positive integer`);
-      } else if (predicate.resource === 'furnaceTemperature') {
+      } else if (predicate.kind === 'enemyResourceAtMost' && predicate.resource === 'furnaceTemperature') {
         if (!Number.isInteger(predicate.value) || predicate.value < 0) errors.push(`${owner}: cancelOn furnace temperature must be a non-negative integer`);
+      } else if (predicate.kind === 'vaultCoinsRecovered') {
+        if (!Number.isInteger(predicate.count) || predicate.count <= 0) errors.push(`${owner}: cancelOn vault recovery count must be a positive integer`);
       } else {
         errors.push(`${owner}: cancelOn must use a discriminated predicate`);
       }
     }
     for (const action of intent.onCancelActions ?? []) {
-      if (action.kind !== 'setEnemyResource' && action.kind !== 'adjustEnemyResource' && action.kind !== 'reduceGrowthStacks') {
+      if (action.kind !== 'setEnemyResource' && action.kind !== 'adjustEnemyResource' && action.kind !== 'reduceGrowthStacks' && action.kind !== 'returnOldestRoyalVaultCoin') {
         errors.push(`${owner}: onCancelActions only support enemy resource mutation or growth reduction`);
       }
     }
@@ -1073,10 +1107,31 @@ const validateEnemyIntents = (enemies: Record<string, EnemyDef>, coins: Record<s
       if (counterfeit === undefined) errors.push(`${owner}: royal tax counterfeitCoin must exist`);
       else if (counterfeit.counterfeit !== true || counterfeit.element !== null || counterfeit.procs !== undefined) errors.push(`${owner}: royal tax counterfeitCoin must be combat-only, elementless, and have no procs`);
       if (!Number.isInteger(tax.counterfeitCount) || tax.counterfeitCount <= 0) errors.push(`${owner}: royal tax counterfeitCount must be a positive integer`);
-      if (!Number.isInteger(tax.defaultShield) || tax.defaultShield <= 0) errors.push(`${owner}: royal tax defaultShield must be a positive integer`);
-      if (!Number.isInteger(tax.seizureAfterDefaults) || tax.seizureAfterDefaults <= 0) errors.push(`${owner}: royal tax seizureAfterDefaults must be a positive integer`);
-      validateIntent(tax.seizureIntent, `${owner} royal tax seizure ${tax.seizureIntent.id}`);
-      if (tax.seizureIntent.windup === undefined) errors.push(`${owner}: royal tax seizure must wind up`);
+      if (!Number.isInteger(tax.defaultShield) || tax.defaultShield < 0) errors.push(`${owner}: royal tax defaultShield must be a non-negative integer`);
+      if (tax.foreclosureAfterDefaults === undefined) {
+        const legacySeizureAfterDefaults = tax.seizureAfterDefaults;
+        if (typeof legacySeizureAfterDefaults !== 'number' || !Number.isInteger(legacySeizureAfterDefaults) || legacySeizureAfterDefaults <= 0) errors.push(`${owner}: royal tax seizureAfterDefaults must be a positive integer`);
+        if (tax.seizureIntent === undefined) errors.push(`${owner}: royal tax seizureIntent is required without foreclosure`);
+      }
+      if (tax.seizureIntent !== undefined) {
+        validateIntent(tax.seizureIntent, `${owner} royal tax seizure ${tax.seizureIntent.id}`);
+        if (tax.seizureIntent.windup === undefined) errors.push(`${owner}: royal tax seizure must wind up`);
+      }
+      if (tax.foreclosureAfterDefaults !== undefined && (!Number.isInteger(tax.foreclosureAfterDefaults) || tax.foreclosureAfterDefaults <= 0)) errors.push(`${owner}: royal tax foreclosureAfterDefaults must be a positive integer`);
+      if (tax.foreclosureIntent !== undefined) validateIntent(tax.foreclosureIntent, `${owner} royal tax foreclosure ${tax.foreclosureIntent.id}`);
+      if (tax.foreclosureAfterDefaults !== undefined && tax.foreclosureIntent === undefined) errors.push(`${owner}: royal tax foreclosureIntent is required with foreclosureAfterDefaults`);
+      if (tax.foreclosureMaxCoins !== undefined && (!Number.isInteger(tax.foreclosureMaxCoins) || tax.foreclosureMaxCoins <= 0)) errors.push(`${owner}: royal tax foreclosureMaxCoins must be a positive integer`);
+      if (tax.paidNextOrdinaryAttackReduction !== undefined && (!Number.isInteger(tax.paidNextOrdinaryAttackReduction) || tax.paidNextOrdinaryAttackReduction <= 0)) errors.push(`${owner}: royal tax paid reduction must be a positive integer`);
+    }
+    if (enemy.royalVault !== undefined) {
+      const vault = enemy.royalVault;
+      if (!Number.isInteger(vault.capacity) || vault.capacity <= 0) errors.push(`${owner}: royal vault capacity must be a positive integer`);
+      if (vault.blockLostPerRecovery !== undefined && (!Number.isInteger(vault.blockLostPerRecovery) || vault.blockLostPerRecovery < 0)) errors.push(`${owner}: royal vault block loss must be non-negative`);
+      if (vault.atCapacityIntent !== undefined) validateIntent(vault.atCapacityIntent, `${owner}: royal vault at-cap ${vault.atCapacityIntent.id}`);
+      if (vault.lead !== undefined) {
+        const lead = vault.lead;
+        for (const [label, value] of Object.entries(lead)) if (value !== undefined && (!Number.isInteger(value) || value <= 0)) errors.push(`${owner}: royal vault lead ${label} must be a positive integer`);
+      }
     }
     enemy.intents.forEach((intent, index) => validateIntent(intent, `enemy ${String(enemy.id)} intent ${intent.id || index}`));
     for (const [index, phase] of (enemy.phases ?? []).entries()) {
@@ -1097,7 +1152,7 @@ const validateEnemyIntents = (enemies: Record<string, EnemyDef>, coins: Record<s
       for (const action of phase.onEnterActions ?? []) {
         // Reuse the intent action validator without implying a phase has a turn intent.
         validateIntent({ id: `${owner}-on-enter`, actions: [action] }, owner);
-        if (action.kind !== 'setEnemyResource' && action.kind !== 'adjustEnemyResource' && action.kind !== 'removePlayerStatus' && action.kind !== 'summonEnemies') {
+        if (action.kind !== 'setEnemyResource' && action.kind !== 'adjustEnemyResource' && action.kind !== 'removePlayerStatus' && action.kind !== 'summonEnemies' && action.kind !== 'returnOldestRoyalVaultCoin' && action.kind !== 'clearLeadCoins' && action.kind !== 'removeCounterfeits') {
           errors.push(`${owner}: onEnterActions only support resource mutation, player status removal, or summons`);
         }
       }
@@ -1312,6 +1367,7 @@ export const validateContentDb = (db: Omit<ContentDb, 'validate'>): string[] => 
 ];
 
 export const effectiveElements = (coin: CoinInstance, db: ContentDb): Element[] => {
+  if (coin.lead === true) return [];
   const def = db.coins[String(coin.defId)];
   const elements = new Set<Element>(coin.grants);
   if (def?.element != null) {

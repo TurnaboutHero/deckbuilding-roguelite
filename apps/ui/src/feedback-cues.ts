@@ -126,10 +126,21 @@ export const feedbackCuesFor = (event: CombatEvent): FeedbackCue[] => {
     case "royalTaxPaid":
     case "royalTaxDefaulted":
     case "royalTaxSeizureScheduled":
+    case "royalVaultForeclosed":
+    case "royalVaultSeized":
+    case "royalVaultReturned":
+    case "royalVaultRecoveryProgressed":
+    case "leadDecreeStarted":
+    case "leadDecreeWeakened":
+    case "leadCoinTransformed":
+    case "leadCoinsCleared":
       return [cue(`unit-enemy-${event.sourceEnemy}`, 420)];
     case "counterfeitExhausted":
       return [cue(`coin-${Number(event.coin)}`, 360)];
     case "counterfeitsRemoved":
+    case "leadCoinsExhausted":
+      return event.coins.map((coin) => cue(`coin-${Number(coin)}`, 360));
+    case "counterfeitsCreated":
       return event.coins.map((coin) => cue(`coin-${Number(coin)}`, 360));
     case "coinSeizureTelegraphed":
     case "coinsSeized":

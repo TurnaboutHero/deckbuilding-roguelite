@@ -4,6 +4,7 @@ import type { Element, EquipmentDefId, CoinUid, Face, SkillId, SlotId } from '..
 import { rngFrom } from '../../rng';
 import { drawCards, drawSpecificCoin, HAND_LIMIT } from '../draw';
 import { recordDirective15SkillResolution } from '../directive15';
+import { applyLeadToCreatedCoin } from '../directive18';
 import type { CombatEvent, DamageSource } from '../events';
 import { assertCoinEnchantEligibility, firstUseEchoCoins, rollEnchantedFace } from '../enchant';
 import { activeSkillSeal, assertCombatCoinZoneInvariant, isSkillCommandSealed, MAX_PRESERVED_COINS, recordRecentSkillUse, statusStacks, statusTurns } from '../state';
@@ -135,12 +136,14 @@ const remiseTotal = (charges: number, amount: number): number => Math.min(3, Mat
 
 const removeCounterfeitsAtCombatEnd = (state: CombatState, events: CombatEvent[]): CombatState => {
   const counterfeits = Object.values(state.coins).filter((coin) => coin.counterfeit === true).map((coin) => coin.uid);
-  if (counterfeits.length === 0) return state;
-  const removed = new Set(counterfeits);
-  events.push({ type: 'counterfeitsRemoved', coins: counterfeits });
+  const leads = Object.values(state.coins).filter((coin) => coin.lead === true).map((coin) => coin.uid);
+  if (counterfeits.length === 0 && leads.length === 0) return state;
+  const removed = new Set([...counterfeits, ...leads]);
+  if (counterfeits.length > 0) events.push({ type: 'counterfeitsRemoved', coins: counterfeits });
+  if (leads.length > 0) events.push({ type: 'leadCoinsExhausted', coins: leads });
   return {
     ...state,
-    coins: Object.fromEntries(Object.entries(state.coins).filter(([, coin]) => coin.counterfeit !== true)),
+    coins: Object.fromEntries(Object.entries(state.coins).filter(([, coin]) => coin.counterfeit !== true && coin.lead !== true)),
     zones: {
       ...state.zones,
       draw: state.zones.draw.filter((coin) => !removed.has(coin)),
@@ -442,7 +445,7 @@ const addStatus = (current: StatusState | undefined, status: EffectAtom & { kind
   return { kind: 'duration', turns: (current?.kind === 'duration' ? current.turns : 0) + status.stacks };
 };
 
-const addTemporaryCoin = (state: CombatState, atom: Extract<EffectAtom, { kind: 'addCoin' }>, events: CombatEvent[]): CombatState => {
+const addTemporaryCoin = (state: CombatState, atom: Extract<EffectAtom, { kind: 'addCoin' }>, db: ContentDb, events: CombatEvent[]): CombatState => {
   let nextState = state;
   const rng = nextState.rngImpl?.shuffle ?? rngFrom(nextState.rng.shuffle);
 
@@ -465,6 +468,7 @@ const addTemporaryCoin = (state: CombatState, atom: Extract<EffectAtom, { kind: 
         zones: { ...nextState.zones, draw }
       };
       events.push({ type: 'coinCreated', coin, defId: String(atom.coin), zone: 'draw' });
+      nextState = applyLeadToCreatedCoin(nextState, coin, db, events);
       continue;
     }
 
@@ -476,6 +480,7 @@ const addTemporaryCoin = (state: CombatState, atom: Extract<EffectAtom, { kind: 
         zones: { ...nextState.zones, hand: [...nextState.zones.hand, coin] }
       };
       events.push({ type: 'coinCreated', coin, defId: String(atom.coin), zone: 'hand' });
+      nextState = applyLeadToCreatedCoin(nextState, coin, db, events);
       continue;
     }
 
@@ -486,6 +491,7 @@ const addTemporaryCoin = (state: CombatState, atom: Extract<EffectAtom, { kind: 
       zones: { ...nextState.zones, discard: [coin, ...nextState.zones.discard] }
     };
     events.push({ type: 'coinCreated', coin, defId: String(atom.coin), zone: 'discard' });
+    nextState = applyLeadToCreatedCoin(nextState, coin, db, events);
   }
 
   return nextState;
@@ -724,7 +730,7 @@ export const applyEffectAtom = (
       return { ...state, enemies };
     }
     case 'addCoin':
-      return addTemporaryCoin(state, atom, events);
+      return addTemporaryCoin(state, atom, db, events);
     case 'grantElement':
       return grantElement(state, atom, db, events, chosen);
     case 'addTurnTrigger': {
@@ -1110,7 +1116,7 @@ export const applyBloodSwordSkillResolved = (
   const aliveAfter = state.enemies.filter((enemy) => enemy.hp > 0).length;
   if (state.player.bloodSwordPower >= 3 && aliveAfter < aliveBefore && !state.player.bloodSwordKillCoinUsedThisTurn) {
     const blood = Object.values(db.coins).find((coin) => coin.element === 'blood')?.id;
-    if (blood !== undefined) state = addTemporaryCoin(state, { kind: 'addCoin', coin: blood, zone: 'discard', count: 1 }, events);
+    if (blood !== undefined) state = addTemporaryCoin(state, { kind: 'addCoin', coin: blood, zone: 'discard', count: 1 }, db, events);
     state = {
       ...state,
       player: { ...state.player, bloodSwordKillCoinUsedThisTurn: true }
@@ -1323,8 +1329,10 @@ export const resolveFlip = (
     // Cost order is the deterministic top-of-draw order. Two passives may route
     // different coins, while a coin claimed by both is returned only once.
     const topDraw = placed.filter((coin) => routedToDraw.has(coin));
-    const discarded = placed.filter((coin) => !echoCoins.has(coin) && !routedToDraw.has(coin));
+    const exhaustedLead = placed.filter((coin) => routedState.coins[Number(coin)]?.lead === true && !echoCoins.has(coin));
+    const discarded = placed.filter((coin) => !echoCoins.has(coin) && !routedToDraw.has(coin) && !exhaustedLead.includes(coin));
     events.push({ type: 'coinsDiscarded', coins: [...discarded], reason: 'skillCost' });
+    if (exhaustedLead.length > 0) events.push({ type: 'leadCoinsExhausted', coins: exhaustedLead });
     let state = {
       ...routedState,
       coins: Object.fromEntries(
@@ -1340,7 +1348,8 @@ export const resolveFlip = (
         placed: { ...routedState.zones.placed, [slot]: [] },
         hand: [...echoed.coins, ...routedState.zones.hand],
         draw: topDraw.length === 0 ? routedState.zones.draw : [...topDraw, ...routedState.zones.draw],
-        discard: [...routedState.zones.discard, ...discarded]
+        discard: [...routedState.zones.discard, ...discarded],
+        exhausted: [...routedState.zones.exhausted, ...exhaustedLead]
       }
     };
     if (consumesOverheat && state.player.overheat) {

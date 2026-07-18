@@ -119,6 +119,8 @@ export interface CoinCustody {
   coins: CoinUid[];
   element: Element;
   seizureOrder: number;
+  /** A royal vault remains normal custody, with this label used for recovery UI/events. */
+  kind?: 'royalVault';
 }
 
 export interface CoinSeizureTelegraph {
@@ -141,6 +143,23 @@ export interface RoyalTaxPendingState {
   element: Element;
   paid: number;
   deadlineTurn: number;
+}
+
+export interface RoyalVaultSeizureState {
+  nominated: CoinUid[];
+  capacity: number;
+}
+
+export interface LeadDecreeState {
+  initial: number;
+  remaining: number;
+  active?: true;
+  weakenedThisTurn: number;
+  weakenedTotal: number;
+  distinctWeakenedTurn?: number;
+  damageWeakenedTurn?: number;
+  damageThisTurn?: number;
+  damageTurn?: number;
 }
 
 export interface EnemyState extends UnitState {
@@ -185,6 +204,11 @@ export interface EnemyState extends UnitState {
   repeatSkillPressure?: RepeatSkillPressureState;
   royalTaxPending?: RoyalTaxPendingState;
   royalTaxDefaultStreak?: number;
+  royalTaxForeclosureElement?: Element;
+  royalTaxPaidAttackReduction?: number;
+  royalVaultSeizure?: RoyalVaultSeizureState;
+  royalVaultRecoveredThisWindup?: number;
+  leadDecree?: LeadDecreeState;
   furnaceTemperature?: number;
   furnaceMaxTemperature?: number;
   furnaceActionResolvedGain?: number;

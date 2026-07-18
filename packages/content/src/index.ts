@@ -14,7 +14,9 @@ import type {
   CoinDef,
   CoinEnchantDef,
   ContentDb,
+  EnemyAction,
   EnemyDef,
+  EnemyIntent,
   EquipmentDef,
   EventDef,
   PassiveDef,
@@ -1764,6 +1766,10 @@ export const skills = {
   }
 } satisfies Record<string, SkillDef>;
 
+const aurelWindup = { turns: 1, revealAtStart: true } as const;
+const aurelStrike10 = { id: 'royal-strike', actions: [{ kind: 'attack', damage: 10, ordinary: true }] } satisfies EnemyIntent;
+const aurelPhaseReturn = { kind: 'returnOldestRoyalVaultCoin' } satisfies EnemyAction;
+
 export const enemies = {
   raider: {
     id: enemy('raider'),
@@ -2297,7 +2303,7 @@ export const enemies = {
       { id: 'bone-shard', actions: [{ kind: 'attack', damage: 6 }] },
       {
         id: 'raise-skeleton',
-        windup: { turns: 1, revealAtStart: true },
+        windup: aurelWindup,
         actions: [{ kind: 'summonEnemies', enemy: enemy('skeleton-servant'), maxCount: 2 }]
       }
     ]
@@ -2330,6 +2336,90 @@ export const enemies = {
     name: '늪지 부화체',
     maxHp: 18,
     intents: [{ id: 'marsh-bite', actions: [{ kind: 'attack', damage: 5 }] }]
+  },
+  'uncrowned-coin-king-aurel': {
+    id: enemy('uncrowned-coin-king-aurel'),
+    name: '무관의 주화왕 아우렐',
+    maxHp: 180,
+    royalTax: {
+      denomination: 2,
+      deadline: 'endNextPlayerTurn',
+      counterfeitCoin: coin('counterfeit'),
+      counterfeitCount: 1,
+      defaultShield: 0,
+      foreclosureAfterDefaults: 1,
+      foreclosureIntent: {
+        id: 'royal-vault-foreclose',
+        windup: aurelWindup,
+        actions: [{ kind: 'royalVaultForeclose' }]
+      },
+      foreclosureMaxCoins: 1,
+      paidNextOrdinaryAttackReduction: 2
+    },
+    royalVault: {
+      capacity: 6,
+      blockLostPerRecovery: 4,
+      lead: {
+        generatedTemporaryElementalCount: 3,
+        minRemaining: 1,
+        maxWeakensPerTurn: 2,
+        maxWeakensPerWindup: 2,
+        damageWeakeningThreshold: 16
+      },
+      atCapacityIntent: {
+        id: 'crown-confiscation',
+        windup: aurelWindup,
+        cancelOn: [
+          { kind: 'vaultCoinsRecovered', count: 2 },
+          { kind: 'skillDamage', threshold: 10 }
+        ],
+        onCancelActions: [{ kind: 'returnOldestRoyalVaultCoin', reason: 'crownCancelled' }],
+        actions: [
+          { kind: 'attack', damage: 22 },
+          { kind: 'createCounterfeit', coin: coin('counterfeit'), count: 2 },
+          { kind: 'returnOldestRoyalVaultCoin', reason: 'crownResolved' }
+        ]
+      }
+    },
+    intents: [
+      { id: 'royal-tax', actions: [{ kind: 'royalTax', degradedDamage: 8 }] },
+      aurelStrike10
+    ],
+    phases: [
+      {
+        hpBelowFraction: 0.7,
+        transitionBeforeAction: true,
+        onEnterActions: [
+          { kind: 'removeCounterfeits', count: 1 },
+          aurelPhaseReturn
+        ],
+        intents: [
+          {
+            id: 'lead-decree',
+            windup: aurelWindup,
+            actions: [{ kind: 'leadDecree' }]
+          },
+          aurelStrike10,
+          { id: 'vault-barrier', actions: [{ kind: 'royalVaultBarrier', blockPerStoredCoin: 3 }] }
+        ]
+      },
+      {
+        hpBelowFraction: 0.35,
+        transitionBeforeAction: true,
+        onEnterActions: [
+          { kind: 'clearLeadCoins' },
+          aurelPhaseReturn
+        ],
+        intents: [
+          { id: 'royal-strike', actions: [{ kind: 'attack', damage: 12, ordinary: true }] },
+          {
+            id: 'royal-seizure',
+            windup: aurelWindup,
+            actions: [{ kind: 'royalVaultExactSeizure', maxCoins: 3, selection: 'handFraction' }]
+          }
+        ]
+      }
+    ]
   },
   'ash-duke-valdemar': {
     id: enemy('ash-duke-valdemar'),

@@ -78,7 +78,7 @@ export const resolveConsume = (
     const instance = input.coins[Number(coin)];
     const def = instance === undefined ? undefined : db.coins[String(instance.defId)];
     const satisfies =
-      skill.consume.element === 'frost' ? def?.element === 'frost' : instance !== undefined && effectiveElements(instance, db).includes(skill.consume.element);
+      instance?.lead === true ? false : skill.consume.element === 'frost' ? def?.element === 'frost' : instance !== undefined && effectiveElements(instance, db).includes(skill.consume.element);
     if (!satisfies) {
       throw new Error('consumed coin does not satisfy required element');
     }

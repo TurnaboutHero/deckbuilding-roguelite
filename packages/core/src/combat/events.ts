@@ -103,7 +103,17 @@ export type CombatEvent =
   | { type: 'royalTaxPaid'; sourceEnemy: number; element: Element; paid: number; denomination: number }
   | { type: 'royalTaxDefaulted'; sourceEnemy: number; element: Element; paid: number; denomination: number; counterfeits: CoinUid[]; shield: number; defaultStreak: number }
   | { type: 'royalTaxSeizureScheduled'; sourceEnemy: number; intent: EnemyIntent }
+  | { type: 'royalVaultForeclosed'; sourceEnemy: number; sourceEnemyUid: number; element: Element; nominated: CoinUid[]; capacity: number }
+  | { type: 'royalVaultSeized'; sourceEnemy: number; sourceEnemyUid: number; coins: CoinUid[]; elements: Array<{ coin: CoinUid; element: Element }>; before: number; after: number; seizureOrder: number }
+  | { type: 'royalVaultReturned'; sourceEnemy: number; sourceEnemyUid: number; coin: CoinUid; before: number; after: number; reason: 'skillRecovery' | 'phaseEntry' | 'crownCancelled' | 'crownResolved' }
+  | { type: 'royalVaultRecoveryProgressed'; sourceEnemy: number; sourceEnemyUid: number; recovered: number; required?: number }
+  | { type: 'leadDecreeStarted'; sourceEnemy: number; sourceEnemyUid: number; initial: number; remaining: number }
+  | { type: 'leadDecreeWeakened'; sourceEnemy: number; sourceEnemyUid: number; before: number; after: number; reason: 'distinctElements' | 'skillDamage' }
+  | { type: 'leadCoinTransformed'; sourceEnemy: number; sourceEnemyUid: number; coin: CoinUid; before: string; after: string }
+  | { type: 'leadCoinsCleared'; sourceEnemy: number; sourceEnemyUid: number; coins: CoinUid[]; transformed: Array<{ coin: CoinUid; before: string; after: string }> }
+  | { type: 'leadCoinsExhausted'; coins: CoinUid[] }
   | { type: 'counterfeitExhausted'; coin: CoinUid }
   | { type: 'counterfeitsRemoved'; coins: CoinUid[] }
+  | { type: 'counterfeitsCreated'; coins: CoinUid[]; defId: string }
   | { type: 'turnStarted'; turn: number }
   | { type: 'combatEnded'; result: 'victory' | 'defeat'; turns: number };

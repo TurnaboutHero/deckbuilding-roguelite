@@ -6,6 +6,7 @@ import { consumeRequirementFor } from './consume-requirement';
 import type { CombatEvent } from './events';
 import { aggregateSkillSeal, skillSealOwners } from './state';
 import type { CombatState, EnemyState } from './state';
+import { returnOldestRoyalVaultCoin, weakenLeadDecreeForSkill, weakenLeadDecreeForSkillDamage } from './directive18';
 
 const PUBLIC_ELEMENT_ORDER: readonly Element[] = ['fire', 'mana', 'frost', 'lightning', 'blood'];
 
@@ -127,13 +128,42 @@ export const recordDirective15SkillResolution = (
         const denomination = def.royalTax?.denomination ?? 0;
         const paid = Math.min(denomination, pending.paid + paidNow);
         if (paid >= denomination) {
-          next = withEnemy(next, enemyIndex, (candidate) => ({ ...candidate, royalTaxPending: undefined, royalTaxDefaultStreak: 0 }));
+          next = withEnemy(next, enemyIndex, (candidate) => ({ ...candidate, royalTaxPending: undefined, royalTaxDefaultStreak: 0, royalTaxPaidAttackReduction: def.royalTax?.paidNextOrdinaryAttackReduction }));
           events.push({ type: 'royalTaxPaid', sourceEnemy: enemyIndex, element: pending.element, paid, denomination });
         } else {
           next = withEnemy(next, enemyIndex, (candidate) => ({ ...candidate, royalTaxPending: { ...pending, paid } }));
           events.push({ type: 'royalTaxPaymentProgressed', sourceEnemy: enemyIndex, element: pending.element, paid, denomination });
         }
       }
+    }
+    const vault = def.royalVault;
+    if (vault !== undefined) {
+      const matching = spentCoins.find((coin) => {
+        const instance = preUseState.coins[Number(coin)];
+        if (instance === undefined || instance.counterfeit === true || instance.lead === true) return false;
+        return next.custody.some((entry) => entry.kind === 'royalVault' && entry.sourceEnemyUid === enemy.enemyUid && entry.element !== undefined && effectiveElements(instance, db).includes(entry.element));
+      });
+      if (matching !== undefined) {
+        const element = effectiveElements(preUseState.coins[Number(matching)]!, db).find((candidate) =>
+          next.custody.some((entry) => entry.kind === 'royalVault' && entry.sourceEnemyUid === enemy.enemyUid && entry.element === candidate)
+        );
+        const before = next;
+        next = returnOldestRoyalVaultCoin(next, enemyIndex, events, 'skillRecovery', element);
+        if (next !== before) {
+          const reduction = vault.blockLostPerRecovery ?? 0;
+          if (reduction > 0) next = withEnemy(next, enemyIndex, (candidate) => ({ ...candidate, block: Math.max(0, candidate.block - reduction) }));
+          if (next.enemies[enemyIndex]?.windup !== undefined) {
+            next = withEnemy(next, enemyIndex, (candidate) => ({ ...candidate, royalVaultRecoveredThisWindup: (candidate.royalVaultRecoveredThisWindup ?? 0) + 1 }));
+          }
+        }
+      }
+      next = weakenLeadDecreeForSkill(next, enemyIndex, spentCoins, db, events);
+      const skillDamage = events.reduce((total, event) =>
+        event.type === 'damageDealt' && event.source === 'skill' && event.target.type === 'enemy' && event.target.index === enemyIndex
+          ? total + event.amount
+          : total,
+      0);
+      if (skillDamage > 0) next = weakenLeadDecreeForSkillDamage(next, enemyIndex, skillDamage, db, events);
     }
   }
   return next;
@@ -163,7 +193,8 @@ export const resolveRoyalTaxDeadlines = (input: CombatState, db: ContentDb, even
     const added = Array.from({ length: tax.counterfeitCount }, (_, offset) => (firstUid + offset) as CoinUid);
     const coins = Object.fromEntries(added.map((uid) => [Number(uid), { uid, defId: tax.counterfeitCoin, grants: [], permanent: false as const, counterfeit: true }]));
     const defaultStreak = (enemy.royalTaxDefaultStreak ?? 0) + 1;
-    const scheduleSeizure = defaultStreak >= tax.seizureAfterDefaults;
+    const scheduleForeclosure = tax.foreclosureAfterDefaults !== undefined && tax.foreclosureIntent !== undefined && defaultStreak >= tax.foreclosureAfterDefaults;
+    const scheduleSeizure = tax.foreclosureAfterDefaults === undefined && tax.seizureAfterDefaults !== undefined && defaultStreak >= tax.seizureAfterDefaults;
     events.push({ type: 'royalTaxDefaulted', sourceEnemy: enemyIndex, element: pending.element, paid: pending.paid, denomination: tax.denomination, counterfeits: added, shield: tax.defaultShield, defaultStreak });
     events.push({ type: 'blockGained', target: { type: 'enemy', index: enemyIndex }, amount: tax.defaultShield });
     state = {
@@ -176,10 +207,12 @@ export const resolveRoyalTaxDeadlines = (input: CombatState, db: ContentDb, even
       ...candidate,
       block: candidate.block + tax.defaultShield,
       royalTaxPending: undefined,
-      royalTaxDefaultStreak: scheduleSeizure ? 0 : defaultStreak,
+      royalTaxDefaultStreak: (scheduleSeizure || scheduleForeclosure) ? 0 : defaultStreak,
+      ...(scheduleForeclosure ? { royalTaxForeclosureElement: pending.element, intent: tax.foreclosureIntent, intentIndex: -1 } : {}),
       ...(scheduleSeizure ? { intent: tax.seizureIntent, intentIndex: -1 } : {})
     }));
-    if (scheduleSeizure) events.push({ type: 'royalTaxSeizureScheduled', sourceEnemy: enemyIndex, intent: tax.seizureIntent });
+    const scheduledIntent = scheduleForeclosure ? tax.foreclosureIntent : tax.seizureIntent;
+    if ((scheduleSeizure || scheduleForeclosure) && scheduledIntent !== undefined) events.push({ type: 'royalTaxSeizureScheduled', sourceEnemy: enemyIndex, intent: scheduledIntent });
   }
   return state;
 };

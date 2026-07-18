@@ -42,6 +42,16 @@ const server =
         preview: { host: "127.0.0.1", port: 4174, strictPort: true },
       })
     : null;
+const d18Server =
+  onlyScope === null || onlyScope === "d18"
+    ? await (
+        await import("vite")
+      ).createServer({
+        root,
+        server: { host: "127.0.0.1", port: 4175, strictPort: true },
+      })
+    : null;
+if (d18Server !== null) await d18Server.listen();
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_EXECUTABLE_PATH === undefined
     ? {}
@@ -5792,7 +5802,150 @@ if (onlyScope === null || onlyScope === "d17") {
   }
 }
 
+if (onlyScope === null || onlyScope === "d18") {
+  const d18BaseUrl = "http://127.0.0.1:4175/deckbuilding-roguelite/";
+  const d18Url = (scenario) => {
+    const url = new globalThis.URL(d18BaseUrl);
+    for (const [key, value] of Object.entries({
+      seed: `D18-${scenario.toUpperCase()}`,
+      testMode: "d18",
+      d18: scenario,
+      encounter: "uncrowned-coin-king-aurel",
+      skills: "fire-infusion,fire-fist,direct-hit,comet-blow,conflagration,smash",
+    }))
+      url.searchParams.set(key, value);
+    return String(url);
+  };
+  const endD18Turn = async (page) => {
+    await page.locator(".end-turn").click();
+    await page.waitForTimeout(20);
+    await waitForCombatOrBoundary(page, 15000);
+  };
+  const loadD18 = async (page, slot, selectors) => {
+    const card = page.locator(".skill-card").nth(slot);
+    for (let index = 0; index < selectors.length; index += 1) {
+      const coin = page.locator(selectors[index]).first();
+      if ((await coin.count()) === 0) return false;
+      await coin.click();
+      await card.locator(".socket").nth(index).click();
+    }
+    return true;
+  };
+  const d18Hp = (page) =>
+    page.locator(".unit.player .hp-num").evaluate((node) => Number(node.textContent?.split("/")[0]));
+  const d18Vault = (page) => page.locator('[data-testid="royal-vault-status"]').innerText();
+  const d18History = (page) => page.locator('[data-testid="combat-history"] ol').innerText();
+  const d18Boot = (scenario) =>
+    boot(undefined, { fast: true, url: d18Url(scenario) });
+
+  {
+    const { page, errors } = await d18Boot("tax-paid");
+    check("D18 paid tax fixture exposes the fire demand", (await page.locator('[data-testid="royal-tax-demand"]').count()) === 1);
+    check("D18 paid tax can load two demanded coins", await loadD18(page, 1, [".hand-tray .coin.fire", ".hand-tray .coin.fire"]));
+    await endD18Turn(page);
+    check(
+      "D18 paid tax reduces only the next ordinary strike from 10 to 8",
+      (await d18Hp(page)) === 492 && (await page.locator('[data-testid="royal-tax-demand"]').count()) === 0,
+      `hp=${await d18Hp(page)}`,
+    );
+    check("D18 paid-tax path has no browser errors", errors.length === 0, errors.join(" | "));
+    await page.context().close();
+  }
+
+  {
+    const { page, errors } = await d18Boot("tax-default");
+    await endD18Turn(page);
+    await endD18Turn(page);
+    check(
+      "D18 tax default creates one counterfeit with no shield",
+      (await page.locator('[data-testid="royal-tax-demand"]').count()) === 0 &&
+        (await page.locator(".unit.enemy .shield, .unit.enemy [aria-label*='방어']").count()) === 0,
+    );
+    check("D18 tax-default path has no browser errors", errors.length === 0, errors.join(" | "));
+    await page.context().close();
+  }
+
+  {
+    const { page, errors } = await d18Boot("foreclose");
+    const nominations = await page.locator('[data-testid="royal-vault-seizure-nominations"]').innerText();
+    check("D18 foreclosure freezes its one-turn nominated UID", nominations.includes("1"), nominations);
+    check("D18 foreclosure lets the nominated coin be spent", await loadD18(page, 1, [".hand-tray .coin.fire", ".hand-tray .coin.fire"]));
+    await endD18Turn(page);
+    const vault = await d18Vault(page);
+    check("D18 foreclosure resolves only surviving frozen nominees", vault.includes("0/6"), vault);
+    check("D18 foreclosure spend-to-escape has no browser errors", errors.length === 0, errors.join(" | "));
+    await page.context().close();
+  }
+
+  {
+    const { page, errors } = await d18Boot("lead");
+    check("D18 Lead fixture starts with three pending transformations", (await page.locator('[data-testid="lead-decree-status"]').innerText()).includes("3/3"));
+    check("D18 Lead distinct-elements weakening accepts authored fire and frost UIDs", await loadD18(page, 5, [".hand-tray .coin.fire", ".hand-tray .coin.frost"]));
+    check("D18 Lead unblocked skill damage can load Comet Blow", await loadD18(page, 3, [".hand-tray .coin.fire", ".hand-tray .coin.fire", ".hand-tray .coin.fire", ".hand-tray .coin.fire"]));
+    await endD18Turn(page);
+    const afterDamage = await page.locator('[data-testid="lead-decree-status"]').innerText();
+    const history = await d18History(page);
+    check("D18 Lead distinct-elements route weakens the active windup", afterDamage.includes("1/3") && afterDamage.includes("약화 1"), `${afterDamage} ${history.replace(/\n/g, " | ")}`);
+    check("D18 Lead transforms a newly generated temporary elemental coin after windup", await loadD18(page, 2, [".hand-tray .coin.fire", ".hand-tray .coin.fire"]));
+    await endD18Turn(page);
+    check("D18 Lead post-windup generator remains playable", (await page.locator('[data-testid="lead-decree-status"]').count()) === 1);
+    check("D18 Lead routes have no browser errors", errors.length === 0, errors.join(" | "));
+    await page.context().close();
+  }
+
+  {
+    const { page, errors } = await d18Boot("seizure");
+    const nominations = await page.locator('[data-testid="royal-vault-seizure-nominations"]').innerText();
+    check("D18 phase-three seizure shows exact frozen nominees", nominations.includes("1") && nominations.includes("2"), nominations);
+    await endD18Turn(page);
+    const vault = await d18Vault(page);
+    check("D18 phase-three seizure resolves only nominated UIDs still held at resolution", vault.includes("0/6"), vault);
+    check("D18 phase-three exact seizure has no browser errors", errors.length === 0, errors.join(" | "));
+    await page.context().close();
+  }
+
+  {
+    const { page, errors } = await d18Boot("crown-recovery");
+    await endD18Turn(page);
+    const vault = await d18Vault(page);
+    check("D18 Crown cancels after two vault recoveries and returns the oldest", (await d18Hp(page)) === 500 && vault.includes("1/6") && vault.includes("2:"), `hp=${await d18Hp(page)} ${vault}`);
+    check("D18 Crown recovery cancellation has no browser errors", errors.length === 0, errors.join(" | "));
+    await page.context().close();
+  }
+
+  {
+    const { page, errors } = await d18Boot("crown-damage");
+    check("D18 Crown damage cancel can load the 16-damage skill", await loadD18(page, 3, [".hand-tray .coin.fire", ".hand-tray .coin.fire", ".hand-tray .coin.fire", ".hand-tray .coin.fire"]));
+    await endD18Turn(page);
+    const vault = await d18Vault(page);
+    check("D18 Crown cancels on skill damage 10 and returns the oldest", (await d18Hp(page)) === 500 && vault.includes("1/6") && vault.includes("6:"), `hp=${await d18Hp(page)} ${vault}`);
+    check("D18 Crown skill-damage cancellation has no browser errors", errors.length === 0, errors.join(" | "));
+    await page.context().close();
+  }
+
+  {
+    const { page, errors } = await d18Boot("crown-resolve");
+    await endD18Turn(page);
+    const vault = await d18Vault(page);
+    const intent = await page.locator(".unit.enemy .intent").innerText();
+    check("D18 Crown resolves for 22, returns oldest, leaves vault five, and yields to ordinary strike", (await d18Hp(page)) === 478 && vault.includes("5/6") && vault.includes("2:") && intent.includes("10"), `hp=${await d18Hp(page)} ${vault} ${intent}`);
+    check("D18 Crown resolve path has no browser errors", errors.length === 0, errors.join(" | "));
+    await page.context().close();
+  }
+
+  {
+    const { page, errors } = await d18Boot("victory");
+    check("D18 victory fixture can load a finishing skill", await loadD18(page, 5, [".hand-tray .coin.fire", ".hand-tray .coin.fire"]));
+    await page.locator(".end-turn").click();
+    await page.waitForTimeout(1000);
+    check("D18 Aurel fight reaches victory", (await page.locator('[data-testid="reward-overlay"], [data-testid="run-result"], .result-overlay').count()) > 0);
+    check("D18 victory path has no browser errors", errors.length === 0, errors.join(" | "));
+    await page.context().close();
+  }
+}
+
 await browser.close();
+if (d18Server !== null) await d18Server.close();
 if (server !== null)
   await new Promise((resolveClose) => server.httpServer.close(resolveClose));
 
