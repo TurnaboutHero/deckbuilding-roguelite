@@ -136,7 +136,7 @@ describe('Directive 14 Batch D M09 coin custody', () => {
     const resolved = resolveEnemy(prepared, content).state;
     const custody = d14(resolved).custody;
 
-    expect(custody).toEqual([{ sourceEnemy: 0, coins: [fireA], element: 'fire', seizureOrder: 0 }]);
+    expect(custody).toEqual([{ sourceEnemy: 0, sourceEnemyUid: 1, coins: [fireA], element: 'fire', seizureOrder: 0 }]);
     expect(resolved.zones.hand).not.toContain(fireA);
     expect(resolved.coins[Number(fireA)]).toMatchObject({ uid: fireA, enchant: 'sharpness' });
   });

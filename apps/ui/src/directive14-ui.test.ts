@@ -8,11 +8,13 @@ import { combatEventLogSummary, IntentBadge, SkillSealBadges } from "./App";
 const enemy = (overrides: Partial<CombatState["enemies"][number]>): CombatState["enemies"][number] => ({
   block: 0,
   defId: "black-pouch-coin-thief" as never,
+  enemyUid: 0,
   hp: 44,
   intent: { id: "seize-purse", actions: [{ kind: "seizeCustody" }] },
   intentIndex: 0,
   maxHp: 44,
   nextAttackBonus: 0,
+  slot: 0,
   statuses: {},
   ...overrides,
 });

@@ -2287,6 +2287,50 @@ export const enemies = {
       { id: 'audit-six', actions: [{ kind: 'attack', damage: 6 }] }
     ]
   },
+  // Directive 16 Batch E — summoned units are combat-only definitions and
+  // never enter graph encounter pools on their own.
+  'mortbell-bonebell-necromancer': {
+    id: enemy('mortbell-bonebell-necromancer'),
+    name: '모르트벨 뼈종 사령술사',
+    maxHp: 50,
+    intents: [
+      { id: 'bone-shard', actions: [{ kind: 'attack', damage: 6 }] },
+      {
+        id: 'raise-skeleton',
+        windup: { turns: 1, revealAtStart: true },
+        actions: [{ kind: 'summonEnemies', enemy: enemy('skeleton-servant'), maxCount: 2 }]
+      }
+    ]
+  },
+  'skeleton-servant': {
+    id: enemy('skeleton-servant'),
+    name: '해골 시종',
+    maxHp: 15,
+    intents: [{ id: 'rattle-strike', actions: [{ kind: 'attack', damage: 4 }] }]
+  },
+  'fenmarsh-eggkeeper-witch': {
+    id: enemy('fenmarsh-eggkeeper-witch'),
+    name: '펜마르시 알지기 마녀',
+    maxHp: 55,
+    intents: [
+      { id: 'marsh-curse', actions: [{ kind: 'attack', damage: 6 }] },
+      { id: 'lay-eggs', actions: [{ kind: 'summonEnemies', enemy: enemy('mud-egg'), maxCount: 2 }] },
+      { id: 'accelerate-brood', actions: [{ kind: 'accelerateHatching', amount: 1 }] }
+    ]
+  },
+  'mud-egg': {
+    id: enemy('mud-egg'),
+    name: '진흙 알',
+    maxHp: 10,
+    hatch: { into: enemy('marsh-hatchling'), turns: 2, delayAtHpFraction: 0.5 },
+    intents: [{ id: 'incubate', actions: [{ kind: 'tickHatch' }] }]
+  },
+  'marsh-hatchling': {
+    id: enemy('marsh-hatchling'),
+    name: '늪지 부화체',
+    maxHp: 18,
+    intents: [{ id: 'marsh-bite', actions: [{ kind: 'attack', damage: 5 }] }]
+  },
   'ember-archmage': {
     id: enemy('ember-archmage'),
     name: '잿불 마도왕',

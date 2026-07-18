@@ -12,11 +12,13 @@ const enemy = (
 ): CombatState["enemies"][number] => ({
   block: 0,
   defId: "blackthorn-inquisitor-roderick" as never,
+  enemyUid: 0,
   hp: 96,
   intent: intent("warden-strike"),
   intentIndex: 0,
   maxHp: 96,
   nextAttackBonus: 0,
+  slot: 0,
   statuses: {},
   ...overrides,
 });

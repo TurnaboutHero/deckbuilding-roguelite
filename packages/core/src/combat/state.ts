@@ -115,6 +115,7 @@ export interface SkillSealState extends SkillSealOwner {
 
 export interface CoinCustody {
   sourceEnemy: number;
+  sourceEnemyUid?: number;
   coins: CoinUid[];
   element: Element;
   seizureOrder: number;
@@ -144,6 +145,10 @@ export interface RoyalTaxPendingState {
 
 export interface EnemyState extends UnitState {
   defId: EnemyDefId;
+  enemyUid: number;
+  slot: number;
+  summonSick?: boolean;
+  hatch?: { into?: EnemyDefId; turnsRemaining: number; delayed: boolean; delayAtHpFraction?: number };
   intent: EnemyIntent;
   intentIndex: number;
   nextAttackBonus: number;

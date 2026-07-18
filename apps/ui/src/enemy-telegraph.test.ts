@@ -9,11 +9,13 @@ import { KEYWORD_GLOSSARY } from "./keywords";
 const enemy = (overrides: Partial<CombatState["enemies"][number]>): CombatState["enemies"][number] => ({
   block: 0,
   defId: "silverbell-healer" as never,
+  enemyUid: 0,
   hp: 20,
   intent: { id: "idle", actions: [] },
   intentIndex: 0,
   maxHp: 30,
   nextAttackBonus: 0,
+  slot: 0,
   statuses: {},
   ...overrides,
 });

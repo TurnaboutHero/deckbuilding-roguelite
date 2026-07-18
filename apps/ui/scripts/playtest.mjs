@@ -5327,7 +5327,7 @@ const phaseAttr = (page, name) =>
 }
 }
 
-// ---------- p13-multi-enemy: 3/4/5적 전투 레이아웃 + 상점 설명 ----------
+// ---------- p13-multi-enemy: 라이브 상한 3적 전투 레이아웃 + 상점 설명 ----------
 if (onlyScope === null || onlyScope === "p13") {
   console.log("\n[p13-multi-enemy]");
   const p13OutDir = resolve(outDir, "p13-layout");
@@ -5339,11 +5339,7 @@ if (onlyScope === null || onlyScope === "p13") {
     { width: 1600, height: 900 },
     { width: 1920, height: 1080 },
   ];
-  const encounters = [
-    "trio-ghoul-goblin-slime",
-    "quad-ghoul-goblin-slime-thief",
-    "quint-ghoul-goblin-slime-thief-mage",
-  ];
+  const encounters = ["trio-ghoul-goblin-slime"];
   for (const viewport of viewports) {
     for (const encounter of encounters) {
       const { page, errors } = await boot(viewport, {
@@ -5404,7 +5400,7 @@ if (onlyScope === null || onlyScope === "p13") {
           turnVisible: turn instanceof HTMLElement && visible(turn),
         };
       });
-      const expectedEnemies = encounter.startsWith("trio") ? 3 : encounter.startsWith("quad") ? 4 : 5;
+      const expectedEnemies = 3;
       check(
         `P13 ${viewport.width}x${viewport.height} ${encounter} enemy plates inside viewport`,
         layout.enemyCount === expectedEnemies && layout.platesInside,

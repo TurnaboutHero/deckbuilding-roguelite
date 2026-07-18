@@ -17,6 +17,7 @@ import type { Command } from './commands';
 import { drawCards, drawSpecificCoin } from './draw';
 import { resolveRoyalTaxDeadlines } from './directive15';
 import { initialIntent, runEnemyPhase } from './enemy';
+import { createEnemyState, MAX_ENEMY_SLOTS } from './enemy-state';
 import { runSummonPhase } from './summons';
 import type { CombatEvent } from './events';
 import { resolveConsume } from './resolve/consume';
@@ -187,6 +188,7 @@ const startPlayerTurn = (input: CombatState, db: ContentDb, clearBlock = true): 
 export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: string): CombatState => {
   const character = db.characters[String(cfg.character)];
   if (character === undefined) throw new Error('unknown character');
+  if (cfg.enemies.length > MAX_ENEMY_SLOTS) throw new Error(`combat supports at most ${MAX_ENEMY_SLOTS} enemies`);
   if (cfg.combatIndex !== undefined && (!Number.isInteger(cfg.combatIndex) || cfg.combatIndex < 0)) {
     throw new Error('combatIndex must be a non-negative integer');
   }
@@ -271,13 +273,14 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
   for (const passiveId of cfg.passives ?? []) {
     if ((db.passives ?? {})[String(passiveId)] === undefined) throw new Error(`unknown passive: ${String(passiveId)}`);
   }
-  const enemies = cfg.enemies.map((enemyId) => {
+  const enemies = cfg.enemies.map((enemyId, index) => {
     const def = db.enemies[String(enemyId)];
     if (def === undefined) throw new Error('unknown enemy');
     const intent = initialIntent(String(enemyId), db);
     // P6 D1 — 막별 스케일: HP만 여기서, 공격 피해는 적 페이즈에서 동일 배율 (블록/회복 원수치)
     const scaledMaxHp = Math.round(def.maxHp * enemyScale);
     return {
+      ...createEnemyState(enemyId, db, { enemyScale, enemyUid: index + 1, slot: index }),
       defId: enemyId,
       hp: scaledMaxHp,
       maxHp: scaledMaxHp,

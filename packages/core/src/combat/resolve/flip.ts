@@ -280,6 +280,12 @@ const applyEnemyDamage = (
     source === 'skill' &&
     enemy.windup?.cancelThreshold !== undefined &&
     Math.max(0, enemy.windup.startHp - nextHp) >= enemy.windup.cancelThreshold;
+  const hatchDelay =
+    enemy.hatch !== undefined &&
+    !enemy.hatch.delayed &&
+    nextHp > 0 &&
+    enemy.hp > enemy.maxHp * (enemy.hatch.delayAtHpFraction ?? 0.5) &&
+    nextHp <= enemy.maxHp * (enemy.hatch.delayAtHpFraction ?? 0.5);
   const enemies = state.enemies.map((candidate, index) =>
     index === enemyIndex
       ? {
@@ -290,11 +296,15 @@ const applyEnemyDamage = (
           damageTakenThisRound:
             (candidate.damageTakenThisRound ?? 0) + (countsTowardRoundGrowth ? hpDamage : 0),
           windup: shouldCancelWindup ? undefined : candidate.windup,
-          cancelledWindupIntentId: shouldCancelWindup ? enemy.windup?.intent.id : candidate.cancelledWindupIntentId
+          cancelledWindupIntentId: shouldCancelWindup ? enemy.windup?.intent.id : candidate.cancelledWindupIntentId,
+          hatch: hatchDelay && candidate.hatch !== undefined
+            ? { ...candidate.hatch, delayed: true, turnsRemaining: candidate.hatch.turnsRemaining + 1 }
+            : candidate.hatch
         }
       : candidate
   );
   events.push({ type: 'damageDealt', target: { type: 'enemy', index: enemyIndex }, amount: hpDamage, blocked, source });
+  if (hatchDelay) events.push({ type: 'enemyHatchDelayed', sourceEnemyUid: enemy.enemyUid ?? enemyIndex + 1 });
   if (shouldCancelWindup && enemy.windup !== undefined) {
     events.push({ type: 'enemyWindupCancelled', enemy: enemyIndex, intent: enemy.windup.intent });
   }
@@ -358,14 +368,18 @@ export const cleanupDeadEnemies = (state: CombatState, events: CombatEvent[]): C
       }
     }
     if (dead.warBannerAuraPercent !== undefined) events.push({ type: 'enemyAuraRemoved', source });
-    const returned = custody.filter((entry) => entry.sourceEnemy === source).sort((left, right) => left.seizureOrder - right.seizureOrder);
+    const deadUid = dead.enemyUid ?? source + 1;
+    events.push({ type: 'enemyRemoved', enemyUid: deadUid, reason: 'killed' });
+    const returned = custody
+      .filter((entry) => entry.sourceEnemy === source && (entry.sourceEnemyUid === undefined || entry.sourceEnemyUid === deadUid))
+      .sort((left, right) => left.seizureOrder - right.seizureOrder);
     returnedCustody = returnedCustody || returned.length > 0;
     for (const entry of returned) {
       discard = [...discard, ...entry.coins];
       const event: CombatEvent = { type: 'coinsReturned', sourceEnemy: source, coins: [...entry.coins] };
       events.push(event);
     }
-    custody = custody.filter((entry) => entry.sourceEnemy !== source);
+    custody = custody.filter((entry) => !(entry.sourceEnemy === source && (entry.sourceEnemyUid === undefined || entry.sourceEnemyUid === deadUid)));
     enemies = enemies.map((candidate, index) => index === source ? { ...candidate, deathCleanupComplete: true } : candidate);
   }
   if (enemies === state.enemies) return state;

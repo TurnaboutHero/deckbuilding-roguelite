@@ -5,6 +5,7 @@ import { isSlotUsableNow } from './commands';
 import { openRoyalTax, resetRepeatSkillPressure, resetRoyalTaxDefaults, sealTriggeredSkill } from './directive15';
 import { rngFrom } from '../rng';
 import type { CombatEvent } from './events';
+import { createEnemyState, MAX_ENEMY_SLOTS } from './enemy-state';
 import { applyBlock, applyDamage, applyEffectAtom, checkCombatEnd } from './resolve/flip';
 import { aggregateSkillSeal, assertCombatCoinZoneInvariant, skillSealOwners, statusStacks, statusTurns } from './state';
 import type { CombatState } from './state';
@@ -59,6 +60,70 @@ const withEnemy = (state: CombatState, enemyIndex: number, update: (enemy: Comba
   ...state,
   enemies: state.enemies.map((enemy, index) => (index === enemyIndex ? update(enemy) : enemy))
 });
+
+const enemyUid = (enemy: CombatState['enemies'][number], index: number): number => enemy.enemyUid ?? index + 1;
+
+const transformHatch = (state: CombatState, enemyIndex: number, db: ContentDb, events: CombatEvent[]): CombatState => {
+  const current = state.enemies[enemyIndex];
+  const hatch = current?.hatch;
+  if (current === undefined || current.hp <= 0 || hatch === undefined || hatch.turnsRemaining > 0) return state;
+  const into = hatch.into ?? db.enemies[String(current.defId)]?.hatch?.into;
+  if (into === undefined) return state;
+  const transformed = createEnemyState(into, db, {
+    enemyScale: state.enemyScale,
+    enemyUid: enemyUid(current, enemyIndex),
+    slot: current.slot,
+    summonSick: true,
+    statuses: current.statuses
+  });
+  events.push({ type: 'enemyHatched', sourceEnemyUid: enemyUid(current, enemyIndex), into: String(into) });
+  return withEnemy(state, enemyIndex, () => ({
+    ...transformed,
+    protectionLink: current.protectionLink === undefined ? undefined : { ...current.protectionLink }
+  }));
+};
+
+const tickHatch = (state: CombatState, enemyIndex: number, amount: number, db: ContentDb, events: CombatEvent[]): CombatState => {
+  const current = state.enemies[enemyIndex];
+  if (current === undefined || current.hp <= 0 || current.hatch === undefined) return state;
+  const turnsRemaining = Math.max(0, current.hatch.turnsRemaining - amount);
+  const next = withEnemy(state, enemyIndex, (candidate) => ({
+    ...candidate,
+    hatch: candidate.hatch === undefined ? undefined : { ...candidate.hatch, turnsRemaining }
+  }));
+  return transformHatch(next, enemyIndex, db, events);
+};
+
+const summonEnemies = (state: CombatState, sourceIndex: number, enemy: string, maxCount: number, db: ContentDb, events: CombatEvent[]): CombatState => {
+  const source = state.enemies[sourceIndex];
+  if (source === undefined || source.hp <= 0) return state;
+  if (db.enemies[enemy] === undefined) throw new Error(`unknown summoned enemy: ${enemy}`);
+  let next = state;
+  let summoned = 0;
+  for (let count = 0; count < maxCount; count += 1) {
+    const occupied = new Set(next.enemies.filter((candidate) => candidate.hp > 0).map((candidate, index) => candidate.slot ?? index));
+    const slot = Array.from({ length: MAX_ENEMY_SLOTS }, (_, index) => index).find((candidate) => !occupied.has(candidate));
+    if (slot === undefined) break;
+    const uid = Math.max(0, ...next.enemies.map((candidate, index) => enemyUid(candidate, index))) + 1;
+    const entrant = createEnemyState(enemy as typeof source.defId, db, {
+      enemyScale: next.enemyScale,
+      enemyUid: uid,
+      slot,
+      summonSick: true
+    });
+    const replacementIndex = next.enemies.findIndex((candidate, index) => candidate.hp <= 0 && (candidate.slot ?? index) === slot);
+    next = {
+      ...next,
+      enemies: replacementIndex < 0
+        ? [...next.enemies, entrant]
+        : next.enemies.map((candidate, index) => index === replacementIndex ? entrant : candidate)
+    };
+    events.push({ type: 'enemySummoned', sourceEnemyUid: enemyUid(source, sourceIndex), enemy, slot, enemyUid: uid });
+    summoned += 1;
+  }
+  if (summoned === 0) events.push({ type: 'enemySummonFailed', sourceEnemyUid: enemyUid(source, sourceIndex), enemy, maxCount });
+  return next;
+};
 
 const clearStaleRepeatPressure = (state: CombatState, enemyIndex: number, db: ContentDb, events: CombatEvent[]): CombatState => {
   const pressure = state.enemies[enemyIndex]?.repeatSkillPressure;
@@ -183,7 +248,7 @@ const seizeCustody = (state: CombatState, enemyIndex: number, events: CombatEven
   events.push({ type: 'coinsSeized', sourceEnemy: enemyIndex, coins, element: telegraph.element, seizureOrder });
   const next = {
     ...withEnemy(state, enemyIndex, (candidate) => ({ ...candidate, coinSeizure: undefined })),
-    custody: [...state.custody, { sourceEnemy: enemyIndex, coins, element: telegraph.element, seizureOrder }],
+    custody: [...state.custody, { sourceEnemy: enemyIndex, sourceEnemyUid: enemyUid(state.enemies[enemyIndex]!, enemyIndex), coins, element: telegraph.element, seizureOrder }],
     zones: { ...state.zones, hand: state.zones.hand.filter((coin) => !coins.includes(coin)) }
   };
   assertCombatCoinZoneInvariant(next);
@@ -267,6 +332,11 @@ const maybeStartWindup = (state: CombatState, enemyIndex: number, db: ContentDb,
     turnsLeft: windup.turnsLeft,
     ...(windup.cancelThreshold === undefined ? {} : { cancelThreshold: windup.cancelThreshold })
   });
+  for (const action of enemy.intent.actions) {
+    if (action.kind === 'summonEnemies') {
+      events.push({ type: 'enemySummonTelegraphed', sourceEnemyUid: enemyUid(enemy, enemyIndex), enemy: String(action.enemy), maxCount: action.maxCount });
+    }
+  }
   const started = withEnemy(state, enemyIndex, (candidate) => ({ ...candidate, windup, boundHealAlly }));
   return { state: beginCoinSeizureTelegraph(started, enemyIndex, db, events), started: true };
 };
@@ -321,6 +391,13 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
     player: { ...input.player, armorEchoAbsorbedThisEnemyTurn: 0, precisionDefenseSatisfied: false, armorEchoAvailable: false }
   };
 
+  // Entrants remain inactive for the phase in which they were created.  A
+  // previously summoned enemy becomes available at the start of the next one.
+  state = {
+    ...state,
+    enemies: state.enemies.map((enemy) => enemy.summonSick === true ? { ...enemy, summonSick: false } : enemy)
+  };
+
   state = {
     ...state,
     enemies: state.enemies.map((enemy, index) => {
@@ -346,7 +423,7 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
 
   for (let enemyIndex = 0; enemyIndex < state.enemies.length; enemyIndex += 1) {
     const enemy = state.enemies[enemyIndex];
-    if (enemy === undefined || enemy.hp <= 0) continue;
+    if (enemy === undefined || enemy.hp <= 0 || enemy.summonSick === true) continue;
     if (enemy.roundGrowth !== undefined && (enemy.growthStacks ?? 0) > 0) {
       const requested = Math.round(
         enemy.maxHp * enemy.roundGrowth.healMaxHpFractionPerStack * (enemy.growthStacks ?? 0)
@@ -449,6 +526,21 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
       if (actingEnemy === undefined || actingEnemy.hp <= 0) break;
       if (action.kind === 'seizeCustody') {
         state = seizeCustody(state, enemyIndex, events);
+      } else if (action.kind === 'summonEnemies') {
+        if (resolvedIntent?.windup === undefined) {
+          events.push({ type: 'enemySummonTelegraphed', sourceEnemyUid: enemyUid(actingEnemy, enemyIndex), enemy: String(action.enemy), maxCount: action.maxCount });
+        }
+        state = summonEnemies(state, enemyIndex, String(action.enemy), action.maxCount, db, events);
+      } else if (action.kind === 'tickHatch') {
+        state = tickHatch(state, enemyIndex, 1, db, events);
+      } else if (action.kind === 'accelerateHatching') {
+        const sourceUid = enemyUid(actingEnemy, enemyIndex);
+        for (let target = 0; target < state.enemies.length; target += 1) {
+          const targetEnemy = state.enemies[target];
+          if (targetEnemy === undefined || targetEnemy.hp <= 0 || targetEnemy.hatch === undefined) continue;
+          events.push({ type: 'enemyHatchAccelerated', sourceEnemyUid: sourceUid, targetEnemyUid: enemyUid(targetEnemy, target), amount: action.amount });
+          state = tickHatch(state, target, action.amount, db, events);
+        }
       } else if (action.kind === 'sealTriggeredSkill') {
         state = sealTriggeredSkill(state, enemyIndex, action.turns, events);
       } else if (action.kind === 'resetRepeatSkillPressure') {
@@ -632,6 +724,9 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
     state = withEnemy(state, enemyIndex, (candidate) => ({
       ...candidate,
       boundHealAlly: undefined,
+      ...(resolvedIntent?.windup !== undefined && resolvedIntent.actions.some((action) => action.kind === 'summonEnemies')
+        ? { intentIndex: -1 }
+        : {}),
       ...(completedPetrifyIntent !== undefined && resolvedIntent?.id === completedPetrifyIntent
         ? { petrifyActive: false, petrifyRawDamage: 0 }
         : {})
@@ -643,7 +738,7 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
     for (const status of ['burn', 'poison'] as const) {
       const enemy = state.enemies[enemyIndex];
       const stacks = enemy === undefined ? 0 : statusStacks(enemy.statuses, status);
-      if (enemy === undefined || enemy.hp <= 0 || stacks <= 0) continue;
+      if (enemy === undefined || enemy.hp <= 0 || enemy.summonSick === true || stacks <= 0) continue;
       state = applyDamage(state, { type: 'enemy', index: enemyIndex }, stacks, status, events);
       const updated = state.enemies[enemyIndex];
       if (updated !== undefined) {
@@ -661,7 +756,7 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
 
   for (let enemyIndex = 0; enemyIndex < state.enemies.length; enemyIndex += 1) {
     const enemy = state.enemies[enemyIndex];
-    if (enemy === undefined || enemy.hp <= 0) continue;
+    if (enemy === undefined || enemy.hp <= 0 || enemy.summonSick === true) continue;
     const suppressesDischarge = state.passives.some((id) => (db.passives ?? {})[String(id)]?.mechanic === 'dischargeSuppression');
     const maxShock = Math.max(0, ...state.enemies.map((candidate) => candidate.statuses.shock?.kind === 'duration' ? candidate.statuses.shock.turns : 0));
     const maxShockEnemyIndexes = state.enemies.flatMap((candidate, index) =>

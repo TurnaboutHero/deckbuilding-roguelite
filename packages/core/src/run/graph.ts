@@ -107,6 +107,12 @@ const BATCH_D_POOL = [
   [enemy("black-pouch-coin-thief")],
   [enemy("grey-tower-sealer")],
 ] as const;
+// Directive 16 Batch E: only their summoners are eligible late-act opening
+// encounters. Skeletons, eggs, and hatchlings are combat-only entrants.
+const DIRECTIVE16_LATE_COMBAT_POOL = [
+  [enemy("mortbell-bonebell-necromancer")],
+  [enemy("fenmarsh-eggkeeper-witch")],
+] as const;
 const ELITE_POOL = [[enemy("raider-plus")], [enemy("gatekeeper-plus")]] as const;
 const DIRECTIVE15_ELITE_POOL = [[enemy("blackthorn-inquisitor-roderick")], [enemy("fallen-kings-treasurer-marcel")]] as const;
 
@@ -119,13 +125,18 @@ const ACT_BOSSES = [
 ] as const;
 
 // 방문 깊이별 전투 조우 풀 — 막 내 방문 1~3 단일, 4~6 2체, 7~8 2~3체 혼합
-const combatPoolFor = (act: number, visit: number): readonly (readonly EnemyDefId[])[] => {
+const combatPoolFor = (db: ContentDb, act: number, visit: number): readonly (readonly EnemyDefId[])[] => {
   if (visit <= 2) return SINGLE_POOL;
+  // Match D15's fixture-safe optional-content contract: minimal graph test
+  // databases continue to use their original pools and RNG consumption.
+  const optionalD16Pool = act >= 1
+    ? DIRECTIVE16_LATE_COMBAT_POOL.filter((encounter) => hasEnemies(db, encounter))
+    : [];
   if (act === 0) {
     if (visit <= 5) return TWO_POOL;
     return [...TWO_POOL, ...THREE_POOL];
   }
-  if (visit <= 5) return [...TWO_POOL, ...BATCH_A_TWO_POOL, ...BATCH_B_TWO_POOL, ...BATCH_C_TWO_POOL, ...BATCH_D_POOL];
+  if (visit <= 5) return [...TWO_POOL, ...BATCH_A_TWO_POOL, ...BATCH_B_TWO_POOL, ...BATCH_C_TWO_POOL, ...BATCH_D_POOL, ...optionalD16Pool];
   return [
     ...TWO_POOL,
     ...BATCH_A_TWO_POOL,
@@ -136,6 +147,7 @@ const combatPoolFor = (act: number, visit: number): readonly (readonly EnemyDefI
     ...BATCH_A_THREE_POOL,
     ...BATCH_B_THREE_POOL,
     ...BATCH_C_THREE_POOL,
+    ...optionalD16Pool,
   ];
 };
 
@@ -163,7 +175,7 @@ const candidateNode = (
   rng: Rng,
 ): RunNode => {
   if (kind === "combat") {
-    const pool = combatPoolFor(Math.floor(visit / VISITS_PER_ACT), visit % VISITS_PER_ACT).filter((encounter) => hasEnemies(db, encounter));
+    const pool = combatPoolFor(db, Math.floor(visit / VISITS_PER_ACT), visit % VISITS_PER_ACT).filter((encounter) => hasEnemies(db, encounter));
     if (pool.length === 0) throw new Error("missing graph combat pool enemies");
     const encounter = pool[rng.int(pool.length)]!;
     requireEnemies(db, encounter);

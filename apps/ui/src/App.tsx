@@ -507,6 +507,8 @@ export const shouldShowOverheatBadges = (character: CharacterId): boolean => Str
 const enemyDisplayName = (enemy: CombatState["enemies"][number] | undefined): string =>
   enemy === undefined ? "아군" : (contentDb.enemies[String(enemy.defId)]?.name ?? "아군");
 
+const enemyNameByDefId = (defId: string): string => contentDb.enemies[defId]?.name ?? defId;
+
 export const IntentBadge = ({
   enemy,
   enemies = [],
@@ -522,6 +524,7 @@ export const IntentBadge = ({
   const coinSeizure = enemy.coinSeizure;
   const repeatPressure = enemy.repeatSkillPressure;
   const royalTax = enemy.royalTaxPending;
+  const hatch = enemy.hatch;
   const repeatConfig = enemyDef?.repeatSkillPressure;
   const taxConfig = enemyDef?.royalTax;
   const repeatedSlot = repeatPressure?.triggeringSlot ?? -1;
@@ -559,6 +562,19 @@ export const IntentBadge = ({
             </Keyword>
           ) : null}
         </>
+      ) : null}
+      {hatch !== undefined ? (
+        <span
+          aria-label={`부화 ${hatch.turnsRemaining}턴 남음${hatch.delayed ? ", 지연됨" : ""}`}
+          data-testid="enemy-hatch-status"
+        >
+          부화 {hatch.turnsRemaining}턴{hatch.delayed ? " · 지연" : ""}
+        </span>
+      ) : null}
+      {enemy.summonSick === true ? (
+        <span aria-label="소환 직후: 이번 적 턴에는 행동하지 않음" data-testid="enemy-summon-sick-status">
+          소환 직후 · 행동 대기
+        </span>
       ) : null}
       {coinSeizure !== undefined ? (
         <span
@@ -700,6 +716,22 @@ export const IntentBadge = ({
             {boundHealAllyName === undefined ? "" : ` → ${boundHealAllyName}`}
             {action.cleanse === undefined ? "" : ` · 정화 ${action.cleanse}`}
           </span>
+        ) : action.kind === "summonEnemies" ? (
+          <span
+            key={index}
+            aria-label={`${enemyNameByDefId(String(action.enemy))}을 최대 ${action.maxCount}마리 소환`}
+            data-testid="enemy-summon-intent"
+          >
+            소환 · {enemyNameByDefId(String(action.enemy))} 최대 {action.maxCount}마리
+          </span>
+        ) : action.kind === "tickHatch" ? (
+          <span key={index} aria-label={`부화 진행, ${hatch?.turnsRemaining ?? "?"}턴 남음`} data-testid="enemy-hatch-intent">
+            부화 진행 · {hatch?.turnsRemaining ?? "?"}턴
+          </span>
+        ) : action.kind === "accelerateHatching" ? (
+          <span key={index} aria-label={`아군 알 부화 ${action.amount}턴 가속`} data-testid="enemy-hatch-accelerate-intent">
+            부화 가속 · {action.amount}턴
+          </span>
         ) : (
           (() => {
             const exhaustive: never = action;
@@ -817,6 +849,17 @@ const remiseResolutionLines = (events: readonly CombatEvent[]): string[] =>
 
 const combatEventResolutionLines = (events: readonly CombatEvent[]): string[] =>
   events.flatMap((event) => {
+    if (event.type === "enemySummonTelegraphed")
+      return [`적 ${event.sourceEnemyUid} 소환 예고 · ${enemyNameByDefId(event.enemy)} 최대 ${event.maxCount}마리`];
+    if (event.type === "enemySummoned")
+      return [`적 ${event.sourceEnemyUid} 소환 완료 · ${enemyNameByDefId(event.enemy)} ${event.slot + 1}번 자리 (UID ${event.enemyUid})`];
+    if (event.type === "enemySummonFailed")
+      return [`적 ${event.sourceEnemyUid} 소환 실패 · ${enemyNameByDefId(event.enemy)} 최대 ${event.maxCount}마리`];
+    if (event.type === "enemyRemoved") return [`적 UID ${event.enemyUid} 제거 · 처치`];
+    if (event.type === "enemyHatchDelayed") return [`적 ${event.sourceEnemyUid} 부화 지연 · 1턴 연기`];
+    if (event.type === "enemyHatchAccelerated")
+      return [`적 ${event.sourceEnemyUid} 부화 가속 · 대상 UID ${event.targetEnemyUid}, ${event.amount}턴 단축`];
+    if (event.type === "enemyHatched") return [`적 ${event.sourceEnemyUid} 부화 완료 · ${enemyNameByDefId(event.into)}`];
     if (event.type === "repeatSkillZealChanged")
       return [`적 ${event.sourceEnemy + 1} 열의 · 반복 스킬 ${String(event.skill)} ${event.zeal}/${event.maxZeal}`];
     if (event.type === "repeatSkillZealReset") return [`적 ${event.sourceEnemy + 1} 열의 초기화`];
@@ -1118,16 +1161,6 @@ const testEncounterFromUrl = (): readonly EnemyDefId[] | null => {
   if (encounter === "duo-raiders") return ["raider" as EnemyDefId, "raider" as EnemyDefId] as const;
   if (encounter === "trio-ghoul-goblin-slime")
     return ["ghoul" as EnemyDefId, "goblin" as EnemyDefId, "slime" as EnemyDefId] as const;
-  if (encounter === "quad-ghoul-goblin-slime-thief")
-    return ["ghoul" as EnemyDefId, "goblin" as EnemyDefId, "slime" as EnemyDefId, "thief" as EnemyDefId] as const;
-  if (encounter === "quint-ghoul-goblin-slime-thief-mage")
-    return [
-      "ghoul" as EnemyDefId,
-      "goblin" as EnemyDefId,
-      "slime" as EnemyDefId,
-      "thief" as EnemyDefId,
-      "mage" as EnemyDefId,
-    ] as const;
   if (encounter === "raider") return ["raider" as EnemyDefId] as const;
   if (encounter === "slime") return ["slime" as EnemyDefId] as const; // 자동 실행 승리 단축 회귀용 저체력 단일 적
   if (encounter === "ghoul") return ["ghoul" as EnemyDefId] as const; // S32 몬스터 패시브 앵커
@@ -4098,6 +4131,7 @@ const CombatBoard = ({
                 : "idle";
             return (
               <UnitPanel
+                key={`enemy-${enemy.enemyUid}`}
                 side="enemy"
                 unitKey={`enemy-${index}`}
                 sprite={enemySprite(String(enemy.defId))}

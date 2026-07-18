@@ -67,6 +67,13 @@ export type CombatEvent =
   | { type: 'enemyWindupStarted'; enemy: number; intent: EnemyIntent; turnsLeft: number; cancelThreshold?: number }
   | { type: 'enemyWindupTicked'; enemy: number; intent: EnemyIntent; turnsLeft: number }
   | { type: 'enemyWindupCancelled'; enemy: number; intent: EnemyIntent }
+  | { type: 'enemySummonTelegraphed'; sourceEnemyUid: number; enemy: string; maxCount: number }
+  | { type: 'enemySummoned'; sourceEnemyUid: number; enemy: string; slot: number; enemyUid: number }
+  | { type: 'enemySummonFailed'; sourceEnemyUid: number; enemy: string; maxCount: number }
+  | { type: 'enemyHatchDelayed'; sourceEnemyUid: number }
+  | { type: 'enemyHatched'; sourceEnemyUid: number; into: string }
+  | { type: 'enemyHatchAccelerated'; sourceEnemyUid: number; targetEnemyUid: number; amount: number }
+  | { type: 'enemyRemoved'; enemyUid: number; reason: 'killed' }
   | { type: 'enemyPhaseChanged'; enemy: number }
   | { type: 'enemyGrew'; enemy: number; stacks: number }
   | { type: 'enemyGrowthReduced'; enemy: number; removed: number; stacks: number; damage: number; threshold: number }

@@ -369,7 +369,16 @@ export type EnemyAction =
       minHpDamageFraction?: number;
       loseOnFullBlock?: boolean;
     }
-  | { kind: 'healAlly'; amount: number; target: 'lowestHpAlly'; cleanse?: number };
+  | { kind: 'healAlly'; amount: number; target: 'lowestHpAlly'; cleanse?: number }
+  | { kind: 'summonEnemies'; enemy: EnemyDefId; maxCount: number }
+  | { kind: 'tickHatch' }
+  | { kind: 'accelerateHatching'; amount: number };
+
+export interface EnemyHatchDef {
+  into: EnemyDefId;
+  turns: number;
+  delayAtHpFraction: number;
+}
 
 export interface EnemyProtectionLinkDef {
   target: 'highestThreatAlly';
@@ -492,6 +501,7 @@ export interface EnemyDef {
   protectionLink?: EnemyProtectionLinkDef;
   petrify?: EnemyPetrifyDef;
   warBanner?: EnemyWarBannerDef;
+  hatch?: EnemyHatchDef;
 }
 
 export type EventRisk = 'combat' | 'hp' | 'gold' | 'coin';
@@ -896,6 +906,13 @@ const validateEnemyIntents = (enemies: Record<string, EnemyDef>, coins: Record<s
         if (!Number.isInteger(action.cleanse) || action.cleanse <= 0 || action.cleanse > 3) {
           errors.push(`${owner}: healAlly cleanse must be an integer from 1 to 3`);
         }
+      } else if (action.kind === 'summonEnemies') {
+        if (enemies[String(action.enemy)] === undefined) errors.push(`${owner}: summon enemy must exist`);
+        if (!Number.isInteger(action.maxCount) || action.maxCount <= 0 || action.maxCount > 2) {
+          errors.push(`${owner}: summon maxCount must be an integer from 1 to 2`);
+        }
+      } else if (action.kind === 'accelerateHatching' && (!Number.isInteger(action.amount) || action.amount <= 0)) {
+        errors.push(`${owner}: accelerate hatching amount must be a positive integer`);
       } else if (action.kind === 'sealTriggeredSkill' && (!Number.isInteger(action.turns) || action.turns <= 0)) {
         errors.push(`${owner}: sealTriggeredSkill turns must be a positive integer`);
       } else if (action.kind === 'royalTax' && (!Number.isInteger(action.degradedDamage) || action.degradedDamage <= 0)) {
@@ -938,6 +955,14 @@ const validateEnemyIntents = (enemies: Record<string, EnemyDef>, coins: Record<s
       if (!Number.isFinite(banner.march.attackPercent) || banner.march.attackPercent <= 0 || banner.march.attackPercent > 1) errors.push(`${owner}: banner march attack must be in (0, 1]`);
       if (!Number.isInteger(banner.march.turns) || banner.march.turns <= 0) errors.push(`${owner}: banner march turns must be a positive integer`);
       if (!Number.isFinite(banner.march.shieldMaxHpFraction) || banner.march.shieldMaxHpFraction <= 0 || banner.march.shieldMaxHpFraction > 1) errors.push(`${owner}: banner march shield must be in (0, 1]`);
+    }
+    if (enemy.hatch !== undefined) {
+      const hatch = enemy.hatch;
+      if (enemies[String(hatch.into)] === undefined) errors.push(`${owner}: hatch target must exist`);
+      if (!Number.isInteger(hatch.turns) || hatch.turns <= 0) errors.push(`${owner}: hatch turns must be a positive integer`);
+      if (!Number.isFinite(hatch.delayAtHpFraction) || hatch.delayAtHpFraction <= 0 || hatch.delayAtHpFraction >= 1) {
+        errors.push(`${owner}: hatch delay fraction must be between 0 and 1`);
+      }
     }
     if (enemy.repeatSkillPressure !== undefined) {
       const pressure = enemy.repeatSkillPressure;
