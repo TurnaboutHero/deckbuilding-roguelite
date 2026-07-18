@@ -17,8 +17,9 @@ const spriteManifestRuntimeTrim = (): Plugin => ({
   }
 });
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   base: '/deckbuilding-roguelite/',
+  define: { __VITE_PRODUCTION_BUILD__: JSON.stringify(command === 'build') },
   plugins: [spriteManifestRuntimeTrim(), react()],
   build: {
     target: 'es2022'
@@ -31,4 +32,4 @@ export default defineConfig({
       '@game/content': new URL('../../packages/content/src/index.ts', import.meta.url).pathname
     }
   }
-});
+}));

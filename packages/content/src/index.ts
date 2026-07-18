@@ -21,6 +21,11 @@ import type {
   SkillDef
 } from '@game/core';
 
+declare const __VITE_PRODUCTION_BUILD__: boolean | undefined;
+
+// Production UI ships verified static content; retain the synchronous validator for tests, dev, and direct tsx imports.
+const shouldValidateContent = typeof __VITE_PRODUCTION_BUILD__ === 'undefined' || !__VITE_PRODUCTION_BUILD__;
+
 // P3.2 승격: 수호자·마나 스킬·exclusiveTo 시대. m5 콘텐츠는 현 버전의 부분집합이고
 // 기존 수치가 불변이므로 m5 저장은 안전하게 로드(마이그레이션)할 수 있다.
 export const CONTENT_VERSION = '1.7.0-revision';
@@ -2834,5 +2839,5 @@ export const contentDb: ContentDb = {
   events,
   passives,
   equipment,
-  validate: () => validateContentDb({ coins, enchants, skills, enemies, characters, events, passives, equipment })
+  validate: shouldValidateContent ? () => validateContentDb({ coins, enchants, skills, enemies, characters, events, passives, equipment }) : () => []
 };

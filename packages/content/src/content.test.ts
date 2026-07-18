@@ -1135,6 +1135,17 @@ const validateSkill = (skill: SkillDef): string[] =>
   });
 
 describe('content cost lint (A18)', () => {
+  it('keeps content validation active outside production Vite builds', () => {
+    const counterfeit = coins.counterfeit;
+    const original = counterfeit.counterfeit;
+    try {
+      Reflect.deleteProperty(counterfeit, 'counterfeit');
+      expect(contentDb.validate()).toContain('enemy fallen-kings-treasurer-marcel: royal tax counterfeitCoin must be combat-only, elementless, and have no procs');
+    } finally {
+      counterfeit.counterfeit = original;
+    }
+  });
+
   it('accepts the shipped content database', () => {
     expect(contentDb.validate()).toEqual([]);
   });
