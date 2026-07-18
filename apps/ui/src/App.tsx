@@ -198,6 +198,8 @@ import sorcererAtlas from "./assets/generated/sprites/sorcerer/sprite-sheet-alph
 import sorcererManifestJson from "./assets/generated/sprites/sorcerer/manifest.json";
 import frostKnightAtlas from "./assets/generated/sprites/frost-knight/sprite-sheet-alpha.png";
 import frostKnightManifestJson from "./assets/generated/sprites/frost-knight/manifest.json";
+import bloodSpellbladeAtlas from "./assets/generated/sprites/blood-spellblade/sprite-sheet-alpha.png";
+import bloodSpellbladeManifestJson from "./assets/generated/sprites/blood-spellblade/manifest.json";
 import { spriteMotionForEvent } from "./sprite-motion";
 import type { SpriteManifest } from "./AtlasSprite";
 import {
@@ -303,6 +305,7 @@ const SPRITES: Record<
   | "player"
   | "sorcerer"
   | "frost-knight"
+  | "blood-spellblade"
   | "arcanist"
   | "raider"
   | "shaman"
@@ -329,6 +332,10 @@ const SPRITES: Record<
   "frost-knight": {
     atlasUrl: frostKnightAtlas,
     manifest: frostKnightManifestJson as SpriteManifest,
+  },
+  "blood-spellblade": {
+    atlasUrl: bloodSpellbladeAtlas,
+    manifest: bloodSpellbladeManifestJson as SpriteManifest,
   },
   raider: {
     atlasUrl: goblinAtlas,
@@ -380,6 +387,7 @@ const playerSprite = (character: CharacterId): SpriteAsset => {
   if (String(character) === "arcanist") return SPRITES.arcanist;
   if (String(character) === "sorcerer") return SPRITES.sorcerer;
   if (String(character) === "frost-knight") return SPRITES["frost-knight"];
+  if (String(character) === "blood-spellblade") return SPRITES["blood-spellblade"];
   return SPRITES.player;
 };
 

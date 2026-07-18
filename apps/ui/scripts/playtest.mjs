@@ -3065,8 +3065,38 @@ if (false) {
     (await page.locator("[data-sprite-fallback]").count()) === 0 &&
       (await page.locator(".unit.player .sprite-frame").count()) >= 1,
   );
+  const warriorSpriteHref = await page
+    .locator(".unit.player .sprite-frame image")
+    .getAttribute("href");
   check("S21 선택 플로우 에러 0", errors.length === 0, errors.join(" | "));
   await page.close();
+
+  // 21c. 혈액 마검사는 화염 격투가 폴백이 아닌 전용 전투 아틀라스를 사용한다.
+  const blood = await boot(undefined, {
+    url: `${baseUrl}?seed=${SEED}&select=1`,
+    waitFor: "select",
+  });
+  await blood.page
+    .locator('[data-testid="character-select-blood-spellblade"]')
+    .click();
+  await blood.page.waitForSelector(".combat-shell[data-bag]");
+  await blood.page.waitForFunction(
+    () => document.querySelector(".end-turn:not(:disabled)") !== null,
+  );
+  const bloodSpriteHref = await blood.page
+    .locator(".unit.player .sprite-frame image")
+    .getAttribute("href");
+  check(
+    "S21 혈액 마검사 전용 전투 스프라이트",
+    bloodSpriteHref !== null && bloodSpriteHref !== warriorSpriteHref,
+    `${warriorSpriteHref ?? "none"} → ${bloodSpriteHref ?? "none"}`,
+  );
+  check(
+    "S21 혈액 마검사 선택 플로우 에러 0",
+    blood.errors.length === 0,
+    blood.errors.join(" | "),
+  );
+  await blood.page.close();
 }
 
 {

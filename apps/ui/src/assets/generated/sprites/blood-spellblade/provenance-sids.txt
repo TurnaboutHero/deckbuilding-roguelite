@@ -1,0 +1,5 @@
+image_gen_session_group=019f70f6-1a68-7a72-ba92-86b5708819cb
+base=exec-3932ccaf-3c49-498c-a080-1cac225e3fee.png
+idle=exec-d0590618-a14f-4cb3-abcd-0df0053238b8.png
+attack_regenerated=exec-8538b489-2491-4374-a6b4-7649b4a86000.png
+hurt=exec-2b6ab94a-ee6c-458f-a0c9-d70568283c47.png

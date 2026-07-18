@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "kind": "sprite-gen-request",
+  "engine": "component-row",
+  "character": {
+    "id": "blood-spellblade",
+    "description": "",
+    "base_image": "base-source.png"
+  },
+  "cell": {
+    "shape": "square",
+    "width": 256,
+    "height": 256,
+    "safe_margin_x": 24,
+    "safe_margin_y": 24,
+    "size": 256,
+    "safe_margin": 24
+  },
+  "chroma_key": {
+    "name": "green",
+    "hex": "#00FF00",
+    "rgb": [
+      0,
+      255,
+      0
+    ],
+    "selection": "manual"
+  },
+  "states": {
+    "idle": {
+      "frames": 4,
+      "fps": 4,
+      "loop": true,
+      "action": "near-static combat idle loop: frame 1 and frame 4 match the same planted feet, closed eyes, complete curved blood hwandо, robe silhouette, hand position, and body height; frame 2 is one restrained breath lift; frame 3 is one short blink or sleeve drift; keep the toothy maw attached near the hilt"
+    },
+    "attack": {
+      "frames": 4,
+      "fps": 8,
+      "loop": false,
+      "action": "readable curved blood-hwandо slash: compact side-facing windup, forward crescent slash, extended follow-through, recovery toward combat idle; the toothed maw remains integrated near the hilt and the sword stays attached to both hands"
+    },
+    "hurt": {
+      "frames": 4,
+      "fps": 8,
+      "loop": false,
+      "action": "brief impact recoil: shoulder flinch, one backward robe sway, regain planted footing, settle toward combat idle; preserve full-body anatomy and keep the blood hwandо in hand"
+    }
+  },
+  "style": "match the accepted idle anchor exactly: crisp 16-bit-inspired subculture pixel art, identical full-body proportions, closed-eye face, black pinned hair, ivory Joseon shaman robes with crimson trim, charcoal sash, curved coagulated-blood hwandо with a toothy maw near the hilt, same outline weight, palette, and detail density",
+  "motion_phase_guides": false,
+  "fit": {
+    "pixel_perfect": true,
+    "logical_height": 86,
+    "palette_size": 32,
+    "align_x": "foot-centroid",
+    "align_y": "bottom"
+  },
+  "chroma": {
+    "unmix_reach": 4,
+    "spill_max_fraction": 0.005
+  }
+}
