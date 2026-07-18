@@ -21,9 +21,9 @@ const BUDGETS = {
   // Measured total 3,257,343 B includes one new 96,066 B production atlas;
   // retain 60,417 B headroom without relaxing the JS, CSS, or max-file gates.
   total: 3317760,
-  // 608 KiB - 2026-07-18 D18 measured 612,189 B after review-required
-  // ordered vault UI, windup-bounded Lead lifecycle, and exact replay telemetry.
-  js: 622592,
+  // 609 KiB - 2026-07-19 D22 hotfix preflight restores the standard 10 KiB
+  // floor over the signed-off 613,282 B baseline before feature code lands.
+  js: 623616,
   css: 90112, // 88 KiB - 2026-07-18 D14: restore >=2 KiB after Batch D measured 86,689 B
   maxFile: 716800, // 700 KiB
 };
