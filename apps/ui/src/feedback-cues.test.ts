@@ -4,7 +4,7 @@ import { contentDb } from "@game/content";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { feedbackCuesFor } from "./feedback-cues";
-import { RemiseSpendBadge, RemiseStackChip } from "./App";
+import { combatEventLogSummary, RemiseSpendBadge, RemiseStackChip } from "./App";
 
 const keys = (event: CombatEvent) => feedbackCuesFor(event).map((item) => item.key);
 
@@ -66,6 +66,32 @@ describe("feedbackCuesFor", () => {
     expect(keys({ type: "enemyHealFailed", enemy: 1, target: 0 })).toEqual([
       "unit-enemy-1",
     ]);
+  });
+
+  it("maps Directive 12 feedback to the affected player and ring bearer", () => {
+    expect(keys({ type: "healPrevented", target: { type: "player" }, amount: 5, reason: "healLock" })).toEqual([
+      "heal-lock-player",
+      "unit-player",
+    ]);
+    expect(keys({ type: "enemyGrowthReduced", enemy: 1, removed: 2, stacks: 3, damage: 17, threshold: 17 })).toEqual([
+      "unit-enemy-1",
+    ]);
+    expect(keys({ type: "playerTurnEndPunished", enemy: 1, coinCount: 4, threshold: 4, status: "frostbite", stacks: 1 })).toEqual([
+      "unit-player",
+      "frostbite-player",
+    ]);
+  });
+
+  it("adds Directive 12 outcomes to the combat history summary", () => {
+    const entry = combatEventLogSummary([
+      { type: "healPrevented", target: { type: "player" }, amount: 5, reason: "healLock" },
+      { type: "enemyGrowthReduced", enemy: 0, removed: 2, stacks: 3, damage: 17, threshold: 17 },
+      { type: "playerTurnEndPunished", enemy: 0, coinCount: 4, threshold: 4, status: "frostbite", stacks: 1 },
+    ]);
+
+    expect(entry?.totalLine).toContain("회복 봉인 — 회복 5 무효");
+    expect(entry?.totalLine).toContain("나이테 2개 파괴");
+    expect(entry?.totalLine).toContain("미사용 속성 코인 경고 — 4/4");
   });
 
   it("maps Remise and weapon output feedback to the rendered player unit", () => {

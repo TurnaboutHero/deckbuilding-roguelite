@@ -13,8 +13,13 @@ import type {
   SkillId
 } from './ids';
 
-// 확정 어휘 (docs/implementation-plan.md §6): 화상 burn(M3), 동상 frostbite·감전 shock(포스트 MVP 예약)
-export type StatusId = 'burn' | 'frostbite' | 'shock';
+// P13 Batch B adds persistent poison stacks and a player-only healing lock.
+export const STACK_STATUS_IDS = ['burn', 'poison'] as const;
+export const DURATION_STATUS_IDS = ['frostbite', 'shock', 'healLock'] as const;
+export type StatusId = (typeof STACK_STATUS_IDS)[number] | (typeof DURATION_STATUS_IDS)[number];
+
+export const isStackStatus = (status: StatusId): status is (typeof STACK_STATUS_IDS)[number] =>
+  (STACK_STATUS_IDS as readonly StatusId[]).includes(status);
 
 export type TargetRef = { type: 'player' } | { type: 'enemy'; index: number };
 
@@ -337,7 +342,13 @@ export type EnemyAction =
   | { kind: 'conditionalAttack'; damage: number; bonusDamage: number; condition: 'playerHpBelowHalf' }
   | { kind: 'block'; amount: number }
   | { kind: 'nextDrawPenalty'; amount: number }
-  | { kind: 'applyStatus'; status: StatusId; stacks: number }
+  | {
+      kind: 'applyStatus';
+      status: StatusId;
+      stacks: number;
+      requiresLastAttackHpDamage?: boolean;
+      requiresPlayerStatus?: { status: StatusId; atLeast: number };
+    }
   | { kind: 'heal'; amount: number }
   | { kind: 'buffNextAttack'; amount: number }
   | {
@@ -376,6 +387,22 @@ export interface EnemyPassiveDef {
   effects: EnemyAction[];
 }
 
+export interface PlayerTurnEndPunishmentDef {
+  kind: 'unusedElementalCoinsAtLeast';
+  threshold: number;
+  status: StatusId;
+  stacks: number;
+}
+
+export interface EnemyRoundGrowthDef {
+  gainPerRound: number;
+  maxStacks: number;
+  damageReductionPerStack: number;
+  healMaxHpFractionPerStack: number;
+  removeOneAtHpFraction: number;
+  removeTwoAtHpFraction: number;
+}
+
 export interface EnemyDef {
   id: EnemyDefId;
   name: string;
@@ -384,6 +411,8 @@ export interface EnemyDef {
   phases?: EnemyPhase[];
   growthLabel?: string;
   passive?: EnemyPassiveDef;
+  playerTurnEndPunishment?: PlayerTurnEndPunishmentDef;
+  roundGrowth?: EnemyRoundGrowthDef;
 }
 
 export type EventRisk = 'combat' | 'hp' | 'gold' | 'coin';
@@ -761,6 +790,16 @@ const validateEnemyIntents = (enemies: Record<string, EnemyDef>): string[] => {
         if (!Number.isInteger(action.bonusDamage) || action.bonusDamage < 0) {
           errors.push(`${owner}: conditionalAttack bonusDamage must be a non-negative integer`);
         }
+      } else if (action.kind === 'applyStatus') {
+        if (!Number.isInteger(action.stacks) || action.stacks <= 0) {
+          errors.push(`${owner}: applyStatus stacks must be a positive integer`);
+        }
+        if (
+          action.requiresPlayerStatus !== undefined &&
+          (!Number.isInteger(action.requiresPlayerStatus.atLeast) || action.requiresPlayerStatus.atLeast <= 0)
+        ) {
+          errors.push(`${owner}: applyStatus requiresPlayerStatus atLeast must be a positive integer`);
+        }
       } else if (action.kind === 'growOnUnblockedDamage') {
         if (action.healOnGrow !== undefined && (!Number.isInteger(action.healOnGrow) || action.healOnGrow <= 0)) {
           errors.push(`${owner}: healOnGrow must be a positive integer`);
@@ -806,6 +845,47 @@ const validateEnemyIntents = (enemies: Record<string, EnemyDef>): string[] => {
     }
     if (enemy.growthLabel !== undefined && enemy.growthLabel.trim().length === 0) {
       errors.push(`enemy ${String(enemy.id)}: growthLabel must not be empty`);
+    }
+    const punishment = enemy.playerTurnEndPunishment;
+    if (punishment !== undefined) {
+      const owner = `enemy ${String(enemy.id)} playerTurnEndPunishment`;
+      if (!Number.isInteger(punishment.threshold) || punishment.threshold <= 0) {
+        errors.push(`${owner}: threshold must be a positive integer`);
+      }
+      if (!Number.isInteger(punishment.stacks) || punishment.stacks <= 0) {
+        errors.push(`${owner}: stacks must be a positive integer`);
+      }
+    }
+    const growth = enemy.roundGrowth;
+    if (growth !== undefined) {
+      const owner = `enemy ${String(enemy.id)} roundGrowth`;
+      if (!Number.isInteger(growth.gainPerRound) || growth.gainPerRound <= 0) {
+        errors.push(`${owner}: gainPerRound must be a positive integer`);
+      }
+      if (!Number.isInteger(growth.maxStacks) || growth.maxStacks <= 0) {
+        errors.push(`${owner}: maxStacks must be a positive integer`);
+      }
+      if (
+        !Number.isFinite(growth.damageReductionPerStack) ||
+        growth.damageReductionPerStack <= 0 ||
+        growth.damageReductionPerStack >= 1 ||
+        growth.damageReductionPerStack * growth.maxStacks >= 1
+      ) {
+        errors.push(`${owner}: damageReductionPerStack must keep total reduction below 1`);
+      }
+      if (!Number.isFinite(growth.healMaxHpFractionPerStack) || growth.healMaxHpFractionPerStack <= 0 || growth.healMaxHpFractionPerStack >= 1) {
+        errors.push(`${owner}: healMaxHpFractionPerStack must be greater than 0 and less than 1`);
+      }
+      if (!Number.isFinite(growth.removeOneAtHpFraction) || growth.removeOneAtHpFraction <= 0 || growth.removeOneAtHpFraction >= 1) {
+        errors.push(`${owner}: removeOneAtHpFraction must be greater than 0 and less than 1`);
+      }
+      if (
+        !Number.isFinite(growth.removeTwoAtHpFraction) ||
+        growth.removeTwoAtHpFraction <= growth.removeOneAtHpFraction ||
+        growth.removeTwoAtHpFraction >= 1
+      ) {
+        errors.push(`${owner}: removeTwoAtHpFraction must be greater than removeOneAtHpFraction and less than 1`);
+      }
     }
   }
   return errors;

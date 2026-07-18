@@ -2470,7 +2470,7 @@ if (false) {
   const afterHp = await hpValue(enemyHp);
   const damage = beforeHp - afterHp;
   const history = page.getByTestId("combat-history");
-  const ticket = history.locator("ol > li").last();
+  const ticket = history.locator("ol > li:has(small)").last();
   const ticketText = (await ticket.textContent()) ?? "";
   const totalText = (await ticket.locator("span").textContent()) ?? "";
 

@@ -25,6 +25,8 @@ export const feedbackCuesFor = (event: CombatEvent): FeedbackCue[] => {
       return event.amount > 0
         ? [cue(`heal-enemy-${event.enemy}`, 340)]
         : [];
+    case "healPrevented":
+      return event.amount > 0 ? [cue("heal-lock-player", 380), cue("unit-player", 380)] : [];
     case "statusApplied":
     case "statusTicked": {
       const strength = event.type === "statusApplied" ? 340 : 240;
@@ -74,6 +76,12 @@ export const feedbackCuesFor = (event: CombatEvent): FeedbackCue[] => {
       return [cue(`unit-enemy-${event.enemy}`, 560)];
     case "enemyGrew":
       return [cue(`unit-enemy-${event.enemy}`, 420)];
+    case "enemyGrowthReduced":
+      return event.removed > 0 ? [cue(`unit-enemy-${event.enemy}`, 440)] : [];
+    case "playerTurnEndPunished":
+      return event.stacks > 0
+        ? [cue("unit-player", 440), cue(`${event.status}-player`, 340)]
+        : [];
     case "enemyCleansed":
       return [cue(`unit-enemy-${event.enemy}`, 420)];
     case "enemyHealFailed":

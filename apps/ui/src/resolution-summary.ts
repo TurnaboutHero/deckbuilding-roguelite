@@ -25,8 +25,10 @@ const elementKo = (value: string): string =>
 export const statusKo = (value: string): string =>
   ({
     burn: '화상',
+    poison: '중독',
     frostbite: '동상',
-    shock: '감전'
+    shock: '감전',
+    healLock: '회복 봉인'
   })[value] ?? value;
 
 const faceKo = (face: Face): string => (face === 'heads' ? '앞면' : '뒷면');

@@ -1,5 +1,5 @@
 import type { ContentDb, FlipSkillDef } from '../content-types';
-import { flipSkillEffects } from '../content-types';
+import { DURATION_STATUS_IDS, effectiveElements, flipSkillEffects } from '../content-types';
 import type {
   CharacterId,
   CoinDefId,
@@ -280,7 +280,10 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
       statuses: {},
       intent: intent.intent,
       intentIndex: intent.index,
-      nextAttackBonus: 0
+      nextAttackBonus: 0,
+      ...(def.roundGrowth === undefined
+        ? {}
+        : { roundGrowth: def.roundGrowth, growthStacks: 0, damageTakenThisRound: 0 })
     };
   });
 
@@ -463,7 +466,7 @@ const validateChosenBasicInHand = (input: CombatState, skill: FlipSkillDef, chos
 
 const tickPlayerDurations = (input: CombatState, events: CombatEvent[]): CombatState => {
   let statuses = input.player.statuses;
-  for (const status of ['frostbite', 'shock'] as const) {
+  for (const status of DURATION_STATUS_IDS) {
     const current = statuses[status];
     if (current?.kind !== 'duration') continue;
     const turns = Math.max(0, current.turns - 1);
@@ -560,30 +563,51 @@ const endTurn = (input: CombatState, db: ContentDb, preserveChoice?: readonly Co
     state = applyBlock(state, { type: 'player' }, 2, events);
   }
 
-  const burn = statusStacks(state.player.statuses, 'burn');
-  if (burn > 0) {
-    state = applyDamage(state, { type: 'player' }, burn, 'burn', events);
+  for (const status of ['burn', 'poison'] as const) {
+    const stacks = statusStacks(state.player.statuses, status);
+    if (stacks <= 0) continue;
+    state = applyDamage(state, { type: 'player' }, stacks, status, events);
+    const remaining = status === 'burn' ? Math.max(0, stacks - 1) : stacks;
     state = {
       ...state,
       player: {
         ...state.player,
         statuses: {
           ...state.player.statuses,
-          burn: { kind: 'stack', stacks: Math.max(0, burn - 1) }
+          [status]: { kind: 'stack', stacks: remaining }
         }
       }
     };
-    events.push({
-      type: 'statusTicked',
-      target: { type: 'player' },
-      status: 'burn',
-      amount: burn,
-      remaining: Math.max(0, burn - 1)
-    });
+    events.push({ type: 'statusTicked', target: { type: 'player' }, status, amount: stacks, remaining });
   }
   state = tickPlayerDurations(state, events);
   state = checkCombatEnd(state, events);
   if (state.phase === 'defeat') return { ok: true, state, events };
+
+  const unusedElementalCoins = state.zones.hand.reduce((count, coinUid) => {
+    const coin = state.coins[Number(coinUid)];
+    return count + (coin !== undefined && effectiveElements(coin, db).length > 0 ? 1 : 0);
+  }, 0);
+  for (let enemyIndex = 0; enemyIndex < state.enemies.length; enemyIndex += 1) {
+    const enemy = state.enemies[enemyIndex];
+    const punishment = enemy === undefined ? undefined : db.enemies[String(enemy.defId)]?.playerTurnEndPunishment;
+    if (enemy === undefined || enemy.hp <= 0 || punishment === undefined || unusedElementalCoins < punishment.threshold) continue;
+    state = applyEffectAtom(
+      state,
+      { kind: 'applyStatus', status: punishment.status, stacks: punishment.stacks, to: 'self' },
+      { type: 'player' },
+      db,
+      events
+    );
+    events.push({
+      type: 'playerTurnEndPunished',
+      enemy: enemyIndex,
+      coinCount: unusedElementalCoins,
+      threshold: punishment.threshold,
+      status: punishment.status,
+      stacks: punishment.stacks
+    });
+  }
   if (state.turnTriggers.length > 0) {
     events.push({
       type: 'turnTriggersExpired',

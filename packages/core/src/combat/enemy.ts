@@ -1,8 +1,9 @@
+import { DURATION_STATUS_IDS } from '../content-types';
 import type { ContentDb, EnemyIntent, StatusId } from '../content-types';
 import { rngFrom } from '../rng';
 import type { CombatEvent } from './events';
 import { applyBlock, applyDamage, applyEffectAtom, checkCombatEnd } from './resolve/flip';
-import { statusStacks } from './state';
+import { statusStacks, statusTurns } from './state';
 import type { CombatState } from './state';
 
 export const nextIntent = (state: CombatState, enemyIndex: number, db: ContentDb): { intent: EnemyIntent; index: number } => {
@@ -52,7 +53,7 @@ const withEnemy = (state: CombatState, enemyIndex: number, update: (enemy: Comba
   enemies: state.enemies.map((enemy, index) => (index === enemyIndex ? update(enemy) : enemy))
 });
 
-const CLEANSE_ORDER: readonly StatusId[] = ['burn', 'frostbite', 'shock'];
+const CLEANSE_ORDER: readonly StatusId[] = ['burn', 'poison', 'frostbite', 'shock', 'healLock'];
 
 const maybeStartWindup = (state: CombatState, enemyIndex: number, events: CombatEvent[]): { state: CombatState; started: boolean } => {
   const enemy = state.enemies[enemyIndex];
@@ -103,7 +104,7 @@ const tickEnemyDurations = (input: CombatState, enemyIndex: number, events: Comb
   const enemy = input.enemies[enemyIndex];
   if (enemy === undefined) return input;
   let statuses = enemy.statuses;
-  for (const status of ['frostbite', 'shock'] as const) {
+  for (const status of DURATION_STATUS_IDS) {
     if (status === 'shock' && preserveShock) continue;
     const current = statuses[status];
     if (current?.kind !== 'duration') continue;
@@ -144,6 +145,16 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
   for (let enemyIndex = 0; enemyIndex < state.enemies.length; enemyIndex += 1) {
     const enemy = state.enemies[enemyIndex];
     if (enemy === undefined || enemy.hp <= 0) continue;
+    if (enemy.roundGrowth !== undefined && (enemy.growthStacks ?? 0) > 0) {
+      const requested = Math.round(
+        enemy.maxHp * enemy.roundGrowth.healMaxHpFractionPerStack * (enemy.growthStacks ?? 0)
+      );
+      const hp = Math.min(enemy.maxHp, enemy.hp + requested);
+      if (hp > enemy.hp) {
+        state = withEnemy(state, enemyIndex, (candidate) => ({ ...candidate, hp }));
+        events.push({ type: 'enemyHealed', enemy: enemyIndex, amount: hp - enemy.hp, hp });
+      }
+    }
     // 몬스터 패시브 — 자신 턴 시작 시 자동 발동 (자기 대상 원자만, 콘텐츠 검증이 보장).
     const passive = db.enemies[String(enemy.defId)]?.passive;
     if (passive !== undefined && passive.hook === 'enemyTurnStart') {
@@ -283,6 +294,14 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
         state = { ...state, player: { ...state.player, nextDrawPenalty } };
         events.push({ type: 'witherApplied', enemy: enemyIndex, amount: action.amount, nextDrawPenalty });
       } else if (action.kind === 'applyStatus') {
+        if (action.requiresLastAttackHpDamage === true && lastAttackHpDamage <= 0) continue;
+        if (action.requiresPlayerStatus !== undefined) {
+          const current = Math.max(
+            statusStacks(state.player.statuses, action.requiresPlayerStatus.status),
+            statusTurns(state.player.statuses, action.requiresPlayerStatus.status)
+          );
+          if (current < action.requiresPlayerStatus.atLeast) continue;
+        }
         state = applyEffectAtom(
           state,
           { kind: 'applyStatus', status: action.status, stacks: action.stacks, to: 'self' },
@@ -372,22 +391,23 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
   }
 
   for (let enemyIndex = 0; enemyIndex < state.enemies.length; enemyIndex += 1) {
-    const enemy = state.enemies[enemyIndex];
-    const burn = enemy === undefined ? 0 : statusStacks(enemy.statuses, 'burn');
-    if (enemy === undefined || enemy.hp <= 0 || burn <= 0) continue;
-    state = applyDamage(state, { type: 'enemy', index: enemyIndex }, burn, 'burn', events);
-    const updated = state.enemies[enemyIndex];
-    if (updated !== undefined) {
-      const enemies = state.enemies.map((candidate, index) =>
-        index === enemyIndex
-          ? { ...candidate, statuses: { ...candidate.statuses, burn: { kind: 'stack' as const, stacks: Math.max(0, burn - 1) } } }
-          : candidate
-      );
-      state = { ...state, enemies };
-      events.push({ type: 'statusTicked', target: { type: 'enemy', index: enemyIndex }, status: 'burn', amount: burn, remaining: Math.max(0, burn - 1) });
+    for (const status of ['burn', 'poison'] as const) {
+      const enemy = state.enemies[enemyIndex];
+      const stacks = enemy === undefined ? 0 : statusStacks(enemy.statuses, status);
+      if (enemy === undefined || enemy.hp <= 0 || stacks <= 0) continue;
+      state = applyDamage(state, { type: 'enemy', index: enemyIndex }, stacks, status, events);
+      const updated = state.enemies[enemyIndex];
+      if (updated !== undefined) {
+        const remaining = status === 'burn' ? Math.max(0, stacks - 1) : stacks;
+        state = withEnemy(state, enemyIndex, (candidate) => ({
+          ...candidate,
+          statuses: { ...candidate.statuses, [status]: { kind: 'stack' as const, stacks: remaining } }
+        }));
+        events.push({ type: 'statusTicked', target: { type: 'enemy', index: enemyIndex }, status, amount: stacks, remaining });
+      }
+      state = checkCombatEnd(state, events);
+      if (state.phase === 'victory') return { state, events };
     }
-    state = checkCombatEnd(state, events);
-    if (state.phase === 'victory') return { state, events };
   }
 
   for (let enemyIndex = 0; enemyIndex < state.enemies.length; enemyIndex += 1) {
@@ -405,6 +425,34 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
       : maxShockEnemyIndexes[0];
     const preserveShock = suppressesDischarge && maxShock > 0 && enemyIndex === preservedEnemyIndex;
     state = tickEnemyDurations(state, enemyIndex, events, preserveShock);
+  }
+
+  for (let enemyIndex = 0; enemyIndex < state.enemies.length; enemyIndex += 1) {
+    const enemy = state.enemies[enemyIndex];
+    if (enemy === undefined || enemy.hp <= 0 || enemy.roundGrowth === undefined) continue;
+    const growth = enemy.roundGrowth;
+    const damage = enemy.damageTakenThisRound ?? 0;
+    const requestedRemoval =
+      damage >= enemy.maxHp * growth.removeTwoAtHpFraction
+        ? 2
+        : damage >= enemy.maxHp * growth.removeOneAtHpFraction
+          ? 1
+          : 0;
+    const removed = Math.min(enemy.growthStacks ?? 0, requestedRemoval);
+    const afterRemoval = Math.max(0, (enemy.growthStacks ?? 0) - removed);
+    const stacks = Math.min(growth.maxStacks, afterRemoval + growth.gainPerRound);
+    if (removed > 0) {
+      events.push({
+        type: 'enemyGrowthReduced',
+        enemy: enemyIndex,
+        removed,
+        stacks: afterRemoval,
+        damage,
+        threshold: Math.ceil(enemy.maxHp * (removed >= 2 ? growth.removeTwoAtHpFraction : growth.removeOneAtHpFraction))
+      });
+    }
+    if (stacks > afterRemoval) events.push({ type: 'enemyGrew', enemy: enemyIndex, stacks });
+    state = withEnemy(state, enemyIndex, (candidate) => ({ ...candidate, growthStacks: stacks, damageTakenThisRound: 0 }));
   }
 
   const baseEcho = Math.min(state.player.armorEchoAbsorbedThisEnemyTurn, 6);

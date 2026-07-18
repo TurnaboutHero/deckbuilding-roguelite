@@ -2064,6 +2064,79 @@ export const enemies = {
       }
     ]
   },
+  // P13 §6.2/§6.4 Batch B — balance-provisional values are taken from the owner-approved
+  // 20-monster specification. Poison persists until cleansed so the advertised threshold is reachable.
+  'plague-doctor': {
+    id: enemy('plague-doctor'),
+    name: '재부리 역병의사',
+    maxHp: 50,
+    intents: [
+      {
+        id: 'poison-injection',
+        actions: [
+          { kind: 'attack', damage: 7 },
+          { kind: 'applyStatus', status: 'poison', stacks: 2, requiresLastAttackHpDamage: true }
+        ]
+      },
+      {
+        id: 'plague-mist',
+        windup: { turns: 1, revealAtStart: true },
+        actions: [
+          { kind: 'applyStatus', status: 'poison', stacks: 1 },
+          {
+            kind: 'applyStatus',
+            status: 'healLock',
+            stacks: 2,
+            requiresPlayerStatus: { status: 'poison', atLeast: 5 }
+          }
+        ]
+      }
+    ]
+  },
+  // P13 §6.2/§6.4 Batch B — returned, temporary, preserved, and grant-derived elemental
+  // coins all count while they remain unspent in hand at player turn end.
+  'white-wraith': {
+    id: enemy('white-wraith'),
+    name: '서리묘지 백색망령',
+    maxHp: 48,
+    playerTurnEndPunishment: {
+      kind: 'unusedElementalCoinsAtLeast',
+      threshold: 4,
+      status: 'frostbite',
+      stacks: 1
+    },
+    intents: [
+      {
+        id: 'cold-touch',
+        actions: [
+          { kind: 'attack', damage: 7 },
+          { kind: 'applyStatus', status: 'frostbite', stacks: 1 }
+        ]
+      },
+      {
+        id: 'winters-hand',
+        windup: { turns: 1, revealAtStart: true },
+        actions: [{ kind: 'applyStatus', status: 'frostbite', stacks: 2 }]
+      }
+    ]
+  },
+  // P13 §6.2/§6.4 Batch B — visible post-mitigation HP damage breaks rings before the
+  // mandatory round-end gain; each surviving ring supplies mitigation and action-start regeneration.
+  'ancient-treant': {
+    id: enemy('ancient-treant'),
+    name: '흑가시 숲 고목정령',
+    maxHp: 65,
+    growthLabel: '나이테',
+    roundGrowth: {
+      gainPerRound: 1,
+      maxStacks: 5,
+      damageReductionPerStack: 0.08,
+      healMaxHpFractionPerStack: 0.03,
+      removeOneAtHpFraction: 0.15,
+      removeTwoAtHpFraction: 0.25
+    },
+    intents: [{ id: 'root-strike', actions: [{ kind: 'attack', damage: 7 }] }]
+  },
   'ember-archmage': {
     id: enemy('ember-archmage'),
     name: '잿불 마도왕',

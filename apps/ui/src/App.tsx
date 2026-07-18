@@ -21,6 +21,7 @@ import {
   completedCombatCount,
   createCombat,
   createRun,
+  effectiveElements,
   leaveShop,
   legalCommands,
   isLockedSkill,
@@ -490,6 +491,15 @@ export const armorEchoPreview = (
   };
 };
 
+/** Mirrors the post-return end-turn M12 check before placed coins are discarded. */
+export const unusedElementalCoinCount = (state: CombatState): number => {
+  const coinUids = new Set([...state.zones.hand, ...Object.values(state.zones.placed).flat()]);
+  return [...coinUids].reduce((count, coinUid) => {
+    const coin = state.coins[Number(coinUid)];
+    return count + (coin !== undefined && effectiveElements(coin, contentDb).length > 0 ? 1 : 0);
+  }, 0);
+};
+
 export const shouldShowArmorEchoHud = (character: CharacterId): boolean => String(character) === "arcanist";
 
 export const shouldShowOverheatBadges = (character: CharacterId): boolean => String(character) === "warrior";
@@ -546,9 +556,25 @@ export const IntentBadge = ({
             {action.amount}
           </span>
         ) : action.kind === "applyStatus" ? (
-          <span key={index} aria-label={`${statusKo(action.status)} ${action.stacks} 부여`}>
+          <span
+            key={index}
+            aria-label={`${statusKo(action.status)} ${action.stacks} 부여${action.requiresLastAttackHpDamage || action.requiresPlayerStatus !== undefined ? `, ${[
+              action.requiresLastAttackHpDamage ? "실제 체력 피해 시" : null,
+              action.requiresPlayerStatus === undefined
+                ? null
+                : `${statusKo(action.requiresPlayerStatus.status)} ${action.requiresPlayerStatus.atLeast} 이상 시`,
+            ].filter((condition): condition is string => condition !== null).join(", ")}` : ""}`}
+          >
             <Keyword term={action.status}>
               {statusKo(action.status)} {action.stacks}
+              {action.requiresLastAttackHpDamage || action.requiresPlayerStatus !== undefined
+                ? ` (${[
+                    action.requiresLastAttackHpDamage ? "실제 체력 피해 시" : null,
+                    action.requiresPlayerStatus === undefined
+                      ? null
+                      : `${statusKo(action.requiresPlayerStatus.status)} ${action.requiresPlayerStatus.atLeast} 이상 시`,
+                  ].filter((condition): condition is string => condition !== null).join(", ")})`
+                : ""}
             </Keyword>
           </span>
         ) : action.kind === "heal" ? (
@@ -683,6 +709,7 @@ const combatEventResolutionLines = (events: readonly CombatEvent[]): string[] =>
       ];
     if (event.type === "echoSpent") return [`반향 증폭 — +${event.amount}`];
     if (event.type === "bloodCoinFizzle") return ["혈액 코인 불발 — 체력이 부족합니다"];
+    if (event.type === "healPrevented") return [`회복 봉인 — 회복 ${event.amount} 무효`];
     if (event.type === "enemyWindupStarted")
       return [
         `적 ${event.enemy + 1} 준비 시작 — ${event.turnsLeft}턴 남음${event.cancelThreshold === undefined ? "" : `, ${event.cancelThreshold} 피해로 취소`}`,
@@ -691,6 +718,12 @@ const combatEventResolutionLines = (events: readonly CombatEvent[]): string[] =>
     if (event.type === "enemyWindupCancelled") return [`적 ${event.enemy + 1} 준비 취소`];
     if (event.type === "enemyPhaseChanged") return [`적 ${event.enemy + 1} 페이즈 전환 — 광란`];
     if (event.type === "enemyGrew") return [`적 ${event.enemy + 1} 성장 — 스택 ${event.stacks}`];
+    if (event.type === "enemyGrowthReduced")
+      return [`적 ${event.enemy + 1} 나이테 ${event.removed}개 파괴 — 실제 피해 ${event.damage}/${event.threshold}`];
+    if (event.type === "playerTurnEndPunished")
+      return [
+        `적 ${event.enemy + 1} 미사용 속성 코인 경고 — ${event.coinCount}/${event.threshold}, ${statusKo(event.status)} +${event.stacks}`,
+      ];
     if (event.type === "enemyCleansed")
       return [`적 ${event.enemy + 1} 정화 — ${event.statuses.map(statusKo).join("·")} 제거`];
     if (event.type === "enemyHealFailed") return [`적 ${event.enemy + 1} 치유 실패 — 대상 ${event.target + 1}`];
@@ -712,9 +745,26 @@ const withCombatEventResolutionLines = (
     triggerLines: [...summary.triggerLines, ...lines],
     totalLine:
       spent === undefined
-        ? summary.totalLine
-        : `${summary.totalLine} · 르미즈 ${spent.repeat ? "성공" : "불발"}(잔여 ${clampRemiseCharges(spent.remaining)})`,
+        ? `${summary.totalLine} · ${lines.join(" · ")}`
+        : `${summary.totalLine} · 르미즈 ${spent.repeat ? "성공" : "불발"}(잔여 ${clampRemiseCharges(spent.remaining)}) · ${lines.join(" · ")}`,
   };
+};
+
+export const combatEventLogSummary = (events: readonly CombatEvent[]): ResolutionSummary | null => {
+  const lines = combatEventResolutionLines(events);
+  return lines.length === 0
+    ? null
+    : {
+        skillName: "전투 알림",
+        kind: "consume",
+        faces: [],
+        costNote: null,
+        baseLines: [],
+        bonusLines: [],
+        triggerLines: lines,
+        statusLines: [],
+        totalLine: lines.join(" · "),
+      };
 };
 
 const coinLabel = (state: CombatState, coin: CoinUid): string => {
@@ -2497,6 +2547,7 @@ const CombatBoard = ({
     () => summarizeTurnResources(state, executionSnapshot, preserveSelection?.coins ?? []),
     [executionSnapshot, preserveSelection, state],
   );
+  const unusedElementalCoins = useMemo(() => unusedElementalCoinCount(state), [state]);
 
   const selectCoin = (coin: CoinUid | null) => setSelectedCoin(coin);
 
@@ -2682,6 +2733,9 @@ const CombatBoard = ({
     const skillUsed = events.find((event) => event.type === "skillUsed");
     if (skillUsed !== undefined) {
       pendingResolution.current = { skillId: skillUsed.skill, events };
+    } else {
+      const logEntry = combatEventLogSummary(events);
+      if (logEntry !== null) setResolutionHistory((entries) => [...entries, logEntry].slice(-20));
     }
   };
 
@@ -3365,7 +3419,9 @@ const CombatBoard = ({
       delay = 380;
     } else if (event?.type === "statusTicked") {
       showFloat(
-        `${statusKo(event.status)} -${event.amount}`,
+        event.status === "poison"
+          ? `중독 피해 ${event.amount} · 유지 ${event.remaining}`
+          : `${statusKo(event.status)} -${event.amount}`,
         event.target.type === "player" ? "player" : "enemy",
         "status",
         event.target.type === "enemy" ? event.target.index : undefined,
@@ -3856,6 +3912,7 @@ const CombatBoard = ({
         ) : null}
         <div className="enemy-line" aria-label="적 목록" data-enemy-count={state.enemies.length}>
           {state.enemies.map((enemy, index) => {
+            const enemyDef = contentDb.enemies[String(enemy.defId)];
             const targetLegal = targeting?.legalTargets.includes(index) === true;
             const targetSelected = targeting?.selected === index;
             const enemyMotion =
@@ -3869,7 +3926,7 @@ const CombatBoard = ({
                 side="enemy"
                 unitKey={`enemy-${index}`}
                 sprite={enemySprite(String(enemy.defId))}
-                name={contentDb.enemies[String(enemy.defId)]?.name ?? "적"}
+                name={enemyDef?.name ?? "적"}
                 hp={enemy.hp}
                 maxHp={enemy.maxHp}
                 block={enemy.block}
@@ -3884,11 +3941,15 @@ const CombatBoard = ({
                 targetSelected={targetSelected}
                 onTarget={targetLegal ? () => confirmTargeting(index) : undefined}
                 attackBuff={enemy.nextAttackBonus}
-                passive={contentDb.enemies[String(enemy.defId)]?.passive}
+                passive={enemyDef?.passive}
                 phaseIndex={enemy.phaseIndex}
                 damageTakenMultiplier={enemy.damageTakenMultiplier}
                 growthStacks={enemy.growthStacks}
-                growthLabel={contentDb.enemies[String(enemy.defId)]?.growthLabel}
+                growthLabel={enemyDef?.growthLabel}
+                playerTurnEndPunishment={enemyDef?.playerTurnEndPunishment}
+                unusedElementalCoins={unusedElementalCoins}
+                roundGrowth={enemy.roundGrowth}
+                damageTakenThisRound={enemy.damageTakenThisRound}
               />
             );
           })}
@@ -4675,6 +4736,14 @@ interface UnitPanelProps {
   damageTakenMultiplier?: number;
   growthStacks?: number;
   growthLabel?: string;
+  playerTurnEndPunishment?: {
+    threshold: number;
+    status: "burn" | "poison" | "frostbite" | "shock" | "healLock";
+    stacks: number;
+  };
+  unusedElementalCoins?: number;
+  roundGrowth?: CombatState["enemies"][number]["roundGrowth"];
+  damageTakenThisRound?: number;
 }
 
 export const ArmorEchoHud = ({
@@ -4745,15 +4814,26 @@ export const UnitPanel = ({
   damageTakenMultiplier,
   growthStacks,
   growthLabel = "성장",
+  playerTurnEndPunishment,
+  unusedElementalCoins,
+  roundGrowth,
+  damageTakenThisRound = 0,
 }: UnitPanelProps) => (
   <div
     className={`unit ${side} ${vfx.has(`unit-${unitKey}`) ? "vfx-hit" : ""} ${targeting ? "targetable" : ""} ${targetSelected ? "target-selected" : ""}`}
     onClick={targeting ? onTarget : undefined}
-    style={vfx.has(`heal-${unitKey}`) || vfx.has(`overheat-${unitKey}`) ? feedbackPulse : undefined}
+    style={vfx.has(`heal-${unitKey}`) || vfx.has(`heal-lock-${unitKey}`) || vfx.has(`overheat-${unitKey}`) ? feedbackPulse : undefined}
   >
     <div
       className={`unit-plate ${vfx.has(`wither-${side}`) ? "vfx-wither" : ""}`}
-      style={vfx.has(`frostbite-${unitKey}`) || vfx.has(`shock-${unitKey}`) ? feedbackPulse : undefined}
+      style={
+        vfx.has(`frostbite-${unitKey}`) ||
+        vfx.has(`shock-${unitKey}`) ||
+        vfx.has(`poison-${unitKey}`) ||
+        vfx.has(`healLock-${unitKey}`)
+          ? feedbackPulse
+          : undefined
+      }
     >
       <div className="plate-row">
         <span className="unit-name">{name}</span>
@@ -4782,7 +4862,29 @@ export const UnitPanel = ({
             </em>
           </Keyword>
         ) : null}
-        {side === "enemy" && growthStacks !== undefined && growthStacks > 0 ? (
+        {side === "enemy" && playerTurnEndPunishment !== undefined && unusedElementalCoins !== undefined ? (
+          <Keyword className="chip-keyword" term="unusedElementalThreshold">
+            <em
+              aria-label={`미사용 속성 코인 ${unusedElementalCoins}/${playerTurnEndPunishment.threshold}, ${unusedElementalCoins >= playerTurnEndPunishment.threshold ? "턴 종료 시 발동" : "안전"}, ${statusKo(playerTurnEndPunishment.status)} ${playerTurnEndPunishment.stacks} 부여`}
+              className="attack-buff-chip"
+              data-testid="unused-elemental-warning"
+            >
+              속성 코인 {unusedElementalCoins}/{playerTurnEndPunishment.threshold} · {unusedElementalCoins >= playerTurnEndPunishment.threshold ? "발동" : "안전"}
+            </em>
+          </Keyword>
+        ) : null}
+        {side === "enemy" && roundGrowth !== undefined ? (
+          <Keyword className="chip-keyword" term="ringGrowth">
+            <em
+              aria-label={`나이테 ${growthStacks ?? 0}/${roundGrowth.maxStacks}, 피해 감소 ${Math.round((growthStacks ?? 0) * roundGrowth.damageReductionPerStack * 100)}%, 적 행동 시작 재생 ${Math.round(maxHp * roundGrowth.healMaxHpFractionPerStack * (growthStacks ?? 0))}, 이번 라운드 실제 피해 ${damageTakenThisRound}/${Math.ceil(maxHp * roundGrowth.removeOneAtHpFraction)}, 두 개 파괴 ${Math.ceil(maxHp * roundGrowth.removeTwoAtHpFraction)}`}
+              className="passive-chip"
+              data-testid="ring-growth-hud"
+            >
+              나이테 {growthStacks ?? 0}/{roundGrowth.maxStacks} · 감소 {Math.round((growthStacks ?? 0) * roundGrowth.damageReductionPerStack * 100)}% · 재생 +{Math.round(maxHp * roundGrowth.healMaxHpFractionPerStack * (growthStacks ?? 0))} · 피해 {damageTakenThisRound}/{Math.ceil(maxHp * roundGrowth.removeOneAtHpFraction)}·{Math.ceil(maxHp * roundGrowth.removeTwoAtHpFraction)}
+            </em>
+          </Keyword>
+        ) : null}
+        {side === "enemy" && roundGrowth === undefined && growthStacks !== undefined && growthStacks > 0 ? (
           <Keyword
             className="chip-keyword"
             entry={{ label: growthLabel, description: `${growthLabel} 스택. 공격을 강화하며 표시된 대응 조건으로 획득하거나 잃습니다.` }}
@@ -4812,6 +4914,16 @@ export const UnitPanel = ({
             </em>
           </Keyword>
         ) : null}
+        {statusStacks(statuses, "poison") > 0 ? (
+          <Keyword term="poison" className="chip-keyword">
+            <em
+              aria-label={`중독 ${statusStacks(statuses, "poison")}`}
+              className={`poison-chip ${vfx.has(`poison-${unitKey}`) ? "vfx-pulse" : ""}`}
+            >
+              중독 {statusStacks(statuses, "poison")}
+            </em>
+          </Keyword>
+        ) : null}
         {statusTurns(statuses, "frostbite") > 0 ? (
           <Keyword term="frostbite" className="chip-keyword">
             <em aria-label={`동상 ${statusTurns(statuses, "frostbite")}턴`} className="frost-chip">
@@ -4823,6 +4935,13 @@ export const UnitPanel = ({
           <Keyword term="shock" className="chip-keyword">
             <em aria-label={`감전 ${statusTurns(statuses, "shock")}턴`} className="shock-chip">
               감전 {statusTurns(statuses, "shock")}
+            </em>
+          </Keyword>
+        ) : null}
+        {statusTurns(statuses, "healLock") > 0 ? (
+          <Keyword term="healLock" className="chip-keyword">
+            <em aria-label={`회복 봉인 ${statusTurns(statuses, "healLock")}턴`} className="heal-lock-chip">
+              회복 봉인 {statusTurns(statuses, "healLock")}
             </em>
           </Keyword>
         ) : null}

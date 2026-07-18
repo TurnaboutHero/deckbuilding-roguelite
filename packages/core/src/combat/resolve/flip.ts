@@ -1,9 +1,9 @@
 import type { StatusId, ConsumeSkillDef, ContentDb, EffectAtom, FlipSkillDef, TargetRef } from '../../content-types';
-import { effectiveElements, isSuccessLadderFlipSkill, skillCooldown } from '../../content-types';
+import { effectiveElements, isStackStatus, isSuccessLadderFlipSkill, skillCooldown } from '../../content-types';
 import type { Element, EquipmentDefId, CoinUid, Face, SkillId, SlotId } from '../../ids';
 import { rngFrom } from '../../rng';
 import { drawCards, drawSpecificCoin, HAND_LIMIT } from '../draw';
-import type { CombatEvent } from '../events';
+import type { CombatEvent, DamageSource } from '../events';
 import { assertCoinEnchantEligibility, firstUseEchoCoins, rollEnchantedFace } from '../enchant';
 import { MAX_PRESERVED_COINS, statusStacks, statusTurns } from '../state';
 import type { CombatState, StatusState, TurnTriggerInstance } from '../state';
@@ -67,24 +67,37 @@ const modifiedDamage = (state: CombatState, target: TargetRef, amount: number, a
       ? (state.enemies[target.index]?.windup?.intent.vulnerableWhileWindup ?? 1)
       : 1;
   const phaseMultiplier = target.type === 'enemy' ? (state.enemies[target.index]?.damageTakenMultiplier ?? 1) : 1;
-  return Math.floor(amount * frostbiteMultiplier * shockMultiplier * windupMultiplier * phaseMultiplier);
+  const growthTarget = target.type === 'enemy' ? state.enemies[target.index] : undefined;
+  const growthMultiplier =
+    growthTarget?.roundGrowth === undefined
+      ? 1
+      : Math.max(0, 1 - (growthTarget.growthStacks ?? 0) * growthTarget.roundGrowth.damageReductionPerStack);
+  return Math.floor(amount * frostbiteMultiplier * shockMultiplier * windupMultiplier * phaseMultiplier * growthMultiplier);
+};
+
+const statusDamageAmount = (state: CombatState, target: TargetRef, amount: number): number => {
+  if (target.type !== 'enemy') return amount;
+  const enemy = state.enemies[target.index];
+  if (enemy?.roundGrowth === undefined) return amount;
+  return Math.floor(amount * Math.max(0, 1 - (enemy.growthStacks ?? 0) * enemy.roundGrowth.damageReductionPerStack));
 };
 
 export const applyDamage = (
   state: CombatState,
   target: TargetRef,
   amount: number,
-  source: 'skill' | 'coin' | 'burn' | 'enemy' | 'self',
+  source: DamageSource,
   events: CombatEvent[],
   attacker?: TargetRef
 ): CombatState => {
   if (amount < 0) throw new Error('damage amount cannot be negative');
-  const finalAmount = source === 'burn' ? amount : modifiedDamage(state, target, amount, attacker);
+  const isStatusDamage = source === 'burn' || source === 'poison';
+  const finalAmount = isStatusDamage ? statusDamageAmount(state, target, amount) : modifiedDamage(state, target, amount, attacker);
   if (target.type === 'player') {
     const canReduce =
-      source !== 'burn' && finalAmount > 0 && !state.player.firstDamageReducedThisTurn && state.passives.some((id) => String(id) === 'opening-stance');
+      !isStatusDamage && finalAmount > 0 && !state.player.firstDamageReducedThisTurn && state.passives.some((id) => String(id) === 'opening-stance');
     const reducedAmount = Math.max(0, finalAmount - (canReduce ? 1 : 0));
-    const blocked = source === 'burn' ? 0 : Math.min(state.player.block, reducedAmount);
+    const blocked = isStatusDamage ? 0 : Math.min(state.player.block, reducedAmount);
     const hpDamage = reducedAmount - blocked;
     const nextHp = Math.max(0, state.player.hp - hpDamage);
     const shouldBreathe =
@@ -110,9 +123,10 @@ export const applyDamage = (
 
   const enemy = state.enemies[target.index];
   if (enemy === undefined || enemy.hp <= 0) return state;
-  const blocked = source === 'burn' ? 0 : Math.min(enemy.block, finalAmount);
+  const blocked = isStatusDamage ? 0 : Math.min(enemy.block, finalAmount);
   const hpDamage = finalAmount - blocked;
   const nextHp = Math.max(0, enemy.hp - hpDamage);
+  const countsTowardRoundGrowth = attacker?.type === 'player' || source === 'burn' || source === 'poison';
   const shouldCancelWindup =
     source === 'skill' &&
     enemy.windup?.cancelThreshold !== undefined &&
@@ -123,6 +137,8 @@ export const applyDamage = (
           ...candidate,
           block: candidate.block - blocked,
           hp: nextHp,
+          damageTakenThisRound:
+            (candidate.damageTakenThisRound ?? 0) + (countsTowardRoundGrowth ? hpDamage : 0),
           windup: shouldCancelWindup ? undefined : candidate.windup,
           cancelledWindupIntentId: shouldCancelWindup ? enemy.windup?.intent.id : candidate.cancelledWindupIntentId
         }
@@ -158,7 +174,7 @@ export const applyBlock = (state: CombatState, target: TargetRef, amount: number
 };
 
 const addStatus = (current: StatusState | undefined, status: EffectAtom & { kind: 'applyStatus' }): StatusState => {
-  if (status.status === 'burn') {
+  if (isStackStatus(status.status)) {
     return { kind: 'stack', stacks: (current?.kind === 'stack' ? current.stacks : 0) + status.stacks };
   }
   return { kind: 'duration', turns: (current?.kind === 'duration' ? current.turns : 0) + status.stacks };
@@ -214,6 +230,10 @@ const addTemporaryCoin = (state: CombatState, atom: Extract<EffectAtom, { kind: 
 };
 
 const healPlayer = (state: CombatState, amount: number, events: CombatEvent[]): CombatState => {
+  if (statusTurns(state.player.statuses, 'healLock') > 0) {
+    events.push({ type: 'healPrevented', target: { type: 'player' }, amount, reason: 'healLock' });
+    return state;
+  }
   const hp = Math.min(state.player.maxHp, state.player.hp + amount);
   const gained = hp - state.player.hp;
   if (gained <= 0) return state;
@@ -393,7 +413,7 @@ export const applyEffectAtom = (
         atom.status === 'burn' && atom.to === 'target' && !state.player.firstBurnBoostUsedThisTurn && state.passives.some((id) => String(id) === 'ember-stock');
       const appliedAtom = firstBurnBoost ? { ...atom, stacks: atom.stacks + 1 } : atom;
       const event =
-        atom.status === 'burn'
+        isStackStatus(atom.status)
           ? { type: 'statusApplied' as const, target: statusTarget, status: atom.status, stacks: appliedAtom.stacks }
           : { type: 'statusApplied' as const, target: statusTarget, status: atom.status, stacks: atom.stacks, turns: atom.stacks };
       if (statusTarget.type === 'player') {

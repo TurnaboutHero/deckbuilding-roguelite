@@ -79,6 +79,16 @@ const BATCH_A_THREE_POOL = [
   [enemy("gate-pikeman"), enemy("black-hound"), enemy("slime")],
   [enemy("silverbell-healer"), enemy("red-lancer")],
 ] as const;
+// P13 §6.4 Batch B enters only after act 1. Pairings keep at most two decision-heavy mechanics active.
+const BATCH_B_TWO_POOL = [
+  [enemy("plague-doctor"), enemy("goblin")],
+  [enemy("white-wraith"), enemy("black-hound")],
+  [enemy("ancient-treant")],
+] as const;
+const BATCH_B_THREE_POOL = [
+  [enemy("plague-doctor"), enemy("ancient-treant")],
+  [enemy("white-wraith"), enemy("ancient-treant")],
+] as const;
 const ELITE_POOL = [[enemy("raider-plus")], [enemy("gatekeeper-plus")]] as const;
 
 // 막 보스 (P6 D1 — 재사용+수치 변형, balance-provisional):
@@ -96,8 +106,15 @@ const combatPoolFor = (act: number, visit: number): readonly (readonly EnemyDefI
     if (visit <= 5) return TWO_POOL;
     return [...TWO_POOL, ...THREE_POOL];
   }
-  if (visit <= 5) return [...TWO_POOL, ...BATCH_A_TWO_POOL];
-  return [...TWO_POOL, ...BATCH_A_TWO_POOL, ...THREE_POOL, ...BATCH_A_THREE_POOL];
+  if (visit <= 5) return [...TWO_POOL, ...BATCH_A_TWO_POOL, ...BATCH_B_TWO_POOL];
+  return [
+    ...TWO_POOL,
+    ...BATCH_A_TWO_POOL,
+    ...BATCH_B_TWO_POOL,
+    ...THREE_POOL,
+    ...BATCH_A_THREE_POOL,
+    ...BATCH_B_THREE_POOL,
+  ];
 };
 
 const rollKind = (

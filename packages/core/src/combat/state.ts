@@ -1,4 +1,4 @@
-import type { CoinInstance, EnemyIntent, StatusId, TurnTriggerDef } from '../content-types';
+import type { CoinInstance, EnemyIntent, EnemyRoundGrowthDef, StatusId, TurnTriggerDef } from '../content-types';
 import type { CharacterId, PassiveId, EquipmentDefId, CoinUid, EnemyDefId, SkillId, SlotId } from '../ids';
 import type { Rng, RngSnapshot } from '../rng';
 import type { CombatEvent } from './events';
@@ -109,6 +109,8 @@ export interface EnemyState extends UnitState {
   phaseIndex?: number;
   damageTakenMultiplier?: number;
   growthStacks?: number;
+  roundGrowth?: EnemyRoundGrowthDef;
+  damageTakenThisRound?: number;
   boundHealAlly?: number;
   cancelledWindupIntentId?: string;
 }

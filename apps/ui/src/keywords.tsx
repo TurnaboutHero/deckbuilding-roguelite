@@ -7,12 +7,14 @@ import "./keywords.css";
 
 export type KeywordTerm =
   | "burn"
+  | "poison"
   | "wither"
   | "block"
   | "flip"
   | "consume"
   | "frostbite"
   | "shock"
+  | "healLock"
   | "trigger"
   | "attack-buff"
   | "passive"
@@ -29,12 +31,18 @@ export type KeywordTerm =
   | "windup"
   | "vulnerable"
   | "frenzy"
-  | "growth";
+  | "growth"
+  | "unusedElementalThreshold"
+  | "ringGrowth";
 
 export const KEYWORD_GLOSSARY: Record<KeywordTerm, { label: string; description: string }> = {
   burn: {
     label: "화상",
     description: "대상의 턴이 끝날 때 스택만큼 피해를 준다 (방어 무시). 그 뒤 스택이 1 줄어든다.",
+  },
+  poison: {
+    label: "중독",
+    description: "대상의 턴이 끝날 때 스택만큼 피해를 준다 (방어 무시). 화상과 달리 스택은 줄지 않는다.",
   },
   wither: {
     label: "위축",
@@ -59,6 +67,10 @@ export const KEYWORD_GLOSSARY: Record<KeywordTerm, { label: string; description:
   shock: {
     label: "감전",
     description: "남은 턴 동안 대상이 받는 피해가 50% 늘어난다. 자기 턴이 끝날 때 1턴씩 줄어든다.",
+  },
+  healLock: {
+    label: "회복 봉인",
+    description: "남은 턴 동안 플레이어가 받는 회복을 막는다. 자신의 턴이 끝날 때 1턴씩 줄어든다.",
   },
   trigger: {
     label: "턴 버프",
@@ -136,6 +148,14 @@ export const KEYWORD_GLOSSARY: Record<KeywordTerm, { label: string; description:
   growth: {
     label: "성장",
     description: "적의 성장 스택. 공격 피해에 더해지며, 조건을 놓치거나 막아내면 줄어들 수 있다.",
+  },
+  unusedElementalThreshold: {
+    label: "미사용 속성 코인 경고",
+    description: "내 턴 종료 시 손에 남은 속성 코인이 기준 이상이면 표시된 상태 이상을 받는다. 부여·임시·보존 코인도 속성이 있으면 각각 1개로 센다.",
+  },
+  ringGrowth: {
+    label: "나이테",
+    description: "현재 나이테마다 받는 피해가 줄고 적 행동 시작에 최대 체력 비례로 회복한다. 이번 라운드 실제 체력 피해가 기준에 도달하면 나이테가 깨진 뒤 라운드 종료에 다시 1개 자란다.",
   },
 };
 

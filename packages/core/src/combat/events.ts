@@ -1,6 +1,8 @@
 import type { EnemyIntent, StatusId, TargetRef } from '../content-types';
 import type { CoinEnchantId, CoinUid, Element, Face, SkillId, SlotId } from '../ids';
 
+export type DamageSource = 'skill' | 'coin' | 'burn' | 'poison' | 'enemy' | 'self';
+
 export type CombatEvent =
   | { type: 'coinsDrawn'; coins: CoinUid[] }
   | { type: 'coinPlaced'; coin: CoinUid; slot: SlotId }
@@ -19,13 +21,14 @@ export type CombatEvent =
       target: TargetRef;
       amount: number;
       blocked: number;
-      source: 'skill' | 'coin' | 'burn' | 'enemy' | 'self';
+      source: DamageSource;
     }
   | { type: 'bloodCoinFizzle'; coin: CoinUid }
   | { type: 'blockGained'; target: TargetRef; amount: number }
   | { type: 'blockCleared'; target: TargetRef; amount: number }
   // P7 — 회복(D4)·쿨다운 감소(D1)·과열(D5)
   | { type: 'healed'; target: TargetRef; amount: number; hp: number }
+  | { type: 'healPrevented'; target: { type: 'player' }; amount: number; reason: 'healLock' }
   | { type: 'cooldownReduced'; slots: number[]; amount: number }
   | { type: 'overheatEntered' }
   | { type: 'overheatScheduled' }
@@ -66,6 +69,8 @@ export type CombatEvent =
   | { type: 'enemyWindupCancelled'; enemy: number; intent: EnemyIntent }
   | { type: 'enemyPhaseChanged'; enemy: number }
   | { type: 'enemyGrew'; enemy: number; stacks: number }
+  | { type: 'enemyGrowthReduced'; enemy: number; removed: number; stacks: number; damage: number; threshold: number }
+  | { type: 'playerTurnEndPunished'; enemy: number; coinCount: number; threshold: number; status: StatusId; stacks: number }
   | { type: 'enemyCleansed'; enemy: number; statuses: StatusId[] }
   | { type: 'enemyHealFailed'; enemy: number; target: number }
   | { type: 'turnStarted'; turn: number }

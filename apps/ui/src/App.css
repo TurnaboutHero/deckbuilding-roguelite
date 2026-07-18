@@ -311,6 +311,27 @@ button:focus-visible {
   color: #ffd9b0;
 }
 
+.poison-chip,
+.heal-lock-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-style: normal;
+  font-size: 13px;
+  padding: 2px 6px;
+  border: 2px solid var(--out);
+}
+
+.poison-chip {
+  background: #3a5d2a;
+  color: #d7f2bf;
+}
+
+.heal-lock-chip {
+  background: #55314f;
+  color: #f5c7ea;
+}
+
 .hp-bar {
   display: flex;
   align-items: center;
@@ -3044,6 +3065,8 @@ button:focus-visible {
   }
   .block-chip,
   .burn-chip,
+  .poison-chip,
+  .heal-lock-chip,
   .frost-chip,
   .shock-chip,
   .attack-buff-chip,

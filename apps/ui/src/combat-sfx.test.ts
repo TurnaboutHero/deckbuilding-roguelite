@@ -36,6 +36,12 @@ describe("sfxCuesFor", () => {
     expect(cues({ type: "enemyHealFailed", enemy: 0, target: 1 })).toEqual(["flip-tails"]);
   });
 
+  it("maps Directive 12 prevention, ring break, and unused-coin punishment events", () => {
+    expect(cues({ type: "healPrevented", target: { type: "player" }, amount: 5, reason: "healLock" })).toEqual(["flip-tails"]);
+    expect(cues({ type: "enemyGrowthReduced", enemy: 0, removed: 2, stacks: 3, damage: 17, threshold: 17 })).toEqual(["hit"]);
+    expect(cues({ type: "playerTurnEndPunished", enemy: 0, coinCount: 4, threshold: 4, status: "frostbite", stacks: 1 })).toEqual(["frost"]);
+  });
+
   it("maps stack Remise events to charge, success, failure and hit emphasis sounds", () => {
     expect(cues({ type: "remiseGained", amount: 1, total: 2 })).toEqual(["mana"]);
     expect(cues({ type: "remiseGained", amount: 0, total: 3 })).toEqual([]);

@@ -5,6 +5,7 @@ import type { KeywordTerm } from "./keywords";
 
 const TERMS: KeywordTerm[] = [
   "burn",
+  "poison",
   "wither",
   "block",
   "flip",
@@ -12,6 +13,9 @@ const TERMS: KeywordTerm[] = [
   "trigger",
   "temporary",
   "elementCoin",
+  "healLock",
+  "unusedElementalThreshold",
+  "ringGrowth",
 ];
 
 describe("KEYWORD_GLOSSARY", () => {

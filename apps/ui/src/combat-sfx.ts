@@ -25,12 +25,18 @@ export const sfxCuesFor = (event: CombatEvent): SfxKind[] => {
     case "healed":
     case "enemyHealed":
       return event.amount > 0 ? ["blood"] : [];
+    case "healPrevented":
+      return event.amount > 0 ? ["flip-tails"] : [];
     case "statusApplied":
       return event.status === "burn"
         ? ["fire"]
         : event.status === "frostbite"
           ? ["frost"]
-          : ["shock"];
+          : event.status === "poison"
+            ? ["blood"]
+            : event.status === "healLock"
+              ? ["flip-tails"]
+              : ["shock"];
     case "cooldownReduced":
       return event.slots.length > 0 ? ["cooldown"] : [];
     case "overheatEntered":
@@ -78,6 +84,18 @@ export const sfxCuesFor = (event: CombatEvent): SfxKind[] => {
       return ["overheat-enter"];
     case "enemyGrew":
       return ["mana"];
+    case "enemyGrowthReduced":
+      return event.removed > 0 ? ["hit"] : [];
+    case "playerTurnEndPunished":
+      return event.stacks > 0
+        ? event.status === "frostbite"
+          ? ["frost"]
+          : event.status === "poison"
+            ? ["blood"]
+            : event.status === "healLock"
+              ? ["flip-tails"]
+              : ["shock"]
+        : [];
     case "enemyCleansed":
       return ["blood"];
     case "enemyHealFailed":
