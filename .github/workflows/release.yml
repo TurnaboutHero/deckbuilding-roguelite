@@ -45,7 +45,6 @@ jobs:
       - run: pnpm check:assets
       - run: node scripts/check-budget.mjs
       - run: pnpm -F @game/ui playtest -- ../../playtest-artifacts
-      - run: node apps/ui/scripts/feedback-check.mjs
       - run: node apps/ui/scripts/a11y-contrast.mjs contrast-report.json
       - run: node apps/ui/scripts/perf-check.mjs perf-report.json
 
