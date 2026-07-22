@@ -137,7 +137,7 @@ const atomSegment = (atom: EffectAtom): { text: string; term?: KeywordTerm } => 
     };
   }
   if (atom.kind === "echoPreheat") return { text: `반향 예열 +${atom.amount}`, term: "echoPreheat" };
-  if (atom.kind === "precisionDefenseArm") return { text: "정밀 방어 예약", term: "precisionDefense" };
+  if (atom.kind === "precisionDefenseArm") return { text: "정밀 방어 준비", term: "precisionDefense" };
   if (atom.kind === "damagePlusEcho") return { text: `피해 ${atom.base} + 반향`, term: "echoAmplification" };
   if (atom.kind === "aoeDamagePlusEcho")
     return { text: `모든 적 피해 ${atom.base} + 반향`, term: "echoAmplification" };
@@ -299,7 +299,7 @@ export function skillEffectRows(skill: SkillDef, bloodSwordPower = 0): EffectRow
             badge: "비용",
             segments: [
               {
-                text: `${elementKo(skill.requiredElement)} ×${skill.cost} 장전`,
+                text: `${elementKo(skill.requiredElement)} ×${skill.cost} 걸기`,
               },
             ],
           },

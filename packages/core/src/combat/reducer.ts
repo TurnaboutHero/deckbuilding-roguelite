@@ -106,6 +106,7 @@ const runHook = (input: CombatState, db: ContentDb, hook: 'combatStart' | 'turnS
 
 const startPlayerTurn = (input: CombatState, db: ContentDb, clearBlock = true): { state: CombatState; events: CombatEvent[] } => {
   const events: CombatEvent[] = [];
+  const pendingNextTurnBlock = input.player.nextTurnBlock;
   let state: CombatState = {
     ...input,
     phase: 'player' as const,
@@ -173,9 +174,11 @@ const startPlayerTurn = (input: CombatState, db: ContentDb, clearBlock = true): 
       ...state.player,
       block: clearBlock ? 0 : state.player.block,
       nextDrawPenalty: 0,
-      nextDrawBonus: 0
+      nextDrawBonus: 0,
+      nextTurnBlock: 0
     }
   };
+  if (pendingNextTurnBlock > 0) state = applyBlock(state, { type: 'player' }, pendingNextTurnBlock, events);
   // turnStart 훅(trait·획득 패시브) — 드로우 전에 발동해 생성 코인이 이번 드로우에 섞인다
   const hooked = runHook(state, db, 'turnStart');
   state = hooked.state;
@@ -330,6 +333,7 @@ export const createCombat = (cfg: CreateCombatConfig, db: ContentDb, seed: strin
       statuses: {},
       nextDrawPenalty: 0,
       nextDrawBonus: 0,
+      nextTurnBlock: 0,
       overheat: false,
       pendingOverheat: false,
       weaponOutput: 0,
@@ -504,6 +508,22 @@ const validateChosenBasicInHand = (input: CombatState, skill: FlipSkillDef, chos
   return undefined;
 };
 
+const validateImmediateFlipCoins = (
+  input: CombatState,
+  skill: FlipSkillDef,
+  coins: readonly CoinUid[],
+  db: ContentDb
+): StepResult | undefined => {
+  if (coins.length !== skill.cost) return { ok: false, error: 'selected coin count must equal skill cost' };
+  if (new Set(coins).size !== coins.length) return { ok: false, error: 'selected coins must be unique' };
+  for (const coin of coins) {
+    if (!input.zones.hand.includes(coin)) return { ok: false, error: 'selected coin is not in hand' };
+    if (input.coins[Number(coin)]?.counterfeit === true) return { ok: false, error: 'counterfeit coin cannot be used' };
+    if (!coinSatisfiesFlipRequirement(input, db, skill, coin)) return { ok: false, error: 'coin does not satisfy required flip element' };
+  }
+  return undefined;
+};
+
 const tickPlayerDurations = (input: CombatState, events: CombatEvent[]): CombatState => {
   let statuses = input.player.statuses;
   for (const status of DURATION_STATUS_IDS) {
@@ -659,11 +679,11 @@ const endTurn = (input: CombatState, db: ContentDb, preserveChoice?: readonly Co
     state = applyBlock(state, { type: 'player' }, 2, events);
   }
 
-  for (const status of ['burn', 'poison'] as const) {
+  for (const status of ['burn', 'poison', 'bleed'] as const) {
     const stacks = statusStacks(state.player.statuses, status);
     if (stacks <= 0) continue;
-    state = applyDamage(state, { type: 'player' }, stacks, status, events);
-    const remaining = status === 'burn' ? Math.max(0, stacks - 1) : stacks;
+    if (status !== 'bleed') state = applyDamage(state, { type: 'player' }, stacks, status, events);
+    const remaining = status === 'burn' || status === 'bleed' ? Math.max(0, stacks - 1) : stacks;
     state = {
       ...state,
       player: {
@@ -794,6 +814,38 @@ export const step = (state: CombatState, cmd: Command, db: ContentDb): StepResul
     if (cmd.type === 'placeCoin') return placeCoin(input, cmd.coin, cmd.slot, db);
     if (cmd.type === 'unplaceCoin') return unplaceCoin(input, cmd.coin);
     if (cmd.type === 'endTurn') return endTurn(input, db, cmd.preserve);
+    if (cmd.type === 'useImmediateFlipSkill') {
+      const slotState = input.slots[Number(cmd.slot)];
+      if (slotState === undefined) return { ok: false, error: 'slot does not exist' };
+      if (isSkillCommandSealed(input, cmd.slot)) return { ok: false, error: 'skill is sealed' };
+      const skill = db.skills[String(slotState.skillId)];
+      if (skill === undefined || skill.type !== 'flip') return { ok: false, error: 'slot is not a flip skill' };
+      const coinError = validateImmediateFlipCoins(input, skill, cmd.coins, db);
+      if (coinError !== undefined) return coinError;
+      if (skill.targetType === 'single-enemy' || flipSkillRequiresEnemyTarget(input, cmd.slot, skill, db, cmd.coins)) {
+        const targetError = validateSingleEnemyTarget(input, cmd.target);
+        if (targetError !== undefined) return targetError;
+      }
+      const chosenError = validateChosenBasicInHand(input, skill, cmd.chosen, db);
+      if (chosenError !== undefined) return chosenError;
+      if (skillRequiresSummonChoice(skill) && !input.summons.some((summon) => summon.uid === cmd.chosenSummon)) {
+        return { ok: false, error: 'a valid summon choice is required' };
+      }
+      const handAfterCost = input.zones.hand.filter((coin) => !cmd.coins.includes(coin));
+      const immediateInput = {
+        ...input,
+        zones: { ...input.zones, hand: handAfterCost },
+        ...(cmd.target === undefined ? {} : { lastTargetedEnemy: cmd.target })
+      };
+      return {
+        ok: true,
+        ...resolveFlip(immediateInput, cmd.slot, skill, cmd.target, db, cmd.chosen, {
+          desiredCoin: cmd.desiredCoin,
+          chosenEquipment: cmd.chosenEquipment,
+          chosenSummon: cmd.chosenSummon
+        }, undefined, cmd.coins)
+      };
+    }
     if (cmd.type === 'useFlipSkill') {
       const slotState = input.slots[Number(cmd.slot)];
       if (slotState === undefined) return { ok: false, error: 'slot does not exist' };

@@ -40,6 +40,8 @@ export interface PlayerState extends UnitState {
   nextDrawPenalty: number;
   // P7 D3 — 다음 턴 드로우 보너스 (턴 시작 총 드로우는 [0,8] 클램프)
   nextDrawBonus: number;
+  /** v4.5 frost reservation: block granted at the start of the next player turn. */
+  nextTurnBlock: number;
   // P7 D5 — 과열: 비중첩 불리언, 턴 넘어 지속, 과열 강화 스킬 해결 후 소비
   overheat: boolean;
   pendingOverheat: boolean;

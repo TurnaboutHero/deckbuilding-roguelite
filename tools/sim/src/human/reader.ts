@@ -130,6 +130,7 @@ const sanitizeCommand = (value: unknown, label: string): TelemetryCommand => {
     [
       "placeCoin",
       "unplaceCoin",
+      "useImmediateFlipSkill",
       "useFlipSkill",
       "useConsumeSkill",
       "endTurn",
@@ -145,6 +146,24 @@ const sanitizeCommand = (value: unknown, label: string): TelemetryCommand => {
   }
   if (type === "unplaceCoin") {
     return { type, coin: nonNegativeInteger(object, "coin", label) };
+  }
+  if (type === "useImmediateFlipSkill") {
+    const command: Extract<TelemetryCommand, { type: "useImmediateFlipSkill" }> = {
+      type,
+      slot: nonNegativeInteger(object, "slot", label),
+      coins: numberArray(object.coins, `${label}.coins`),
+    };
+    const target = optionalIndex(object, "target", label);
+    const chosenSummon = optionalIndex(object, "chosenSummon", label);
+    if (target !== undefined) command.target = target;
+    if (object.chosen !== undefined)
+      command.chosen = numberArray(object.chosen, `${label}.chosen`);
+    if (object.desiredCoin !== undefined)
+      command.desiredCoin = stringValue(object, "desiredCoin", label);
+    if (object.chosenEquipment !== undefined)
+      command.chosenEquipment = stringValue(object, "chosenEquipment", label);
+    if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
+    return command;
   }
   if (type === "useFlipSkill") {
     const command: Extract<TelemetryCommand, { type: "useFlipSkill" }> = {
@@ -198,7 +217,7 @@ const sanitizeDamage = (value: unknown, label: string): HumanDamageFact => {
     blocked: nonNegativeInteger(object, "blocked", label),
     source: literalValue(
       object.source,
-      ["skill", "burn", "enemy", "self"] as const,
+      ["skill", "coin", "fixed", "burn", "poison", "enemy", "self"] as const,
       `${label}.source`,
     ),
   };

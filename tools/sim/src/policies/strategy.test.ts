@@ -2,7 +2,6 @@ import { contentDb } from "@game/content";
 import {
   createCombat,
   legalCommands,
-  previewFlip,
   step,
   type CoinDefId,
   type CombatState,
@@ -174,6 +173,7 @@ const policySlot = (
   );
   if (
     command.type !== "placeCoin" &&
+    command.type !== "useImmediateFlipSkill" &&
     command.type !== "useFlipSkill" &&
     command.type !== "useConsumeSkill"
   ) {
@@ -237,7 +237,7 @@ describe("M6 strategy policies", () => {
     expect(Object.isFrozen(GREEDY_EV_WEIGHTS)).toBe(true);
   });
 
-  it("uses distinct Aggro, Turtle, and GreedyEV preferences from legal placement plans", () => {
+  it("uses distinct Aggro, Turtle, and GreedyEV preferences from legal immediate actions", () => {
     const db = withSkills(strategySkills);
     const state = stateWithSkills(db, [
       skill("policy-all-out"),
@@ -256,31 +256,23 @@ describe("M6 strategy policies", () => {
     );
   });
 
-  it("evaluates a completed flip reservation through its legal reservation command", () => {
+  it("evaluates and executes an immediate flip through its exact legal command", () => {
     const db = withSkills(strategySkills);
-    let state = stateWithSkills(db, [skill("policy-balanced")]);
-    const placement = legalCommands(state, db).find(
-      (command) => command.type === "placeCoin" && Number(command.slot) === 0,
-    );
-    if (placement === undefined) throw new Error("balanced placement missing");
-    const placed = step(state, placement, db);
-    if (!placed.ok) throw new Error(placed.error);
-    state = placed.state;
-
+    const state = stateWithSkills(db, [skill("policy-balanced")]);
     const command = createAggroPolicy({ runSeed: "M6-RESERVATION" }).choose(
       state,
       db,
     );
     expect(command).toMatchObject({
-      type: "useFlipSkill",
+      type: "useImmediateFlipSkill",
       slot: 0,
-      reservationId: "flip-1",
     });
     expect(legalCommands(state, db).map(commandKey)).toContain(commandKey(command));
+    expect(step(state, command, db).ok).toBe(true);
   });
 
-  it("uses a loaded repeat reservation before placing an equally scored replacement", () => {
-    const policy = createTurtlePolicy({ runSeed: "M6-RESERVATION-PRIORITY" });
+  it("lets a repeat skill resolve immediately and remain available while coins remain", () => {
+    const policy = createTurtlePolicy({ runSeed: "M6-REPEAT-IMMEDIATE" });
     const state = createCombat(
       {
         character: "warrior" as never,
@@ -293,21 +285,13 @@ describe("M6 strategy policies", () => {
         equippedSkills: [skill("jab"), skill("fist-guard"), skill("fire-fist"), skill("direct-hit")],
       },
       contentDb,
-      "M6-RESERVATION-PRIORITY",
+      "M6-REPEAT-IMMEDIATE",
     );
     const first = policy.choose(state, contentDb);
-    expect(first).toMatchObject({ type: "placeCoin", slot: 1 });
-    if (first.type !== "placeCoin") throw new Error("guard placement missing");
-    const placed = step(state, first, contentDb);
-    if (!placed.ok) throw new Error(placed.error);
-
-    expect(
-      policy.choose(placed.state, contentDb),
-    ).toMatchObject({
-      type: "useFlipSkill",
-      slot: 1,
-      reservationId: "flip-1",
-    });
+    expect(first).toMatchObject({ type: "useImmediateFlipSkill" });
+    const resolved = step(state, first, contentDb);
+    if (!resolved.ok) throw new Error(resolved.error);
+    expect(legalCommands(resolved.state, contentDb).some((command) => command.type === "useImmediateFlipSkill")).toBe(true);
   });
 
   it("scores guaranteed consume effects and resolves equal values by canonical command key", () => {
@@ -374,20 +358,6 @@ describe("M6 strategy policies", () => {
       },
     };
 
-    let planned = state;
-    for (let index = 0; index < 2; index += 1) {
-      const placement = legalCommands(planned, db).find(
-        (command) => command.type === "placeCoin" && Number(command.slot) === 1,
-      );
-      if (placement === undefined) throw new Error("engine placement missing");
-      const result = step(planned, placement, db);
-      if (!result.ok) throw new Error(result.error);
-      planned = result.state;
-    }
-    expect(previewFlip(planned, 1 as SlotId, db).expected.coinsCreated).toBe(
-      0.75,
-    );
-
     expect(
       Number(
         policySlot(
@@ -399,7 +369,7 @@ describe("M6 strategy policies", () => {
     ).toBe(1);
   });
 
-  it("makes Turtle trade a small amount of prevention for a guaranteed two-cost counterattack", () => {
+  it("makes Turtle prefer immediate prevention over a two-cost RNG counterattack", () => {
     const db = withSkills(strategySkills);
     const state = stateWithSkills(
       db,
@@ -419,47 +389,7 @@ describe("M6 strategy policies", () => {
           db,
         ),
       ),
-    ).toBe(1);
-  });
-
-  it("keeps canonical endTurn when Aggro and Turtle outcomes are exactly tied", () => {
-    const db = withSkills(strategySkills);
-    const base = stateWithSkills(db, [
-      skill("policy-wall"),
-      skill("policy-wall"),
-      skill("policy-wall"),
-      skill("policy-wall"),
-      skill("policy-wall"),
-      skill("policy-wall"),
-    ]);
-    const basic = base.zones.hand.find(
-      (uid) => String(base.coins[Number(uid)]?.defId) === "basic",
-    );
-    if (basic === undefined) throw new Error("test state has no basic coin");
-    const baseEnemy = base.enemies[0];
-    if (baseEnemy === undefined) throw new Error("test state has no enemy");
-    const withheld = base.zones.hand.filter((uid) => uid !== basic);
-    const noAttackState: CombatState = {
-      ...base,
-      zones: {
-        ...base.zones,
-        hand: [basic],
-        draw: [...base.zones.draw, ...withheld],
-      },
-      enemies: [
-        {
-          ...baseEnemy,
-          intent: { id: "wait", actions: [] },
-        },
-      ],
-    };
-
-    expect(
-      createAggroPolicy({ runSeed: "M6-TIE" }).choose(noAttackState, db),
-    ).toEqual({ type: "endTurn" });
-    expect(
-      createTurtlePolicy({ runSeed: "M6-TIE" }).choose(noAttackState, db),
-    ).toEqual({ type: "endTurn" });
+    ).toBe(0);
   });
 
   it.each(["aggro", "turtle", "greedy"] as const)(

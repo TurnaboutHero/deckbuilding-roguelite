@@ -13,6 +13,8 @@ const coinsKey = (coins: readonly number[] | undefined): string =>
         .sort((left, right) => left - right)
         .map(numericKey)
         .join(",");
+const orderedCoinsKey = (coins: readonly number[] | undefined): string =>
+  coins === undefined ? "none" : coins.map(Number).map(numericKey).join(",");
 
 export const commandKey = (command: Command): string => {
   switch (command.type) {
@@ -22,11 +24,13 @@ export const commandKey = (command: Command): string => {
       return `1:placeCoin:slot=${numericKey(Number(command.slot))}:coin=${numericKey(Number(command.coin))}`;
     case "unplaceCoin":
       return `2:unplaceCoin:coin=${numericKey(Number(command.coin))}`;
+    case "useImmediateFlipSkill":
+      return `3:useImmediateFlipSkill:slot=${numericKey(Number(command.slot))}:target=${targetKey(command.target)}:coins=${orderedCoinsKey(command.coins)}:chosen=${coinsKey(command.chosen)}:equipment=${String(command.chosenEquipment ?? "none")}:summon=${summonKey(command.chosenSummon)}`;
     case "useFlipSkill":
-      return `3:useFlipSkill:slot=${numericKey(Number(command.slot))}:reservation=${String(command.reservationId ?? "none")}:target=${targetKey(command.target)}:chosen=${coinsKey(command.chosen)}:equipment=${String(command.chosenEquipment ?? "none")}:summon=${summonKey(command.chosenSummon)}`;
+      return `4:useFlipSkill:slot=${numericKey(Number(command.slot))}:reservation=${String(command.reservationId ?? "none")}:target=${targetKey(command.target)}:chosen=${coinsKey(command.chosen)}:equipment=${String(command.chosenEquipment ?? "none")}:summon=${summonKey(command.chosenSummon)}`;
     case "useConsumeSkill": {
       const coins = coinsKey(command.coins);
-      return `4:useConsumeSkill:slot=${numericKey(Number(command.slot))}:target=${targetKey(command.target)}:coins=${coins}:summon=${summonKey(command.chosenSummon)}`;
+      return `5:useConsumeSkill:slot=${numericKey(Number(command.slot))}:target=${targetKey(command.target)}:coins=${coins}:summon=${summonKey(command.chosenSummon)}`;
     }
   }
 };

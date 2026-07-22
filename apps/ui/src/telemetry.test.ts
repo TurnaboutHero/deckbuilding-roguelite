@@ -89,6 +89,35 @@ const terminalTrace = (): HumanRunTrace => {
 };
 
 describe("human telemetry capture", () => {
+  it("records an immediate flip bet without a player-declared face", () => {
+    const combat = bootCombat();
+    const coin = combat.zones.hand[0];
+    if (coin === undefined) throw new Error("missing test coin");
+    const started = beginHumanCombat(
+      createHumanRunTrace({
+        runSeed: "telemetry-immediate",
+        contentVersion: "test-content",
+        maxHp: combat.player.maxHp,
+        startedAt: fixedStart,
+      }),
+      { combatIndex: 0, attempt: 0, combat },
+    );
+
+    const trace = recordHumanDecision(started, {
+      combatIndex: 0,
+      attempt: 0,
+      before: combat,
+      commands: [{ type: "useImmediateFlipSkill", slot: 0 as SlotId, coins: [coin], target: 0 }],
+      after: combat,
+      events: [],
+    });
+
+    expect(trace.combats[0]?.decisions[0]?.commands).toEqual([
+      { type: "useImmediateFlipSkill", slot: 0, coins: [Number(coin)], target: 0 },
+    ]);
+    expect(sanitizeHumanRunTrace(trace)).toEqual(trace);
+  });
+
   it("preserves explicit combat choices and the optional decision source", () => {
     const combat = bootCombat();
     const started = beginHumanCombat(

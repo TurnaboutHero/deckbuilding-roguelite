@@ -252,8 +252,8 @@ describe('P7 D1 — 쿨다운 행동 모델', () => {
     let state = start([id<SkillId>('basicStrike'), id<SkillId>('guardSelf')], undefined, db);
     state = useLoaded(state, db, 1);
     const commands = legalCommands(state, db);
-    expect(commands.some((cmd) => cmd.type === 'placeCoin' && cmd.slot === slot(1))).toBe(false);
-    expect(commands.some((cmd) => cmd.type === 'placeCoin' && cmd.slot === slot(0))).toBe(true);
+    expect(commands.some((cmd) => cmd.type === 'useImmediateFlipSkill' && cmd.slot === slot(1))).toBe(false);
+    expect(commands.some((cmd) => cmd.type === 'useImmediateFlipSkill' && cmd.slot === slot(0))).toBe(true);
     // 빈 슬롯(2~7)은 어떤 커맨드도 제안되지 않는다
     for (let empty = 2; empty < MAX_SKILL_SLOTS; empty += 1) {
       expect(commands.some((cmd) => 'slot' in cmd && cmd.slot === slot(empty))).toBe(false);

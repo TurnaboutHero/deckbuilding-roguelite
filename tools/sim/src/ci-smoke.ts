@@ -16,12 +16,14 @@ const EXPECTED_RUNS = GAMES_PER_POLICY * POLICY_IDS.length;
 const SEED_42_GOLDEN = {
   seed: "42",
   result: "defeat",
-  combatsCompleted: 2,
+  // 2026-07-22 v4.5 immediate combat: the lower basic-skill floor and immediate
+  // RNG resolution intentionally change the deterministic opening outcome.
+  combatsCompleted: 1,
   // 1.1.0-p6 재고정 — 3막·격투가 셋·막 스케일 ×1.15/1.3·막 보스 전체 회복 (balance-provisional)
   // 1.6.0-blood 재고정 — 혈액 마검사 및 보상 풀 정책 반영 (balance-provisional)
   // 2026-07-16 P13: 보상 풀 전속성 가중 개방(basic+signature → all-element weighted)으로 재앵커
   // 2026-07-17 v1.2 화염 시작기 이관 — balance-provisional, 깊이 2 유지.
-  turnsPerCombat: [6, 2],
+  turnsPerCombat: [7],
   carriedHp: 0,
   finalBag: [
     "basic",
@@ -34,12 +36,10 @@ const SEED_42_GOLDEN = {
     "basic",
     "fire",
     "fire",
-    "fire",
   ],
   finalEquippedSkills: ["jab", "fist-guard", "fire-fist", "direct-hit", "null", "null", "null", "null"],
   encounterOrder: [
     ["raider"],
-    ["gatekeeper"],
   ],
 } as const;
 

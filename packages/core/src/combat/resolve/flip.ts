@@ -39,6 +39,7 @@ export const scaleSkillAuthoredEffect = (atom: EffectAtom, multiplier: number | 
   switch (atom.kind) {
     case 'damage':
     case 'block':
+    case 'nextTurnBlock':
     case 'heal':
     case 'lifesteal':
     case 'prepareNextAttackDamage':
@@ -87,6 +88,7 @@ export const scaleSkillAuthoredEffect = (atom: EffectAtom, multiplier: number | 
       };
     // Coin-native output is intentionally never reduced by a skill seal.
     case 'coinDamage':
+    case 'fixedDamage':
       return atom;
     // These costs/losses and non-output utility atoms are not skill effects
     // measured by the seal's damage/block/heal/status rule.
@@ -97,6 +99,7 @@ export const scaleSkillAuthoredEffect = (atom: EffectAtom, multiplier: number | 
     case 'drawSpecific':
     case 'returnDiscardCoin':
     case 'nextTurnDraw':
+    case 'damageIfTargetStatus':
     case 'preserveChosenCoin':
     case 'increasePreserveCapacity':
     case 'reduceCooldown':
@@ -193,8 +196,9 @@ const modifiedDamage = (state: CombatState, target: TargetRef, amount: number, a
   if (attacker === undefined) return amount;
   const attackerStatuses = statusCarrier(state, attacker)?.statuses;
   const targetStatuses = statusCarrier(state, target)?.statuses;
-  const frostbiteMultiplier = attackerStatuses !== undefined && statusTurns(attackerStatuses, 'frostbite') > 0 ? 0.75 : 1;
+  const frostbiteMultiplier = attackerStatuses !== undefined && (statusTurns(attackerStatuses, 'frostbite') > 0 || statusTurns(attackerStatuses, 'frost') > 0) ? 0.75 : 1;
   const shockMultiplier = targetStatuses !== undefined && statusTurns(targetStatuses, 'shock') > 0 ? 1.5 : 1;
+  const bleedMultiplier = targetStatuses !== undefined && statusStacks(targetStatuses, 'bleed') > 0 ? 1.5 : 1;
   const windupMultiplier =
     target.type === 'enemy' && state.enemies[target.index]?.windup !== undefined
       ? (state.enemies[target.index]?.windup?.intent.vulnerableWhileWindup ?? 1)
@@ -211,7 +215,7 @@ const modifiedDamage = (state: CombatState, target: TargetRef, amount: number, a
     ? petrifyTarget.protectionLink.brokenDamageTakenMultiplier
     : 1;
   const guardMultiplier = target.type === 'enemy' ? vassalGuardMultiplier(state, target.index) : 1;
-  return Math.floor(amount * frostbiteMultiplier * shockMultiplier * windupMultiplier * phaseMultiplier * growthMultiplier * crackedMultiplier * brokenProtectionMultiplier * guardMultiplier);
+  return Math.floor(amount * frostbiteMultiplier * shockMultiplier * bleedMultiplier * windupMultiplier * phaseMultiplier * growthMultiplier * crackedMultiplier * brokenProtectionMultiplier * guardMultiplier);
 };
 
 const statusDamageAmount = (state: CombatState, target: TargetRef, amount: number): number => {
@@ -238,6 +242,7 @@ export const applyDamage = (
 ): CombatState => {
   if (amount < 0) throw new Error('damage amount cannot be negative');
   const isStatusDamage = source === 'burn' || source === 'poison';
+  const bypassesBlock = isStatusDamage || source === 'fixed';
   const baseFinalAmount = isStatusDamage ? statusDamageAmount(state, target, amount) : modifiedDamage(state, target, amount, attacker);
   const petrifyReduction = target.type === 'enemy' ? state.enemies[target.index]?.petrifyDamageReduction : undefined;
   const finalAmount = target.type === 'enemy' && state.enemies[target.index]?.petrifyActive === true && petrifyReduction !== undefined
@@ -247,7 +252,7 @@ export const applyDamage = (
     const canReduce =
       !isStatusDamage && finalAmount > 0 && !state.player.firstDamageReducedThisTurn && state.passives.some((id) => String(id) === 'opening-stance');
     const reducedAmount = Math.max(0, finalAmount - (canReduce ? 1 : 0));
-    const blocked = isStatusDamage ? 0 : Math.min(state.player.block, reducedAmount);
+    const blocked = bypassesBlock ? 0 : Math.min(state.player.block, reducedAmount);
     const hpDamage = reducedAmount - blocked;
     const nextHp = Math.max(0, state.player.hp - hpDamage);
     const shouldBreathe =
@@ -305,7 +310,7 @@ const applyEnemyDamage = (
   const enemy = state.enemies[enemyIndex];
   if (enemy === undefined || enemy.hp <= 0) return state;
   const isStatusDamage = source === 'burn' || source === 'poison';
-  const blocked = isStatusDamage ? 0 : Math.min(enemy.block, finalAmount);
+  const blocked = (isStatusDamage || source === 'fixed') ? 0 : Math.min(enemy.block, finalAmount);
   const hpDamage = finalAmount - blocked;
   const nextHp = Math.max(0, enemy.hp - hpDamage);
   const countsTowardRoundGrowth = attacker?.type === 'player' || source === 'burn' || source === 'poison';
@@ -590,8 +595,20 @@ export const applyEffectAtom = (
       return target.type === 'enemy' && isAliveEnemy(state, target.index)
         ? applyDamage(state, target, atom.amount, 'coin', events, { type: 'player' })
         : state;
+    case 'fixedDamage':
+      return target.type === 'enemy' && isAliveEnemy(state, target.index)
+        ? applyDamage(state, target, atom.amount, 'fixed', events)
+        : state;
+    case 'damageIfTargetStatus': {
+      if (target.type !== 'enemy') return state;
+      const statuses = state.enemies[target.index]?.statuses ?? {};
+      const active = isStackStatus(atom.status) ? statusStacks(statuses, atom.status) > 0 : statusTurns(statuses, atom.status) > 0;
+      return active ? applyDamage(state, target, atom.amount, 'skill', events, { type: 'player' }) : state;
+    }
     case 'block':
       return applyBlock(state, { type: 'player' }, atom.amount, events);
+    case 'nextTurnBlock':
+      return { ...state, player: { ...state.player, nextTurnBlock: state.player.nextTurnBlock + atom.amount } };
     case 'selfDamage':
       return applyDamage(state, { type: 'player' }, atom.amount, 'self', events);
     case 'loseHp': {
@@ -978,7 +995,7 @@ export const fireTurnTriggers = (
   return state;
 };
 
-const HOSTILE_STATUSES: ReadonlySet<StatusId> = new Set(['burn', 'frostbite', 'shock']);
+const HOSTILE_STATUSES: ReadonlySet<StatusId> = new Set(['burn', 'bleed', 'frostbite', 'frost', 'shock']);
 
 // P7 D4 — 코인 proc 대상 규칙: 공격형(피해·적대 상태)은 단일 대상 스킬→그 적,
 // 전체 스킬→모든 생존 적 각각, 자기 대상 스킬→명시 target(cmd) 필수.
@@ -990,7 +1007,7 @@ const targetsForElementProc = (
   skillTarget: TargetRef,
   explicitTarget: number | undefined
 ): TargetRef[] => {
-  if (atom.kind === 'coinDamage') {
+  if (atom.kind === 'coinDamage' || atom.kind === 'fixedDamage') {
     if (explicitTarget !== undefined && isAliveEnemy(state, explicitTarget)) {
       return [{ type: 'enemy', index: explicitTarget }];
     }
@@ -999,6 +1016,7 @@ const targetsForElementProc = (
   }
   const hostile =
     atom.kind === 'damage' ||
+    atom.kind === 'damageIfTargetStatus' ||
     atom.kind === 'damagePerTargetBurn' ||
     atom.kind === 'damageByConsumed' ||
     atom.kind === 'damageByTargetFrostbite' ||
@@ -1017,6 +1035,8 @@ const targetsForElementProc = (
 
 const isTargetEffect = (atom: EffectAtom): boolean =>
   atom.kind === 'damage' ||
+  atom.kind === 'fixedDamage' ||
+  atom.kind === 'damageIfTargetStatus' ||
   atom.kind === 'damagePerTargetBurn' ||
   atom.kind === 'damageByConsumed' ||
   atom.kind === 'damageByTargetFrostbite' ||
@@ -1030,6 +1050,7 @@ const isTargetEffect = (atom: EffectAtom): boolean =>
 export const targetsForSkillEffect = (state: CombatState, atom: EffectAtom, skill: FlipSkillDef | ConsumeSkillDef, fallback: TargetRef): TargetRef[] => {
   if (
     atom.kind === 'block' ||
+    atom.kind === 'nextTurnBlock' ||
     atom.kind === 'blockFromCurrent' ||
     atom.kind === 'prepareNextAttackDamage' ||
     atom.kind === 'scheduleEndTurnBlockAoe' ||
@@ -1265,7 +1286,8 @@ export const resolveFlip = (
   db: ContentDb,
   chosen?: readonly CoinUid[],
   summonChoice?: { chosenEquipment?: EquipmentDefId; chosenSummon?: number; desiredCoin?: import('../../ids').CoinDefId },
-  reservationId?: string
+  reservationId?: string,
+  immediateCoinUids?: readonly CoinUid[]
 ): ResolveResult => {
   const slotState = input.slots[Number(slot)];
   if (slotState === undefined) throw new Error('slot does not exist');
@@ -1275,7 +1297,7 @@ export const resolveFlip = (
 
   const reservation = reservationId === undefined ? undefined : input.flipReservations.find((candidate) => candidate.id === reservationId && candidate.slot === slot);
   if (reservationId !== undefined && reservation === undefined) throw new Error('flip reservation does not exist');
-  const placed = reservation?.coinUids ?? input.zones.placed[slot] ?? [];
+  const placed = immediateCoinUids ?? reservation?.coinUids ?? input.zones.placed[slot] ?? [];
   if (placed.length !== skill.cost) throw new Error('placed coin count must equal skill cost');
   assertCoinEnchantEligibility(input, placed);
   if (skill.requiredCoin !== undefined && placed.some((coin) => String(input.coins[Number(coin)]?.defId) !== String(skill.requiredCoin))) {
@@ -1389,7 +1411,8 @@ export const resolveFlip = (
 
   const rng = state.rngImpl?.flip ?? rngFrom(state.rng.flip);
   const faces: Face[] = [];
-  for (const coin of placed) {
+  for (let index = 0; index < placed.length; index += 1) {
+    const coin = placed[index]!;
     const rolled = rollEnchantedFace(
       state,
       coin,
@@ -1559,12 +1582,19 @@ export const resolveFlip = (
       const coin = state.coins[Number(resolutionCoins[i])];
       const face = resolutionFaces[i];
       if (coin === undefined || face === undefined) continue;
-      for (const element of effectiveElements(coin, db)) {
-        const procs = Object.values(db.coins).find((def) => def.element === element)?.procs;
-        const atoms = face === 'heads' ? procs?.heads : procs?.tails;
+      const baseCoinDef = db.coins[String(coin.defId)];
+      const procDefs = [
+        baseCoinDef,
+        ...effectiveElements(coin, db).flatMap((element) => Object.values(db.coins).filter((def) => def.element === element))
+      ];
+      const seenProcDefs = new Set<string>();
+      for (const coinDef of procDefs) {
+        if (coinDef === undefined || seenProcDefs.has(String(coinDef.id))) continue;
+        seenProcDefs.add(String(coinDef.id));
+        const atoms = face === 'heads' ? coinDef.procs?.heads : coinDef.procs?.tails;
         const concentrated =
-          element === 'blood' &&
-          db.coins[String(coin.defId)]?.element === 'blood' &&
+          coinDef.element === 'blood' &&
+          baseCoinDef?.element === 'blood' &&
           !state.player.concentratedBloodUsedThisTurn &&
           passiveMechanics.has('concentratedBlood');
         const hpLoss = (atoms ?? []).reduce((total, atom) => total + (atom.kind === 'loseHp' ? atom.amount : 0), 0);

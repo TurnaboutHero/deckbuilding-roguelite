@@ -1462,8 +1462,8 @@ export const chooseRunNode = (
     throw new Error("run is not choosing a node");
   assertRunGraphInvariants(run);
   const layer = run.graph.layers[run.combatIndex];
-  if (layer === undefined || layer.length < 2) {
-    throw new Error("current layer is not a branch");
+  if (layer === undefined || layer.length < 1) {
+    throw new Error("current layer has no selectable node");
   }
   if (!Number.isInteger(choice) || choice < 0 || choice >= layer.length) {
     throw new Error("node choice is out of range");

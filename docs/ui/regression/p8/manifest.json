@@ -1,92 +1,50 @@
 {
-  "schemaVersion": 1,
-  "seeds": {
-    "overlay": "P8-OVERLAY-GHOUL",
-    "combat": "P8-COMBAT-FEEDBACK",
-    "summon": "P8-SUMMON-FEEDBACK"
-  },
+  "schemaVersion": 2,
+  "contract": "v4.5-immediate-flow",
+  "baseUrl": "http://127.0.0.1:4181/deckbuilding-roguelite/",
   "screenshots": [
-    "overlay-desktop.png",
-    "overlay-mobile.png",
-    "combat-feedback.png",
-    "summon-feedback.png"
+    "title-desktop.png",
+    "character-select-desktop.png",
+    "combat-desktop.png",
+    "character-select-mobile-landscape.png",
+    "combat-mobile-landscape.png"
   ],
   "viewports": {
     "desktop": {
-      "height": 720,
-      "width": 1280
+      "width": 1600,
+      "height": 900
     },
-    "mobile": {
-      "height": 844,
-      "width": 390
+    "mobileLandscape": {
+      "width": 932,
+      "height": 430
     }
   },
-  "overlayDesktop": {
-    "keyboardReachable": true,
-    "describedBy": ":r0:",
-    "insideViewport": true,
-    "layer": "tooltip",
-    "placement": "bottom",
-    "role": "tooltip",
-    "topmost": true,
-    "ariaDescribedBy": true
+  "checks": {
+    "title": [
+      "continue-disabled-without-save",
+      "new-run",
+      "tutorial",
+      "settings"
+    ],
+    "run": [
+      "character-select",
+      "node-map",
+      "immediate-repeat-use",
+      "explicit-end-turn",
+      "passive-inventory"
+    ],
+    "removed": [
+      "combat-history",
+      "execution-rail",
+      "auto-placement",
+      "recommendation",
+      "action-confirm"
+    ],
+    "errors": {
+      "console": [],
+      "network": [],
+      "page": []
+    }
   },
-  "overlayMobile": {
-    "describedBy": ":r0:",
-    "insideViewport": true,
-    "layer": "tooltip",
-    "placement": "top",
-    "role": "tooltip",
-    "topmost": true,
-    "ariaDescribedBy": true,
-    "escapeCloses": true,
-    "touchReachable": true
-  },
-  "combatFeedback": {
-    "audio": {
-      "afterAction": {
-        "contexts": 1,
-        "oscillatorStarts": 6
-      },
-      "afterPlacement": {
-        "contexts": 1,
-        "oscillatorStarts": 1
-      },
-      "defaultMutedContextCount": 0,
-      "keyboardToggle": true,
-      "persistedUnmute": true
-    },
-    "placementVfxTarget": true,
-    "recoveryVfxTarget": true,
-    "cue": "vfx-hit",
-    "target": ".unit.enemy",
-    "targetAttached": true,
-    "visibleEquivalent": true
-  },
-  "reducedMotion": {
-    "audio": {
-      "contexts": 0,
-      "oscillatorStarts": 0
-    },
-    "movementCueAbsent": true,
-    "visibleEquivalent": true
-  },
-  "summonFeedback": {
-    "accessibleDuration": true,
-    "duration": "1",
-    "target": "[data-testid=\"summon-slot-0\"]",
-    "targetExists": true
-  },
-  "accessibility": {
-    "keyboardTooltip": true,
-    "muteKeyboardToggle": true,
-    "reducedMotionVisibleEquivalent": true,
-    "summonDurationLabel": true,
-    "touchTooltip": true
-  },
-  "errors": {
-    "console": 0,
-    "network": 0,
-    "page": 0
-  }
+  "passed": true
 }

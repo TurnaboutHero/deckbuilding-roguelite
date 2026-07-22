@@ -1,5 +1,5 @@
 import { CONTENT_VERSION, contentDb } from "@game/content";
-import type { CoinDefId, CoinUid, CharacterId, EnemyDefId, EquipmentDefId, Face, RunState, SkillId, SlotId } from "@game/core";
+import type { CoinDefId, CoinUid, CharacterId, EnemyDefId, EquipmentDefId, Face, RunState, SkillId, SlotId, StatusId } from "@game/core";
 import {
   acceptEvent,
   buyShopCoin,
@@ -55,37 +55,27 @@ import {
 } from "./combat-preferences";
 import type { CombatPreferences } from "./combat-preferences";
 import { CombatPreferencesPanel } from "./combat-preferences-panel";
+import { CombatHelp } from "./combat-support";
 import {
-  CombatHelp,
-  CombatHistory,
-  RecommendedLoadPreview,
-  TurnResourceStrip,
-} from "./combat-support";
-import { recommendedLoadProposal } from "./recommended-load";
-import { summarizeTurnResources } from "./turn-resource-summary";
-import {
-  abandonPendingExecutions,
   activateNextExecution,
-  beginAutoTurnEnd,
   blockActiveExecution,
   cancelAutoTurnEnd,
   completeActiveExecution,
   createIdleAutoTurnEnd,
-  executionQueueSnapshot,
   finishAutoTurnEnd,
-  moveExecutionSlot,
   pauseForExecutionChoice,
-  reconcileExecutionOrder,
   resumeExecutionChoice,
-  retryBlockedExecution,
 } from "./auto-turn-end";
-import type { AutoTurnEndState, ExecutionChoice, ExecutionOrder } from "./auto-turn-end";
+import type { AutoTurnEndState, ExecutionChoice } from "./auto-turn-end";
 import { CardEffectRows, skillDisplayName } from "./card-effects";
 import { CharacterSelect } from "./character-select";
 import type { CharacterArt } from "./character-select";
 import { RunMenu } from "./run-menu";
 import { TitleScreen } from "./title-screen";
 import type { TitleSaveSummary } from "./title-screen";
+import { TutorialScreen } from "./tutorial-screen";
+import { PassiveInventory } from "./passive-inventory";
+import { TitleSettings } from "./title-settings";
 import {
   autoSuggestCoinChoice,
   coinChoiceCandidates,
@@ -114,6 +104,7 @@ import { EventScreen } from "./event-screen";
 import { NodeChoice } from "./node-choice";
 import { ShopScreen } from "./shop-screen";
 import { Keyword } from "./keywords";
+import type { KeywordTerm } from "./keywords";
 import { AnchoredOverlay, OverlayPortal } from "./overlay";
 import { buildResolutionSummary, statusKo } from "./resolution-summary";
 import { ResolutionTicket } from "./resolution-ticket";
@@ -205,8 +196,6 @@ import type { SpriteManifest } from "./AtlasSprite";
 import {
   cardActionView,
   coinFacesAfterEvent,
-  dragSwapTargetCoins,
-  dragTargetSlots,
   dropCommands,
   pileComposition,
   rewardViewStage,
@@ -751,7 +740,7 @@ export const IntentBadge = ({
                 : `${statusKo(action.requiresPlayerStatus.status)} ${action.requiresPlayerStatus.atLeast} 이상 시`,
             ].filter((condition): condition is string => condition !== null).join(", ")}` : ""}`}
           >
-            <Keyword term={action.status}>
+            <Keyword term={action.status as KeywordTerm}>
               {statusKo(action.status)} {action.stacks}
               {action.requiresLastAttackHpDamage || action.requiresPlayerStatus !== undefined
                 ? ` (${[
@@ -1157,23 +1146,6 @@ const withCombatEventResolutionLines = (
   };
 };
 
-export const combatEventLogSummary = (events: readonly CombatEvent[]): ResolutionSummary | null => {
-  const lines = combatEventResolutionLines(events);
-  return lines.length === 0
-    ? null
-    : {
-        skillName: "전투 알림",
-        kind: "consume",
-        faces: [],
-        costNote: null,
-        baseLines: [],
-        bonusLines: [],
-        triggerLines: lines,
-        statusLines: [],
-        totalLine: lines.join(" · "),
-      };
-};
-
 const coinLabel = (state: CombatState, coin: CoinUid): string => {
   const instance = state.coins[Number(coin)];
   const def = instance === undefined ? undefined : contentDb.coins[String(instance.defId)];
@@ -1327,7 +1299,8 @@ interface RunSession {
 
 type BootState =
   | { mode: "title"; save: TitleSaveSummary | null }
-  | { mode: "select"; seed: string | null }
+  | { mode: "tutorial"; save: TitleSaveSummary | null }
+  | { mode: "select"; practice: boolean; seed: string | null }
   | { mode: "corrupt-save"; reason: "invalid" | "retired-character" }
   | { mode: "run"; session: RunSession };
 
@@ -1335,6 +1308,7 @@ const replaceUrlSeed = (seed: string, character?: CharacterId): void => {
   const url = new URL(window.location.href);
   url.searchParams.set("seed", seed);
   url.searchParams.delete("select");
+  url.searchParams.delete("practice");
   if (character !== undefined && String(character) !== "warrior") {
     url.searchParams.set("character", String(character));
   } else {
@@ -1347,11 +1321,12 @@ const replaceUrlWithTitle = (): void => {
   window.history.replaceState(null, "", window.location.pathname);
 };
 
-const replaceUrlWithSelection = (seed: string): void => {
+const replaceUrlWithSelection = (seed: string, practice = false): void => {
   const url = new URL(window.location.href);
   url.search = "";
   url.searchParams.set("seed", seed);
   url.searchParams.set("select", "1");
+  if (practice) url.searchParams.set("practice", "1");
   window.history.replaceState(null, "", url);
 };
 
@@ -1585,6 +1560,25 @@ const testEnemyStateFromUrl = (
   };
 };
 
+// Kept as a pure projection for telemetry/regression consumers. The combat-log
+// widget itself was intentionally removed from the play surface.
+export const combatEventLogSummary = (events: readonly CombatEvent[]): ResolutionSummary | null => {
+  const lines = combatEventResolutionLines(events);
+  return lines.length === 0
+    ? null
+    : {
+        skillName: "전투 알림",
+        kind: "consume",
+        faces: [],
+        costNote: null,
+        baseLines: [],
+        bonusLines: [],
+        triggerLines: lines,
+        statusLines: [],
+        totalLine: lines.join(" · "),
+      };
+};
+
 const testSkillsFromUrl = (fallback: RunState["equippedSkills"]): RunState["equippedSkills"] | null => {
   const skills = new URL(window.location.href).searchParams.get("skills");
   if (skills === null) return null;
@@ -1610,7 +1604,11 @@ const persistRun = (run: RunState): void => {
   window.dispatchEvent(new CustomEvent("run-save-status", { detail: { ok } }));
 };
 
-const freshSession = (seed: string, character: CharacterId = "warrior" as CharacterId): RunSession => {
+const freshSession = (
+  seed: string,
+  character: CharacterId = "warrior" as CharacterId,
+  startInCombat = false,
+): RunSession => {
   const created = createRun(
     {
       contentVersion: CONTENT_VERSION,
@@ -1651,6 +1649,7 @@ const freshSession = (seed: string, character: CharacterId = "warrior" as Charac
             },
     };
   }
+  if (!startInCombat) return { run: { ...ready, phase: "choose-node" }, combat: null };
   const started = startRunCombat(ready, contentDb);
   return { run: started.run, combat: started.combat };
 };
@@ -1725,12 +1724,12 @@ const bootState = (): BootState => {
   const testShopSession = testShopSessionFromUrl();
   if (testShopSession !== null) return { mode: "run", session: testShopSession };
   if (url.searchParams.get("select") === "1") {
-    return { mode: "select", seed: hasSeed ? urlSeed : null };
+    return { mode: "select", practice: url.searchParams.get("practice") === "1", seed: hasSeed ? urlSeed : null };
   }
   if (hasTestBoot)
     return {
       mode: "run",
-      session: freshSession(seedFromUrl(), testCharacter ?? ("warrior" as CharacterId)),
+      session: freshSession(seedFromUrl(), testCharacter ?? ("warrior" as CharacterId), true),
     };
   // P5.4 복구 계약: 상태 판별(missing/loaded/recovered/corrupt/unsupported/
   // unavailable) — 주 손상 시 백업 복구, 둘 다 무효면 원문 격리 후 명시 화면.
@@ -1818,12 +1817,16 @@ const RunMeta = ({
   onPreferencesChange,
   preferencesOpen,
   onPreferencesOpenChange,
+  passivesOpen,
+  onPassivesOpenChange,
 }: {
   run: RunState;
   preferences: CombatPreferences;
   onPreferencesChange: (next: CombatPreferences) => void;
   preferencesOpen: boolean;
   onPreferencesOpenChange: (open: boolean) => void;
+  passivesOpen: boolean;
+  onPassivesOpenChange: (open: boolean) => void;
 }) => {
   const layerCount = run.graph.layers.length;
   const acts = run.graph.acts;
@@ -1882,17 +1885,21 @@ const RunMeta = ({
         골드 {run.gold}
       </span>
       <span>시도 {run.attempt + 1}</span>
-      {run.acquiredPassives.length > 0 ? (
-        <span className="passive-count" data-testid="run-passives" title={passiveNames}>
-          ★ 패시브 {run.acquiredPassives.length}
-        </span>
-      ) : null}
+      <span className="passive-count" data-testid="run-passives" title={passiveNames || "보유 패시브 없음"}>
+        ★ 패시브 {run.acquiredPassives.length}
+      </span>
       <SaveWarningBadge />
       <CombatPreferencesPanel
         value={preferences}
         onChange={onPreferencesChange}
         open={preferencesOpen}
         onOpenChange={onPreferencesOpenChange}
+      />
+      <PassiveInventory
+        contentDb={contentDb}
+        open={passivesOpen}
+        passives={run.acquiredPassives}
+        onOpenChange={onPassivesOpenChange}
       />
       <small>SEED {run.runSeed}</small>
     </header>
@@ -1929,7 +1936,7 @@ interface RunGameProps {
   onStartNewRun: () => void;
 }
 
-type CombatUtilityPanel = "help" | "preferences" | null;
+type CombatUtilityPanel = "help" | "preferences" | "passives" | null;
 
 const motionIsReduced = (localPreference: boolean): boolean =>
   localPreference ||
@@ -2206,6 +2213,8 @@ const RunGame = ({ initialSession, onExitToTitle, onLoadSaved, onStartNewRun }: 
           onPreferencesChange={changeCombatPreferences}
           preferencesOpen={combatUtilityPanel === "preferences"}
           onPreferencesOpenChange={(open) => setCombatUtilityPanel(open ? "preferences" : null)}
+          passivesOpen={combatUtilityPanel === "passives"}
+          onPassivesOpenChange={(open) => setCombatUtilityPanel(open ? "passives" : null)}
         />
         <div
           aria-label={
@@ -2674,6 +2683,7 @@ const RunGame = ({ initialSession, onExitToTitle, onLoadSaved, onStartNewRun }: 
                     <SwordIcon scale={2.4} />
                   )
                 }
+                currentLayer={run.combatIndex}
                 layerLabel={`노드 ${run.combatIndex + 1}/${run.graph.layers.length}`}
                 options={(run.graph.layers[run.combatIndex] ?? []).map((node, index) => ({
                   index,
@@ -2692,6 +2702,8 @@ const RunGame = ({ initialSession, onExitToTitle, onLoadSaved, onStartNewRun }: 
                                 .map((enemy) => contentDb.enemies[String(enemy)]?.name ?? "적")
                                 .join("·"),
                 }))}
+                totalLayers={run.graph.layers.length}
+                visitedKinds={run.graph.layers.slice(0, run.combatIndex).map((layer, index) => layer[run.nodeChoices[index] ?? 0]?.kind ?? "combat")}
                 onChoose={(index) => {
                   telemetryRef.current = recordHumanNodeChoice(currentTelemetry(), {
                     layer: run.combatIndex,
@@ -2923,17 +2935,28 @@ const RunGame = ({ initialSession, onExitToTitle, onLoadSaved, onStartNewRun }: 
 
 export const App = () => {
   const [boot, setBoot] = useState<BootState>(bootState);
+  const [titleSettingsOpen, setTitleSettingsOpen] = useState(false);
+  const [titlePreferences, setTitlePreferences] = useState<CombatPreferences>(loadCombatPreferences);
 
-  const startNewRun = () => {
+  const changeTitlePreferences = (next: CombatPreferences) => {
+    saveCombatPreferences(next);
+    setMuted(!next.sound);
+    setTitlePreferences(next);
+  };
+
+  const openCharacterSelect = (practice: boolean) => {
     try {
       clearRun(window.localStorage);
     } catch {
       // 저장소가 막혀도 메모리 세션으로 새 런을 시작할 수 있다.
     }
     const seed = randomSeed();
-    replaceUrlWithSelection(seed);
-    setBoot({ mode: "select", seed });
+    replaceUrlWithSelection(seed, practice);
+    setBoot({ mode: "select", practice, seed });
   };
+
+  const startNewRun = () => openCharacterSelect(false);
+  const startTutorialPractice = () => openCharacterSelect(true);
 
   const loadSavedRun = () => {
     const detailed = loadRunDetailed(window.localStorage, CONTENT_VERSION, contentDb);
@@ -2965,7 +2988,29 @@ export const App = () => {
         <div className="backdrop" aria-hidden="true">
           <img alt="" className="backdrop-img" src={bgForest} />
         </div>
-        <TitleScreen save={boot.save} onContinue={loadSavedRun} onNewRun={startNewRun} />
+        {titleSettingsOpen ? (
+          <TitleSettings value={titlePreferences} onBack={() => setTitleSettingsOpen(false)} onChange={changeTitlePreferences} />
+        ) : (
+          <TitleScreen
+            save={boot.save}
+            onContinue={loadSavedRun}
+            onNewRun={startNewRun}
+            onSettings={() => setTitleSettingsOpen(true)}
+            onTutorial={() => setBoot({ mode: "tutorial", save: boot.save })}
+          />
+        )}
+      </main>
+    );
+  }
+
+  if (boot.mode === "tutorial") {
+    return (
+      <main aria-label="튜토리얼 화면" className="run-stage-shell" data-run-phase="tutorial" data-testid="run-phase">
+        <div className="backdrop" aria-hidden="true"><img alt="" className="backdrop-img" src={bgForest} /></div>
+        <TutorialScreen
+          onBack={() => setBoot({ mode: "title", save: boot.save })}
+          onStartPractice={startTutorialPractice}
+        />
       </main>
     );
   }
@@ -3031,7 +3076,7 @@ export const App = () => {
           onSelect={(character) => {
             const seed = boot.seed ?? randomSeed();
             replaceUrlSeed(seed, character);
-            const session = freshSession(seed, character);
+            const session = freshSession(seed, character, boot.practice);
             persistRun(session.run);
             setBoot({ mode: "run", session });
           }}
@@ -3085,6 +3130,10 @@ const CombatBoard = ({
   const [selectedCoin, setSelectedCoin] = useState<CoinUid | null>(null);
   const [fuelSelection, setFuelSelection] = useState<FuelSelection | null>(null);
   const [coinChoice, setCoinChoice] = useState<CoinChoiceSelection | null>(null);
+  const [immediateSelection, setImmediateSelection] = useState<{
+    slot: SlotId;
+    coins: CoinUid[];
+  } | null>(null);
   const [preserveSelection, setPreserveSelection] = useState<PreserveSelection | null>(null);
   const [queue, setQueue] = useState<CombatEvent[]>([]);
   const [locked, setLocked] = useState(false);
@@ -3101,15 +3150,11 @@ const CombatBoard = ({
   const [summonTargeting, setSummonTargeting] = useState<TargetingCommand | null>(null);
   const [equipmentChoice, setEquipmentChoice] = useState<TargetingCommand | null>(null);
   const [choiceExecution, setChoiceExecution] = useState<ChoiceExecutionContext | null>(null);
-  const [executionOrder, setExecutionOrder] = useState<ExecutionOrder>([]);
   const [autoTurnEnd, setAutoTurnEnd] = useState<AutoTurnEndState>(() => createIdleAutoTurnEnd());
-  const [executionDragReservation, setExecutionDragReservation] = useState<string | null>(null);
   const [lastAttackTarget, setLastAttackTarget] = useState<number | null>(null);
   const [shakeCoin, setShakeCoin] = useState<CoinUid | null>(null);
   const [openPile, setOpenPile] = useState<CoinPileZone | null>(null);
   const [resolutionTicket, setResolutionTicket] = useState<ResolutionSummary | null>(null);
-  const [resolutionHistory, setResolutionHistory] = useState<ResolutionSummary[]>([]);
-  const [recommendedLoadOpen, setRecommendedLoadOpen] = useState(false);
   const [coinRailPosition, setCoinRailPosition] = useState(0);
   const [coinRailMaxPosition, setCoinRailMaxPosition] = useState(0);
   const [previewSlot, setPreviewSlot] = useState<number | null>(null);
@@ -3130,41 +3175,14 @@ const CombatBoard = ({
   const initialEventsQueued = useRef(false);
   const completionSent = useRef(false);
   const suppressClick = useRef(false);
-  const nextWorkflowId = useRef(1);
   const launchedExecutionTokens = useRef<Set<string>>(new Set());
   const preserveWorkflowRequested = useRef<string | null>(null);
   const legal = useMemo(() => legalCommands(state, combatDb), [combatDb, state]);
-  const executableReservationIds = useMemo(
-    () =>
-      legal.flatMap((command) =>
-        command.type === "useFlipSkill" && command.reservationId !== undefined
-          ? [command.reservationId]
-          : [],
-      ),
-    [legal],
-  );
-  const executionSnapshot = useMemo(
-    () =>
-      executionQueueSnapshot(
-        executionOrder,
-        state.flipReservations,
-        executableReservationIds,
-      ),
-    [executableReservationIds, executionOrder, state.flipReservations],
-  );
   const executionBusy =
     autoTurnEnd.phase === "running" ||
     autoTurnEnd.phase === "choosing" ||
     autoTurnEnd.phase === "preserving" ||
     autoTurnEnd.phase === "blocked";
-  const recommendedLoad = useMemo(
-    () => recommendedLoadProposal(state, combatDb),
-    [combatDb, state],
-  );
-  const turnResourceSummary = useMemo(
-    () => summarizeTurnResources(state, executionSnapshot, preserveSelection?.coins ?? []),
-    [executionSnapshot, preserveSelection, state],
-  );
   const unusedElementalCoins = useMemo(() => unusedElementalCoinCount(state), [state]);
   const custodyCoinCount = state.custody.reduce((count, entry) => count + entry.coins.length, 0);
   const custodyOwners = [...new Set(state.custody.map((entry) => enemyDisplayName(state.enemies[entry.sourceEnemy])))];
@@ -3185,7 +3203,6 @@ const CombatBoard = ({
     const summary = withCombatEventResolutionLines(buildResolutionSummary(skill, pending.events), pending.events);
     clearResolutionTicket();
     setResolutionTicket(summary);
-    setResolutionHistory((entries) => [...entries, summary].slice(-20));
     resolutionTimer.current = window.setTimeout(() => {
       setResolutionTicket(null);
       resolutionTimer.current = null;
@@ -3214,10 +3231,6 @@ const CombatBoard = ({
     onTelemetryCombatStart(combat);
   }, [combat, onTelemetryCombatStart]);
 
-  useEffect(() => {
-    if (executionBusy) return;
-    setExecutionOrder((current) => reconcileExecutionOrder(current, state.flipReservations));
-  }, [executionBusy, state.flipReservations]);
 
   useEffect(() => {
     const sync = () => {
@@ -3235,10 +3248,6 @@ const CombatBoard = ({
     };
   }, [state.zones.hand.length]);
 
-  useEffect(() => {
-    if (locked || executionBusy || !recommendedLoad.requiresConfirmation)
-      setRecommendedLoadOpen(false);
-  }, [executionBusy, locked, recommendedLoad.requiresConfirmation]);
 
   useEffect(() => {
     if (!initialEventsQueued.current && state.events.length > 0) {
@@ -3341,7 +3350,7 @@ const CombatBoard = ({
     setEquipmentChoice(null);
     setChoiceExecution(null);
     setPreviewSlot(null);
-    // 장전/회수는 상태 반영이 곧 피드백 — 큐·잠금 없이 즉답해 연속 장전이 끊기지 않는다
+    // 코인 걸기/취소는 상태 반영이 곧 피드백이다. 큐·잠금 없이 연속 사용이 이어진다.
     const immediate = events.filter((event) => event.type === "coinPlaced" || event.type === "coinUnplaced");
     const reducedMotion = motionIsReduced(preferences.reducedMotion);
     for (const event of immediate) {
@@ -3356,9 +3365,6 @@ const CombatBoard = ({
     const skillUsed = events.find((event) => event.type === "skillUsed");
     if (skillUsed !== undefined) {
       pendingResolution.current = { skillId: skillUsed.skill, events };
-    } else {
-      const logEntry = combatEventLogSummary(events);
-      if (logEntry !== null) setResolutionHistory((entries) => [...entries, logEntry].slice(-20));
     }
   };
 
@@ -3441,29 +3447,6 @@ const CombatBoard = ({
     return committed;
   };
 
-  const startQueuedExecution = (): boolean => {
-    if (executionSnapshot.order.length === 0) return beginOrConfirmPreserve();
-    const workflowId = "turn-" + state.turn + "-" + nextWorkflowId.current;
-    nextWorkflowId.current += 1;
-    launchedExecutionTokens.current.clear();
-    preserveWorkflowRequested.current = null;
-    setPreviewSlot(null);
-    setAutoTurnEnd(beginAutoTurnEnd(workflowId, executionSnapshot.loaded));
-    return true;
-  };
-
-  const confirmTurnPlan = (): boolean => {
-    if (preserveSelection !== null) {
-      const source = autoTurnEnd.phase === "preserving" ? "auto-turn-end" : "manual";
-      const committed = beginOrConfirmPreserve(source);
-      if (committed && source === "auto-turn-end")
-        setAutoTurnEnd((current) => finishAutoTurnEnd(current));
-      return committed;
-    }
-    if (executionSnapshot.order.length > 0) return startQueuedExecution();
-    return beginOrConfirmPreserve();
-  };
-
   const runSequence = (commands: readonly Command[], showFeedback = false): boolean => {
     if (locked || commands.length === 0) {
       if (showFeedback && locked) showRejection(REJECTION_TEXT.notPlayerPhase);
@@ -3485,14 +3468,6 @@ const CombatBoard = ({
     onTelemetryDecision(state, commands, result.state, result.events, "manual");
     commit(result.state, result.events);
     return true;
-  };
-
-  const confirmRecommendedLoad = () => {
-    if (!recommendedLoad.requiresConfirmation) {
-      setRecommendedLoadOpen(false);
-      return;
-    }
-    if (runSequence(recommendedLoad.commands, true)) setRecommendedLoadOpen(false);
   };
 
   const updateCoinRailPosition = () => {
@@ -3517,7 +3492,7 @@ const CombatBoard = ({
     });
   };
 
-  // 사용 선언 — 플립 스킬은 해결 직전의 장전 코인을 고스트로 붙잡아 연출 대상이 되게 한다
+  // 즉시 사용 시 플립 스킬의 코인을 고스트로 붙잡아 해결 연출 대상이 되게 한다.
   const openExecutionChoice = (
     kind: ExecutionChoice,
     source: DecisionSource,
@@ -3800,6 +3775,50 @@ const CombatBoard = ({
     return routeSkill(skill, command, showFeedback, false, false, context.source, context.token);
   };
 
+  const toggleImmediateCoin = (slotId: SlotId, coin: CoinUid, cost: number): boolean => {
+    if (!state.zones.hand.includes(coin)) return false;
+    setImmediateSelection((current) => {
+      const currentSelection = current?.slot === slotId ? current : { slot: slotId, coins: [] };
+      const base = currentSelection.coins;
+      const index = base.indexOf(coin);
+      if (index >= 0) {
+        return {
+          slot: slotId,
+          coins: base.filter((candidate) => candidate !== coin),
+        };
+      }
+      if (base.length >= cost) return currentSelection;
+      return { slot: slotId, coins: [...base, coin] };
+    });
+    selectCoin(null);
+    setCoinChoice(null);
+    return true;
+  };
+
+  const useImmediateFlipSkill = (
+    slotId: SlotId,
+    skill: Extract<SkillDef, { type: "flip" }>,
+    coins: readonly CoinUid[],
+  ): boolean => {
+    if (coins.length !== skill.cost) {
+      showRejection(REJECTION_TEXT.coinCost);
+      return false;
+    }
+    const target = skill.targetType === "single-enemy" ? (lastAttackTarget ?? livingEnemyTargets(state.enemies)[0]) : undefined;
+    const command: Extract<Command, { type: "useImmediateFlipSkill" }> = {
+      type: "useImmediateFlipSkill",
+      slot: slotId,
+      coins: [...coins],
+      ...(target === undefined ? {} : { target }),
+    };
+    const committed = runExplicitCommand(command, true);
+    if (committed) {
+      setResolving({ slot: Number(slotId), coins: [...coins] });
+      setImmediateSelection(null);
+    }
+    return committed;
+  };
+
   const onFuelCoinClick = (coin: CoinUid): boolean => {
     if (fuelSelection === null) return false;
     const next = toggleFuel(fuelSelection, coin, state, combatDb);
@@ -3923,7 +3942,7 @@ const CombatBoard = ({
         setAutoTurnEnd((current) => completeActiveExecution(current, token));
       else
         setAutoTurnEnd((current) =>
-          blockActiveExecution(current, token, "장전 상태가 바뀌었습니다. 순서나 장전을 확인하세요."),
+          blockActiveExecution(current, token, "코인 걸기 상태가 바뀌었습니다. 선택한 코인을 확인하세요."),
         );
       return;
     }
@@ -3946,7 +3965,7 @@ const CombatBoard = ({
     if (!accepted) {
       launchedExecutionTokens.current.delete(token);
       setAutoTurnEnd((current) =>
-        blockActiveExecution(current, token, "선택을 시작할 수 없습니다. 장전과 대상을 확인하세요."),
+        blockActiveExecution(current, token, "선택을 시작할 수 없습니다. 코인과 대상을 확인하세요."),
       );
     }
   }, [
@@ -4143,25 +4162,6 @@ const CombatBoard = ({
     return () => window.clearTimeout(timer);
   }, [flipSpeed, locked, queue, resolving, state.turnTriggers]);
 
-  // ---- 드래그 장전 (포인터 공통 — 마우스/터치, 6px 이하 이동은 클릭으로 취급) ----
-  const beginDrag = (event: ReactPointerEvent<HTMLElement>, coin: CoinUid, source: DragSource) => {
-    if (locked || executionBusy || drag !== null) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setDrag({
-      coin,
-      source,
-      started: false,
-      x: event.clientX,
-      y: event.clientY,
-      targets: dragTargetSlots(state, coin, source, combatDb),
-      swapTargets: dragSwapTargetCoins(state, coin, source, combatDb),
-      over: null,
-      overCoin: null,
-      overCard: null,
-      overTray: false,
-    });
-  };
-
   const moveDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if (drag === null) return;
     const dx = event.clientX - drag.x;
@@ -4202,7 +4202,7 @@ const CombatBoard = ({
       return;
     }
     suppressClick.current = true;
-    // 자기 카드 위에 놓기 = 취소 (장전 유지) — 밖으로 끌어내야 회수
+    // 자기 카드 위에 놓기 = 취소 (현재 선택 유지) — 밖으로 끌어내야 회수
     if (drag.source.kind === "socket" && drag.overCard === Number(drag.source.slot) && drag.over === null) {
       setDrag(null);
       return;
@@ -4344,14 +4344,6 @@ const CombatBoard = ({
   const isTestEncounter = testEncounterFromUrl() !== null;
   const targetingSkill =
     targeting === null ? undefined : combatDb.skills[String(state.slots[Number(targeting.command.slot)]?.skillId)];
-  const visibleExecutionOrder = executionBusy ? autoTurnEnd.order : executionSnapshot.order;
-  const executionSlot = (reservationId: string): SlotId | undefined =>
-    autoTurnEnd.reservations[reservationId]?.slot ??
-    state.flipReservations.find((reservation) => reservation.id === reservationId)?.slot;
-  const executionPosition = (slotId: SlotId): number =>
-    visibleExecutionOrder.findIndex((reservationId) => executionSlot(reservationId) === slotId);
-  const autoChoiceOpen = autoTurnEnd.phase === "choosing" || autoTurnEnd.phase === "preserving";
-
   useEffect(() => {
     if (!showResult || completionSent.current) return;
     completionSent.current = true;
@@ -4371,12 +4363,6 @@ const CombatBoard = ({
     }
   }, [ended]);
 
-  const endTurnLabel =
-    preserveSelection !== null
-      ? "\uBCF4\uC874 \uD655\uC815"
-      : executionSnapshot.order.length > 0
-        ? `행동 확정 · 스킬 ${executionSnapshot.order.length}개`
-        : "행동 확정";
   return (
     <main
       className="combat-shell"
@@ -4411,6 +4397,8 @@ const CombatBoard = ({
         onPreferencesChange={onPreferencesChange}
         preferencesOpen={utilityPanel === "preferences"}
         onPreferencesOpenChange={(open) => onUtilityPanelChange(open ? "preferences" : null)}
+        passivesOpen={utilityPanel === "passives"}
+        onPassivesOpenChange={(open) => onUtilityPanelChange(open ? "passives" : null)}
       />
       <CombatHelp
         open={utilityPanel === "help"}
@@ -4660,115 +4648,14 @@ const CombatBoard = ({
         </div>
       </section>
 
-      {visibleExecutionOrder.length > 0 ? (
-        <section
-          aria-label="장전 스킬 실행 순서"
-          aria-live="polite"
-          className={`execution-rail ${executionBusy ? "frozen" : ""}`}
-          data-testid="execution-rail"
-        >
-          <strong>행동 실행 순서</strong>
-          <ol>
-            {visibleExecutionOrder.map((reservationId, index) => {
-              const slotId = executionSlot(reservationId);
-              if (slotId === undefined) return null;
-              const slotState = state.slots[Number(slotId)];
-              const skill = slotState === undefined ? undefined : combatDb.skills[String(slotState.skillId)];
-              const completed = autoTurnEnd.completed.includes(reservationId);
-              const current = autoTurnEnd.active?.reservationId === reservationId;
-              const blocked = autoTurnEnd.blocked.includes(reservationId);
-              const cancelled = autoTurnEnd.cancelled.includes(reservationId);
-              const status = completed
-                ? "완료"
-                : blocked
-                  ? "확인 필요"
-                  : cancelled
-                    ? "취소"
-                    : current
-                      ? "실행 중"
-                      : "대기";
-              return (
-                <li
-                  className={`${completed ? "completed" : ""} ${current ? "current" : ""} ${blocked ? "blocked" : ""}`}
-                  data-reservation-id={reservationId}
-                  data-slot={Number(slotId)}
-                  data-testid={`execution-order-${reservationId}`}
-                  draggable={!executionBusy}
-                  key={reservationId}
-                  onDragStart={() => setExecutionDragReservation(reservationId)}
-                  onDragEnd={() => setExecutionDragReservation(null)}
-                  onDragOver={(event) => {
-                    if (!executionBusy) event.preventDefault();
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    if (executionBusy || executionDragReservation === null) return;
-                    setExecutionOrder((order) => moveExecutionSlot(order, executionDragReservation, index));
-                    setExecutionDragReservation(null);
-                  }}
-                >
-                  <span className="execution-number" aria-hidden="true">{index + 1}</span>
-                  <span className="execution-name">{skill?.name ?? `슬롯 ${Number(slotId) + 1}`}</span>
-                  <small>{status}</small>
-                  <span className="execution-order-controls">
-                    <button
-                      aria-label={`${skill?.name ?? "스킬"} 실행 순서를 앞으로`}
-                      disabled={executionBusy || index === 0}
-                      type="button"
-                      onClick={() => setExecutionOrder((order) => moveExecutionSlot(order, reservationId, index - 1))}
-                    >
-                      앞
-                    </button>
-                    <button
-                      aria-label={`${skill?.name ?? "스킬"} 실행 순서를 뒤로`}
-                      disabled={executionBusy || index === visibleExecutionOrder.length - 1}
-                      type="button"
-                      onClick={() => setExecutionOrder((order) => moveExecutionSlot(order, reservationId, index + 1))}
-                    >
-                      뒤
-                    </button>
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-          {autoTurnEnd.phase === "running" ||
-          autoTurnEnd.phase === "choosing" ||
-          autoTurnEnd.phase === "preserving" ? (
-            <button className="execution-cancel" type="button" onClick={cancelAutomaticExecution}>
-              {autoTurnEnd.phase === "preserving" ? "확정 흐름 취소" : "남은 실행 취소"}
-            </button>
-          ) : null}
-          {autoTurnEnd.phase === "blocked" ? (
-            <div className="execution-blocked" role="alert">
-              <span>{autoTurnEnd.blockedReason}</span>
-              <button type="button" onClick={cancelAutomaticExecution}>순서·장전 수정</button>
-              <button
-                type="button"
-                onClick={() => setAutoTurnEnd((current) => abandonPendingExecutions(current))}
-              >
-                남은 스킬 건너뛰고 종료
-              </button>
-              <button
-                type="button"
-                onClick={() => setAutoTurnEnd((current) => retryBlockedExecution(current))}
-              >
-                다시 시도
-              </button>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
       <section
-        className={`skill-row ${locked || (executionBusy && !autoChoiceOpen) ? "dimmed" : ""}`}
+        className={`skill-row ${locked ? "dimmed" : ""}`}
         aria-label="스킬 카드"
         onScroll={() => setPreviewSlot(null)}
       >
         <div className="resolution-ticket-anchor" aria-live="polite">
           {resolutionTicket !== null ? <ResolutionTicket summary={resolutionTicket} /> : null}
         </div>
-        <CombatHistory entries={resolutionHistory} />
         {state.slots.map((slotState, index) => {
           const baseSkill = combatDb.skills[String(slotState.skillId)];
           // P6 D3 — 강화 슬롯은 코어와 같은 파생 정본으로 표시 (수치 이중 표기 방지)
@@ -4776,54 +4663,26 @@ const CombatBoard = ({
           const skill = baseSkill;
           const displaySkillName =
             skill === undefined ? "빈 슬롯" : skillDisplayName(skill, state.player.bloodSwordPower);
-          const slotReservations = state.flipReservations.filter(
-            (reservation) => reservation.slot === slot(index),
-          );
-          const reservedCoins = slotReservations.flatMap((reservation) => reservation.coinUids);
-          const firstReservation = slotReservations[0];
-          const placed = state.zones.placed[slot(index)] ?? [];
-          const queuedPosition = executionPosition(slot(index));
-          const partialQueued = placed.length > 0;
+          const immediate = immediateSelection?.slot === slot(index) ? immediateSelection : null;
+          const immediateCoins = immediate?.coins ?? [];
+          // Legacy reservations are intentionally ignored by the v4.5 surface.
+          // Keep inert placeholders until the compatibility reducer is removed.
+          const slotReservations: never[] = [];
+          const queuedPosition = -1;
+          const partialQueued = false;
           const consumeUse = legal.find(
             (command): command is Extract<Command, { type: "useConsumeSkill" }> =>
               command.type === "useConsumeSkill" && command.slot === slot(index),
           );
-          const flipAttempt =
-            skill?.type === "flip"
-              ? ({
-                  type: "useFlipSkill",
-                  slot: slot(index),
-                  reservationId: firstReservation?.id,
-                  target: skill.targetType === "single-enemy" ? 0 : undefined,
-                } as const)
-              : null;
-          const use =
-            skill?.type === "consume"
-              ? consumeUse
-              : flipAttempt !== null
-                ? targetingCommandFor(flipAttempt)
-                : undefined;
-          const canPlaceSelected =
+          const canPlace =
+            skill?.type === "flip" &&
             selectedCoin !== null &&
-            findLegal({
-              type: "placeCoin",
-              coin: selectedCoin,
-              slot: slot(index),
-            }) !== undefined;
-          const canLoadMore = legal.some(
-            (command) => command.type === "placeCoin" && command.slot === slot(index),
-          );
-          const canMoveHere = dragging && drag.targets.has(index);
-          const hasSwapTarget =
-            dragging && [...reservedCoins, ...placed].some((coin) => drag.swapTargets.has(Number(coin)));
-          const dropTarget = canMoveHere || hasSwapTarget;
-          const canPlace = canPlaceSelected || canMoveHere;
-          // 프리뷰는 사용 커맨드가 합법일 때만 (§3.5 preview → Preview | null) — 부분 장전·
+            immediateCoins.length < skill.cost &&
+            state.zones.hand.includes(selectedCoin);
+          const dropTarget = false;
+          // 프리뷰는 사용 커맨드가 합법일 때만 (§3.5 preview → Preview | null) — 부분 선택·
           // 쿨다운·전투당 1회·전투 종료 등 코어가 해결을 거부하는 모든 상태를 legalCommands가 거른다
-          const preview =
-            skill?.type === "flip" && firstReservation !== undefined && use !== undefined
-              ? previewFlip(state, slot(index), combatDb, firstReservation.id)
-              : null;
+          const preview = null as unknown as ReturnType<typeof previewFlip> | null;
           const consumeRequirement = skill?.type === "consume" ? fuelRequirement(state, slot(index), combatDb) : null;
           const consumeReady =
             skill?.type === "consume" &&
@@ -4841,16 +4700,8 @@ const CombatBoard = ({
                 : `효과 ${Math.round(activeSkillSeal.effectMultiplier * 100)}% · ${activeSkillSeal.turns}턴`;
           const lockedOnce = skill?.oncePerCombat === true && slotState.usedThisCombat;
           const isResolving = resolving !== null && resolving.slot === index;
-          const socketCoins = isResolving
-            ? [...resolving.coins, ...reservedCoins, ...placed]
-            : [...reservedCoins, ...placed];
-          const socketCount =
-            skill?.type === "flip"
-              ? Math.max(
-                  socketCoins.length,
-                  reservedCoins.length + (canLoadMore || placed.length > 0 ? skill.cost : 0),
-                )
-              : 0;
+          const socketCoins = isResolving ? [...resolving.coins] : immediateCoins;
+          const socketCount = skill?.type === "flip" ? skill.cost : 0;
           const targetingThis =
             targeting?.command.slot === slot(index) ||
             summonTargeting?.slot === slot(index) ||
@@ -4877,13 +4728,6 @@ const CombatBoard = ({
                   total: actionTotal,
                   usedThisCombat: lockedOnce,
                 });
-          const slotExecutionIds = autoTurnEnd.order.filter(
-            (reservationId) => autoTurnEnd.reservations[reservationId]?.slot === slot(index),
-          );
-          const slotCompletedCount = slotExecutionIds.filter((reservationId) =>
-            autoTurnEnd.completed.includes(reservationId),
-          ).length;
-          const activeThisSlot = autoTurnEnd.active?.slot === slot(index);
           const action =
             skill === undefined
               ? null
@@ -4893,6 +4737,19 @@ const CombatBoard = ({
                     label: skillSealLabel ?? "봉인",
                     tone: "idle" as const,
                   }
+                : skill.type === "flip"
+                  ? {
+                      actionable:
+                        immediateCoins.length === skill.cost &&
+                        !lockedOnce &&
+                        slotState.cooldownRemaining === 0 &&
+                        !isResolving,
+                      label:
+                        immediateCoins.length === skill.cost
+                          ? "즉시 사용"
+                          : `코인 ${immediateCoins.length}/${skill.cost} 걸기`,
+                      tone: immediateCoins.length === skill.cost ? ("ready" as const) : ("idle" as const),
+                    }
                 : choosingCoin
                 ? {
                     actionable: coinChoiceCommand(coinChoice, state, combatDb) !== null,
@@ -4911,37 +4768,13 @@ const CombatBoard = ({
                       label: "장비 종류 선택 중 · 취소",
                       tone: "targeting" as const,
                     }
-                  : skill.type === "flip" && queuedPosition >= 0 && executionBusy
-                    ? {
-                        actionable: false,
-                        label:
-                          activeThisSlot
-                            ? autoTurnEnd.phase === "blocked"
-                              ? "실행 확인 필요"
-                              : `실행 중 · ${slotCompletedCount + 1}/${slotExecutionIds.length}`
-                            : slotExecutionIds.length > 0 && slotCompletedCount === slotExecutionIds.length
-                              ? "실행 완료"
-                              : `실행 대기 · 완료 ${slotCompletedCount}/${slotExecutionIds.length}`,
-                        tone: activeThisSlot ? ("targeting" as const) : ("ready" as const),
-                      }
                   : baseAction;
-          const cardActionAllowed =
-            !executionBusy ||
-            (autoTurnEnd.phase === "choosing" &&
-              autoTurnEnd.active?.slot === slot(index) &&
-              choosingCoin);
+          const cardActionAllowed = !locked;
           const placeSelectedFromCardArt = (event: ReactPointerEvent<HTMLElement>) => {
-            if (selectedCoin === null || executionBusy) return;
+            if (selectedCoin === null || skill?.type !== "flip") return;
             event.preventDefault();
             event.stopPropagation();
-            runCommand(
-              {
-                type: "placeCoin",
-                coin: selectedCoin,
-                slot: slot(index),
-              },
-              true,
-            );
+            toggleImmediateCoin(slot(index), selectedCoin, skill.cost);
           };
           const activateCardAction = () => {
             if (targetingThis) {
@@ -4952,15 +4785,7 @@ const CombatBoard = ({
             if (action?.actionable !== true || skill === undefined) return;
             setPreviewSlot(null);
             if (skill.type === "consume") activateConsumeSkill(slot(index), skill, consumeUse, true);
-            else if (choosingCoin)
-              activateFlipSkill(
-                slot(index),
-                skill,
-                use?.type === "useFlipSkill" ? use : undefined,
-                true,
-                "auto-turn-end",
-                choiceExecution?.token ?? null,
-              );
+            else if (skill.type === "flip") useImmediateFlipSkill(slot(index), skill, immediateCoins);
           };
           return (
             <article
@@ -4977,21 +4802,16 @@ const CombatBoard = ({
               }}
               onClick={() => {
                 if (clickGuard()) return;
-                if (executionBusy) return;
-                // 동전을 고른 동안 카드 클릭은 장전 전용 — 장전 불가면 아무 것도 하지 않는다
-                // (연속 장전 중 오클릭이 스킬을 발동시키는 오발 방지). 사용은 하단 행동 바만 담당한다.
+                if (locked || skill?.type !== "flip") return;
+                // 코인을 고른 동안 카드 클릭은 코인 걸기 전용이다.
+                // (연속 선택 중 오클릭이 스킬을 발동시키는 오발 방지). 사용은 하단 행동 바만 담당한다.
                 if (selectedCoin !== null) {
-                  runCommand(
-                    {
-                      type: "placeCoin",
-                      coin: selectedCoin,
-                      slot: slot(index),
-                    },
-                    true,
-                  );
+                  toggleImmediateCoin(slot(index), selectedCoin, skill.cost);
                   return;
                 }
-                if (preview !== null) setPreviewSlot((current) => (current === index ? null : index));
+                setImmediateSelection((current) =>
+                  current?.slot === slot(index) ? current : { slot: slot(index), coins: [] },
+                );
               }}
               onFocusCapture={() => {
                 if (preview !== null) setPreviewSlot(index);
@@ -5033,16 +4853,16 @@ const CombatBoard = ({
                     <button
                       aria-label={
                         swapAccept
-                          ? "장전된 동전과 교환"
+                          ? "걸어 둔 동전과 교환"
                           : coin === undefined
                           ? selectedCoin !== null
-                            ? "선택한 동전 장전"
-                            : "동전 장전"
-                          : `${coinLabel(state, coin)} 장전 동전 회수`
+                            ? "선택한 코인 걸기"
+                            : "이 스킬에 코인 걸기"
+                          : `${coinLabel(state, coin)} 걸기 취소`
                       }
                       className={`socket ${coin !== undefined ? "loaded" : ""} ${coin === undefined && canPlace ? "accept" : ""} ${swapAccept ? "swap-accept" : ""} ${swapOver ? "swap-over" : ""}`}
                       data-coin={coin === undefined ? undefined : Number(coin)}
-                      disabled={executionBusy || locked || hardSealed}
+                      disabled={locked || hardSealed}
                       key={socketIndex}
                       type="button"
                       onClick={(event) => {
@@ -5051,25 +4871,17 @@ const CombatBoard = ({
                         // 비활성 drag 상태를 다음 명시적 클릭에서 확실히 정리한다.
                         if (drag !== null) setDrag(null);
                         if (clickGuard()) return;
-                        if (isResolving || executionBusy) return;
-                        if (coin !== undefined) runCommand({ type: "unplaceCoin", coin }, true);
+                        if (isResolving) return;
+                        if (coin !== undefined) toggleImmediateCoin(slot(index), coin, skill?.type === "flip" ? skill.cost : 0);
                         else if (selectedCoin !== null)
-                          runCommand(
-                            {
-                              type: "placeCoin",
-                              coin: selectedCoin,
-                              slot: slot(index),
-                            },
-                            true,
+                          skill?.type === "flip" && toggleImmediateCoin(slot(index), selectedCoin, skill.cost);
+                        else if (skill?.type === "flip")
+                          setImmediateSelection((current) =>
+                            current?.slot === slot(index) ? current : { slot: slot(index), coins: [] },
                           );
-                        else showRejection(REJECTION_TEXT.generic);
                       }}
                       onPointerDown={(event) => {
-                        if (coin !== undefined && !isResolving && !executionBusy)
-                          beginDrag(event, coin, {
-                            kind: "socket",
-                            slot: slot(index),
-                          });
+                        event.preventDefault();
                       }}
                       onPointerMove={moveDrag}
                       onPointerUp={endDrag}
@@ -5219,14 +5031,6 @@ const CombatBoard = ({
         {!ended ? <TutorialStrip db={combatDb} fuelSelectionOpen={fuelSelection !== null} state={state} /> : null}
       </section>
 
-      {recommendedLoadOpen ? (
-        <RecommendedLoadPreview
-          proposal={recommendedLoad}
-          onCancel={() => setRecommendedLoadOpen(false)}
-          onConfirm={confirmRecommendedLoad}
-        />
-      ) : null}
-
       <section className="bottom-hud">
         {preserveSelection !== null ? (
           <div aria-label="턴 종료 동전 보존 선택" className="preserve-picker" role="group">
@@ -5236,7 +5040,7 @@ const CombatBoard = ({
             </strong>
             <span>{PRESERVE_SELECTION_INSTRUCTIONS}</span>
             {preserveSelection.candidates.some((coin) => !state.zones.hand.includes(coin)) ? (
-              <div aria-label="장전된 동전 보존 후보" className="preserve-placed">
+              <div aria-label="걸어 둔 코인 보존 후보" className="preserve-placed">
                 {preserveSelection.candidates
                   .filter((coin) => !state.zones.hand.includes(coin))
                   .map((coin) => {
@@ -5244,7 +5048,7 @@ const CombatBoard = ({
                     return (
                       <button
                         aria-disabled={preserveLocked}
-                        aria-label={`${coinLabel(state, coin)} 장전 동전 ${preserveLocked ? "보존됨 잠금" : "보존 선택"}`}
+                        aria-label={`${coinLabel(state, coin)} 걸어 둔 코인 ${preserveLocked ? "보존됨 잠금" : "보존 선택"}`}
                         aria-pressed={preserveSelection.coins.includes(coin)}
                         className={`preserve-placed-coin ${preserveSelection.coins.includes(coin) ? "selected" : ""}`}
                         key={coin}
@@ -5314,6 +5118,7 @@ const CombatBoard = ({
             const fuelSelected = fuelSelection?.coins.includes(coin) === true;
             const choiceSelected = coinChoice?.coins.includes(coin) === true;
             const preserveSelected = preserveSelection?.coins.includes(coin) === true;
+            const immediateSelected = immediateSelection?.coins.includes(coin) === true;
             const preserveLocked = preserveSelection?.locked.includes(coin) === true;
             const emptyFuelSelection = fuelSelection === null ? null : { slot: fuelSelection.slot, coins: [] };
             const fuelValid =
@@ -5322,17 +5127,16 @@ const CombatBoard = ({
             const choiceValid =
               coinChoice !== null && coinChoiceCandidates(state, coinChoice.slot, combatDb).includes(coin);
             const preserveValid = preserveSelection?.candidates.includes(coin) === true;
-            const selectingCoin = fuelSelection !== null || coinChoice !== null || preserveSelection !== null;
-            const selectedForMode = fuelSelected || choiceSelected || preserveSelected;
-            const validForMode = fuelValid || choiceValid || preserveValid;
-            const handChoiceAllowedDuringAuto =
-              (autoTurnEnd.phase === "choosing" && coinChoice !== null && choiceValid) ||
-              (autoTurnEnd.phase === "preserving" &&
-                preserveSelection !== null &&
-                preserveValid &&
-                !preserveLocked);
-            const handDisabled =
-              locked || preserveLocked || (executionBusy && !handChoiceAllowedDuringAuto);
+            const immediateSlotState = immediateSelection === null ? undefined : state.slots[Number(immediateSelection.slot)];
+            const immediateSkill = immediateSlotState === undefined ? undefined : combatDb.skills[String(immediateSlotState.skillId)];
+            const immediateValid =
+              immediateSelection !== null &&
+              immediateSkill?.type === "flip" &&
+              (immediateSelected || immediateSelection.coins.length < immediateSkill.cost);
+            const selectingCoin = fuelSelection !== null || coinChoice !== null || preserveSelection !== null || immediateSelection !== null;
+            const selectedForMode = fuelSelected || choiceSelected || preserveSelected || immediateSelected;
+            const validForMode = fuelValid || choiceValid || preserveValid || immediateValid;
+            const handDisabled = locked || preserveLocked;
             return (
               <button
                 aria-disabled={handDisabled || undefined}
@@ -5358,11 +5162,11 @@ const CombatBoard = ({
                   if (onPreserveCoinClick(coin)) return;
                   if (onFuelCoinClick(coin)) return;
                   if (onCoinChoiceClick(coin)) return;
+                  if (immediateSelection !== null && immediateSkill?.type === "flip") {
+                    toggleImmediateCoin(immediateSelection.slot, coin, immediateSkill.cost);
+                    return;
+                  }
                   selectCoin(selectedCoin === coin ? null : coin);
-                }}
-                onPointerDown={(event) => {
-                  if (!handDisabled && fuelSelection === null && coinChoice === null && preserveSelection === null)
-                    beginDrag(event, coin, { kind: "hand" });
                 }}
                 onPointerMove={moveDrag}
                 onPointerUp={endDrag}
@@ -5431,31 +5235,21 @@ const CombatBoard = ({
           ) : null}
         </div>
         <div className="turn-primary-controls">
-          <button
-            aria-controls="recommended-load-preview"
-            aria-expanded={recommendedLoadOpen}
-            className="recommended-load-open"
-            data-testid="recommended-load-open"
-            disabled={!recommendedLoad.requiresConfirmation || locked || executionBusy}
-            type="button"
-            onClick={() => setRecommendedLoadOpen(true)}
-          >
-            추천 장전
-          </button>
-          <TurnResourceStrip summary={turnResourceSummary} />
         <button
-          aria-label={endTurnLabel}
+          aria-label={preserveSelection !== null ? "보존 확정" : "턴 종료"}
           className="end-turn"
           disabled={
             locked ||
-            (executionBusy && preserveSelection === null) ||
             findLegal({ type: "endTurn" }) === undefined
           }
           ref={endTurnButtonRef}
           type="button"
-          onClick={confirmTurnPlan}
+          onClick={() => {
+            setImmediateSelection(null);
+            beginOrConfirmPreserve();
+          }}
         >
-          {endTurnLabel}
+          {preserveSelection !== null ? "보존 확정" : "턴 종료"}
         </button>
         </div>
       </section>
@@ -5517,7 +5311,7 @@ interface UnitPanelProps {
   growthLabel?: string;
   playerTurnEndPunishment?: {
     threshold: number;
-    status: "burn" | "poison" | "frostbite" | "shock" | "healLock";
+    status: StatusId;
     stacks: number;
   };
   unusedElementalCoins?: number;

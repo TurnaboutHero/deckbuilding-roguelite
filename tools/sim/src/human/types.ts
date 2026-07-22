@@ -1,4 +1,4 @@
-import type { CombatEvent, CombatState, Command } from "@game/core";
+import type { CombatEvent, CombatState, Command, DamageSource } from "@game/core";
 
 export type RunResult = "in-progress" | "victory" | "defeat";
 export type RewardStage = "coin" | "removal" | "fallback-coin" | "skill";
@@ -7,6 +7,16 @@ export type RewardResolution = "selected" | "skipped" | "declined";
 export type TelemetryCommand =
   | { type: "placeCoin"; coin: number; slot: number }
   | { type: "unplaceCoin"; coin: number }
+  | {
+      type: "useImmediateFlipSkill";
+      slot: number;
+      coins: number[];
+      target?: number;
+      chosen?: number[];
+      desiredCoin?: string;
+      chosenEquipment?: string;
+      chosenSummon?: number;
+    }
   | {
       type: "useFlipSkill";
       slot: number;
@@ -31,7 +41,7 @@ export interface HumanDamageFact {
   enemyIndex?: number;
   amount: number;
   blocked: number;
-  source: "skill" | "coin" | "burn" | "poison" | "enemy" | "self";
+  source: DamageSource;
 }
 
 export interface HumanDecisionFact {

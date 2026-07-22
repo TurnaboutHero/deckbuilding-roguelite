@@ -219,6 +219,23 @@ const wonCombat = (combat: CombatState, hp: number): CombatState => ({
 });
 
 describe("run save serialization boundary", () => {
+  it("round-trips the opening single-node map before the first combat", () => {
+    const opening = {
+      ...createRun(
+        {
+          contentVersion: CONTENT_VERSION,
+          runSeed: "OPENING-MAP-STORAGE",
+          character: "warrior" as never,
+        },
+        contentDb,
+      ),
+      phase: "choose-node" as const,
+    };
+
+    const serialized = serializeRunSave(opening, contentDb);
+    expect(parseRunSave(serialized, CONTENT_VERSION, contentDb)).toEqual(opening);
+  });
+
   it("imports in Node without requiring window and round-trips normal boundary phases", () => {
     expect("window" in globalThis).toBe(false);
     const saves: RunSave[] = [

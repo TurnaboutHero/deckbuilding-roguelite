@@ -62,6 +62,26 @@ export const commandFromHumanTelemetry = (command: TelemetryCommand): Command =>
   if (command.type === "unplaceCoin") {
     return { type: "unplaceCoin", coin: command.coin as CoinUid };
   }
+  if (command.type === "useImmediateFlipSkill") {
+    return {
+      type: "useImmediateFlipSkill",
+      slot: command.slot as SlotId,
+      coins: command.coins.map((coin) => coin as CoinUid),
+      ...(command.target === undefined ? {} : { target: command.target }),
+      ...(command.chosen === undefined
+        ? {}
+        : { chosen: command.chosen.map((coin) => coin as CoinUid) }),
+      ...(command.desiredCoin === undefined
+        ? {}
+        : { desiredCoin: command.desiredCoin as CoinDefId }),
+      ...(command.chosenEquipment === undefined
+        ? {}
+        : { chosenEquipment: command.chosenEquipment as EquipmentDefId }),
+      ...(command.chosenSummon === undefined
+        ? {}
+        : { chosenSummon: command.chosenSummon }),
+    };
+  }
   if (command.type === "useFlipSkill") {
     return {
       type: "useFlipSkill",

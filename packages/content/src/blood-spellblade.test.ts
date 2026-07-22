@@ -97,9 +97,9 @@ describe("Blood Spellblade design integration", () => {
       ...(contentDb.coins.blood?.procs?.tails ?? []),
     ];
     expect(bloodAtoms.map((atom) => atom.kind)).toEqual([
-      "coinDamage",
       "loseHp",
       "coinDamage",
+      "applyStatus",
     ]);
     expect(
       bloodAtoms.some((atom) =>

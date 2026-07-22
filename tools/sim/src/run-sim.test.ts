@@ -35,13 +35,12 @@ describe('M5 full-run simulator', () => {
     // P12 재고정: 기본+대표 속성 전용 동전 보상 정책을 포함한 결정론 런 골든.
     // P13 reward-pool opening (basic+signature → all-element weighted) — 의도된 재앵커.
     // warrior 시작 셋 = jab·fist-guard·burning-fist·inner-passion + 빈 슬롯 4(null).
-    // v1.2 draw-3 전환기 기준 seed 42 fight-first는 2번째 전투 후 패배한다.
-    // 콘텐츠 래더 수치가 아직 이관 전인 balance-provisional 관측치이며, 후속 지시마다 깊이를 추적한다.
+    // v4.5 즉시 사용 정책의 결정론 골든. 예약/배치 명령은 시뮬레이션 경로에 없다.
     const simulation = simulateRun('42');
 
     expect(simulation.summary.result).toBe('defeat');
-    expect(simulation.summary.combatsCompleted).toBe(2);
-    expect(simulation.combats).toHaveLength(2);
+    expect(simulation.summary.combatsCompleted).toBe(1);
+    expect(simulation.combats).toHaveLength(1);
     for (let index = 0; index < simulation.combats.length; index += 1) {
       const combat = simulation.combats[index];
       if (combat === undefined) throw new Error('missing combat record');
@@ -55,14 +54,11 @@ describe('M5 full-run simulator', () => {
       }
     }
 
-    // P6 보상 신스펙: 제거 단계가 사라져 시작 basic 8개가 그대로 남는다
-    expect(simulation.combats[1]?.startingBag.filter((coin) => coin === 'fire')).toHaveLength(3);
-    expect(simulation.combats[1]?.startingBag.filter((coin) => coin === 'basic')).toHaveLength(8);
     expect(simulation.summary).toEqual({
       seed: '42',
       result: 'defeat',
-      combatsCompleted: 2,
-      turnsPerCombat: [6, 2], // Completed reservations are immediately usable by the simulator policy.
+      combatsCompleted: 1,
+      turnsPerCombat: [7],
       carriedHp: 0,
       finalBag: [
         'basic',
@@ -74,13 +70,11 @@ describe('M5 full-run simulator', () => {
         'basic',
         'basic',
         'fire',
-        'fire',
         'fire'
       ],
       finalEquippedSkills: ['jab', 'fist-guard', 'fire-fist', 'direct-hit', 'null', 'null', 'null', 'null'],
       encounterOrder: [
-        ['raider'],
-        ['gatekeeper']
+        ['raider']
       ]
     });
   });
@@ -101,21 +95,16 @@ describe('build policy resolution regressions', () => {
     expect(resolveBuildPolicy('frost-knight', 'baseline').id).toBe('frost-build');
   });
 
-  it('drives simulateRun sorcerer rewards with the lightning build (path consistency)', () => {
-    // simulateRun이 fire-build 하드코딩이면 policy run과 보상 경로가 어긋난다.
+  it('starts sorcerer simulation with its lightning build rather than a fire hardcode', () => {
     const { summary } = simulateRun('SORC-V12-0', 'sorcerer');
     const lightningCount = summary.finalBag.filter((coin) => coin === 'lightning').length;
-    if (summary.combatsCompleted >= 2) {
-      expect(lightningCount).toBeGreaterThan(2);
-    } else {
-      // 시드가 조기 패배하면 회귀 검증력이 없다 — 시드를 바꿔야 한다
-      expect.fail(`seed SORCERER-BUILD-REG finished only ${summary.combatsCompleted} combats — pick a longer-surviving seed`);
-    }
+    expect(lightningCount).toBe(2);
+    expect(summary.finalBag).not.toContain('fire');
   });
 });
 
-describe('D22 simulator command budget', () => {
-  it('allows the long turtle Gatekeeper episode to reach its terminal outcome', () => {
+describe('v4.5 simulator command budget', () => {
+  it('allows the turtle episode to reach its deterministic terminal outcome', () => {
     const simulation = simulatePolicyRun({
       baseSeed: '1',
       runSeed: 'm6:3075543026:394851719:1604709081:787312973',
@@ -125,7 +114,7 @@ describe('D22 simulator command budget', () => {
     });
 
     expect(simulation.trace.result).toBe('defeat');
-    expect(simulation.trace.combats[0]?.turns).toHaveLength(144);
+    expect(simulation.trace.combats[0]?.turns).toHaveLength(6);
   });
 });
 

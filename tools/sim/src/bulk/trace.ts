@@ -122,15 +122,23 @@ const isElementalCoin = (state: CombatState, coin: CoinUid): boolean => {
   return instance !== undefined && effectiveElements(instance, contentDb).length > 0;
 };
 
+const observeElementalCoin = (
+  turn: MutableTurnTrace,
+  state: CombatState,
+  coin: CoinUid,
+): void => {
+  if (isElementalCoin(state, coin)) {
+    turn.elementalCoinUidsSeen.add(Number(coin));
+  }
+};
+
 const observeCoin = (
   turn: MutableTurnTrace,
   state: CombatState,
   coin: CoinUid,
 ): void => {
   turn.drawnCoinUids.add(Number(coin));
-  if (isElementalCoin(state, coin)) {
-    turn.elementalCoinUidsSeen.add(Number(coin));
-  }
+  observeElementalCoin(turn, state, coin);
 };
 
 const applyEventsToTurn = (
@@ -148,6 +156,10 @@ const applyEventsToTurn = (
         turn.elementalCoinUidsSeen.add(Number(coin));
       }
     } else if (event.type === "coinFlipped" && event.face === "heads") {
+      // Immediate commands can spend a coin that was created in a non-hand
+      // zone earlier in the same turn. Count the actual use as seen without
+      // incorrectly treating it as a draw.
+      observeElementalCoin(turn, eventState, event.coin);
       if (isElementalCoin(eventState, event.coin)) {
         // Remise can flip the same physical coin more than once. Utilization
         // remains a unique-coin metric even though the event stream records
@@ -155,6 +167,7 @@ const applyEventsToTurn = (
         turn.elementalCoinUidsFlippedHeads.add(Number(event.coin));
       }
     } else if (event.type === "coinsConsumed") {
+      for (const coin of event.coins) observeElementalCoin(turn, eventState, coin);
       turn.elementalCoinsConsumed += event.coins.filter((coin) =>
         isElementalCoin(eventState, coin),
       ).length;
@@ -186,6 +199,9 @@ const multiCoinOpportunity = (
 ): boolean => {
   for (const command of commands) {
     if (command.type === "useConsumeSkill" && command.coins.length >= 2) {
+      return true;
+    }
+    if (command.type === "useImmediateFlipSkill" && command.coins.length >= 2) {
       return true;
     }
     if (command.type === "useFlipSkill") {
@@ -243,6 +259,7 @@ const decisionSkillTrace = (
   events: readonly CombatEvent[],
 ): M6SkillDecisionTrace | null => {
   if (
+    command.type !== "useImmediateFlipSkill" &&
     command.type !== "useFlipSkill" &&
     command.type !== "useConsumeSkill"
   ) {
@@ -250,9 +267,11 @@ const decisionSkillTrace = (
   }
   const slot = before.slots[Number(command.slot)];
   if (slot === undefined) return null;
-  const resolution = command.type === "useFlipSkill" ? "flip" : "consume";
+  const resolution = command.type === "useConsumeSkill" ? "consume" : "flip";
   const coinCount =
-    command.type === "useFlipSkill"
+    command.type === "useImmediateFlipSkill"
+      ? command.coins.length
+      : command.type === "useFlipSkill"
       ? (before.flipReservations.find(
           (reservation) => reservation.id === command.reservationId,
         )?.coinUids.length ?? before.zones.placed[command.slot]?.length ?? 0)
@@ -424,6 +443,12 @@ export const playPolicyCombat = (
     expectedCoins += result.events.filter(
       (event) => event.type === "coinCreated",
     ).length;
+    expectedCoins -= result.events.reduce((removed, event) => {
+      if (event.type === "counterfeitsRemoved" || event.type === "leadCoinsExhausted") {
+        return removed + event.coins.length;
+      }
+      return removed;
+    }, 0);
     const stepViolations = combatInvariantViolations(state, expectedCoins);
     invariantViolations.push(...stepViolations);
 

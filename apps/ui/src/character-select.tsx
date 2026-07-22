@@ -1,4 +1,5 @@
 import type { CharacterDef, CharacterId, CoinDefId, ContentDb, EffectAtom } from "@game/core";
+import { useMemo, useState } from "react";
 import { AtlasSprite } from "./AtlasSprite";
 import type { SpriteManifest } from "./AtlasSprite";
 
@@ -98,7 +99,15 @@ interface CharacterSelectProps {
   onSelect: (character: CharacterId) => void;
 }
 
-export const CharacterSelect = ({ artByCharacter, characters, contentDb, seed, onSelect }: CharacterSelectProps) => (
+export const CharacterSelect = ({ artByCharacter, characters, contentDb, seed, onSelect }: CharacterSelectProps) => {
+  const [selectedId, setSelectedId] = useState<CharacterId>(() => characters[0]?.id ?? ("warrior" as CharacterId));
+  const selected = useMemo(
+    () => characters.find((character) => character.id === selectedId) ?? characters[0],
+    [characters, selectedId],
+  );
+  if (selected === undefined) return null;
+  const art = artByCharacter[String(selected.id)];
+  return (
   <section
     aria-label="캐릭터 선택"
     aria-modal="true"
@@ -109,73 +118,48 @@ export const CharacterSelect = ({ artByCharacter, characters, contentDb, seed, o
     <div className="result-panel character-select-panel">
       <p className="run-kicker">신규 런</p>
       <h1>캐릭터 선택</h1>
-      <p>전투에 진입할 캐릭터를 고릅니다.</p>
+      <p>초상화를 고른 뒤, 시작 동전과 스킬을 확인하고 런을 시작하세요.</p>
       {seed !== null ? <p className="select-seed">SEED {seed}</p> : null}
-      <div className="character-grid">
+      <div aria-label="캐릭터 초상화 목록" className="character-portrait-rail" role="listbox">
         {characters.map((character) => {
-          const art = artByCharacter[String(character.id)];
+          const portrait = artByCharacter[String(character.id)];
           return (
           <button
-            aria-label={`${character.name} 선택, HP ${character.maxHp}, 시작 스킬 ${character.startingSkills
-              .map((skill) => contentDb.skills[String(skill)]?.name ?? String(skill))
-              .join(", ")}`}
-            className="character-card"
+            aria-label={`${character.name} 선택`}
+            aria-selected={selected.id === character.id}
+            className={`character-portrait-choice ${selected.id === character.id ? "selected" : ""}`}
             data-character={String(character.id)}
             data-testid={`character-select-${String(character.id)}`}
             key={String(character.id)}
+            role="option"
             type="button"
-            onClick={() => onSelect(character.id)}
+            onClick={() => setSelectedId(character.id)}
           >
-            <span className="character-card-head">
-              <strong>{character.name}</strong>
-              <em>HP {character.maxHp}</em>
+            <span className="character-portrait-mini">
+              {portrait?.kind === "standing" ? <img alt="" src={portrait.src} /> : null}
             </span>
-            <span className="character-card-body">
-              <span className="character-portrait" data-testid="character-portrait">
-                {art?.kind === "standing" ? (
-                  <img alt="" className="character-standing-art" src={art.src} />
-                ) : art?.kind === "sprite" ? (
-                  <AtlasSprite
-                    atlasUrl={art.atlasUrl}
-                    manifest={art.manifest}
-                    motion="idle"
-                    playKey={0}
-                    side="player"
-                  />
-                ) : null}
-              </span>
-              <span className="character-card-info">
-                <span className="character-section">
-                  <b>시작 가방</b>
-                  <span className="character-coins">
-                    {bagSummary(character, contentDb).map((item) => (
-                      <i
-                        className={`character-coin coin-${String(contentDb.coins[String(item.coin)]?.element ?? "basic")}`}
-                        key={String(item.coin)}
-                      >
-                        {item.name} x{item.count}
-                      </i>
-                    ))}
-                  </span>
-                </span>
-                <span className="character-section">
-                  <b>시작 스킬</b>
-                  <span className="character-skills">
-                    {character.startingSkills.map((skill) => (
-                      <i key={String(skill)}>{contentDb.skills[String(skill)]?.name ?? String(skill)}</i>
-                    ))}
-                  </span>
-                </span>
-                <span className="character-trait">
-                  <b>{character.trait.name}</b>
-                  <small>{characterTraitDescription(character, contentDb)}</small>
-                </span>
-              </span>
-            </span>
+            <strong>{character.name}</strong>
           </button>
           );
         })}
       </div>
+      <article className="character-detail" data-testid="character-selected-detail">
+        <div className="character-portrait character-detail-art" data-testid="character-portrait">
+          {art?.kind === "standing" ? (
+            <img alt="" className="character-standing-art" src={art.src} />
+          ) : art?.kind === "sprite" ? (
+            <AtlasSprite atlasUrl={art.atlasUrl} manifest={art.manifest} motion="idle" playKey={0} side="player" />
+          ) : null}
+        </div>
+        <div className="character-card-info">
+          <span className="character-card-head"><strong>{selected.name}</strong><em>HP {selected.maxHp}</em></span>
+          <span className="character-section"><b>시작 동전</b><span className="character-coins">{bagSummary(selected, contentDb).map((item) => <i className={`character-coin coin-${String(contentDb.coins[String(item.coin)]?.element ?? "basic")}`} key={String(item.coin)}>{item.name} x{item.count}</i>)}</span></span>
+          <span className="character-section"><b>시작 스킬</b><span className="character-skills">{selected.startingSkills.map((skill) => <i key={String(skill)}>{contentDb.skills[String(skill)]?.name ?? String(skill)}</i>)}</span></span>
+          <span className="character-trait"><b>{selected.trait.name}</b><small>{characterTraitDescription(selected, contentDb)}</small></span>
+          <button className="character-start" data-testid="character-start" type="button" onClick={() => onSelect(selected.id)}>이 캐릭터로 시작</button>
+        </div>
+      </article>
     </div>
   </section>
-);
+  );
+};

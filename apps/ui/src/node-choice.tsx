@@ -11,15 +11,21 @@ export interface NodeOption {
 }
 
 interface NodeChoiceProps {
+  currentLayer: number;
   layerLabel: string;
   options: NodeOption[];
+  totalLayers: number;
+  visitedKinds: readonly NodeOption["kind"][];
   iconFor: (kind: NodeOption["kind"]) => ReactNode;
   onChoose: (index: number) => void;
 }
 
 export const NodeChoice = ({
+  currentLayer,
   layerLabel,
   options,
+  totalLayers,
+  visitedKinds,
   iconFor,
   onChoose,
 }: NodeChoiceProps) => (
@@ -30,6 +36,17 @@ export const NodeChoice = ({
   >
     <h2>갈림길</h2>
     <p className="node-choice-sub">{layerLabel} — 다음 목적지를 고릅니다.</p>
+    <ol aria-label="런 경로 지도" className="run-map" data-testid="run-map">
+      {Array.from({ length: totalLayers }, (_unused, layer) => {
+        const visited = layer < currentLayer;
+        const current = layer === currentLayer;
+        const kind = visited ? visitedKinds[layer] : undefined;
+        return <li aria-current={current ? "step" : undefined} className={`${visited ? "visited" : ""} ${current ? "current" : ""}`} key={layer}>
+          <span>{visited && kind !== undefined ? iconFor(kind) : current ? "?" : "·"}</span>
+          <small>{layer + 1}</small>
+        </li>;
+      })}
+    </ol>
     <div className="node-choice-options">
       {options.map((option) => (
         <button

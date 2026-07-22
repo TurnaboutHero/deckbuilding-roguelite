@@ -8,20 +8,24 @@ import { effectiveElements } from "@game/core";
 export const TUTORIAL_STORAGE_KEY = "deckbuilding-roguelite.tutorial.v1";
 
 export type TutorialTipId =
-  "basic-loop" | "turn-flow" | "piles" | "cooldown" | "element-coin" | "two-sided" | "preserve" | "consume";
+  "basic-loop" | "coin-bet" | "turn-flow" | "piles" | "cooldown" | "element-coin" | "two-sided" | "preserve" | "consume";
 
 // 순서 = 우선순위 (한 번에 하나만 노출)
 export const TUTORIAL_TIP_COPY: Record<TutorialTipId, string> = {
   "basic-loop":
-    "턴이 시작되면 동전 3개를 뽑습니다. 코스트만큼 장전하면 실행 순서 번호가 나타납니다.",
+    "턴이 시작되면 동전 3개를 뽑습니다. 기본 동전은 앞면 피해 4, 뒷면 방어 4입니다.",
+  "coin-bet":
+    "손패 동전을 스킬에 걸고 사용 버튼을 누르세요. 동전은 즉시 플립되고 효과도 바로 해결됩니다.",
+  // Saved tutorial state and older tests may still reference this id. It is no
+  // longer selected by the progressive tutorial and remains an immediate-use explanation.
   "turn-flow":
-    "동전을 자유롭게 배분하고 실행 순서를 정한 뒤 행동 확정을 누르면, 완전히 장전된 스킬을 번호 순서대로 판정합니다.",
+    "코인을 스킬에 건 뒤 즉시 사용합니다. 행동을 미리 저장하거나 행동 확정 단계를 거칠 필요는 없습니다.",
   piles:
     "사용한 동전과 턴 종료 때 남은 동전은 버림 더미로 갑니다. 뽑을 더미가 부족하면 버림 더미를 섞어 계속 뽑습니다.",
   cooldown:
     "사용한 스킬은 쿨다운 동안 대기합니다 — 배지의 '쿨 N'이 남은 턴 수. '반복' 기본기는 같은 턴에도 계속, '전투당 1회'는 다음 전투에 돌아옵니다.",
   "element-coin":
-    "속성 코인은 앞면과 뒷면에 서로 다른 효과가 있습니다. 스킬에 장전해 플립하면 나온 면의 효과가 추가로 발동해요.",
+    "속성 코인은 앞면과 뒷면에 서로 다른 효과가 있습니다. 스킬에 걸어 플립하면 나온 면의 효과가 추가로 발동해요.",
   "two-sided":
     "속성 효과의 대상: 공격형은 선택한 적에게, 전체 공격은 모든 적에게 적용됩니다. 방어·회복은 항상 나에게 적용돼요.",
   preserve:
@@ -83,7 +87,7 @@ export const activeTutorialTip = (
 ): TutorialTipId | null => {
   const candidates: [TutorialTipId, boolean][] = [
     ["basic-loop", true],
-    ["turn-flow", true],
+    ["coin-bet", true],
     ["piles", true],
     ["cooldown", state.slots.some((slot) => slot.cooldownRemaining > 0 || slot.usedThisCombat)],
     [

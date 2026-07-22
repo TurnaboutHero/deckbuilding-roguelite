@@ -1,6 +1,7 @@
 import {
   legalCommands,
   previewFlip,
+  statusStacks,
   step,
   type Command,
   type CombatState,
@@ -130,6 +131,42 @@ const flipOutcome = (
     expectedHpLoss:
       Math.max(0, baseLoss - preventedIncomingDamage) + expectedSelfDamage,
     unusedResources: unusedResourcesAfter(state, committed),
+  };
+};
+
+const immediateFlipOutcome = (
+  state: CombatState,
+  command: Extract<Command, { type: "useImmediateFlipSkill" }>,
+  db: ContentDb,
+): PublicOutcome => {
+  const result = step(state, command, db);
+  if (!result.ok) return neutralOutcome(state);
+  const expectedDamage = state.enemies.reduce(
+    (total, enemy, index) => total + Math.max(0, enemy.hp - (result.state.enemies[index]?.hp ?? enemy.hp)),
+    0,
+  );
+  const expectedBlock = Math.max(0, result.state.player.block - state.player.block);
+  const expectedSelfDamage = Math.max(0, state.player.hp - result.state.player.hp);
+  const expectedBurn = result.state.enemies.reduce(
+    (total, enemy, index) =>
+      total + Math.max(0, statusStacks(enemy.statuses, "burn") - statusStacks(state.enemies[index]?.statuses ?? {}, "burn")),
+    0,
+  );
+  const expectedResourcesCreated = Math.max(
+    0,
+    Object.keys(result.state.coins).length - Object.keys(state.coins).length,
+  );
+  const baseLoss = incomingHpLoss(state);
+  const preventedIncomingDamage = Math.min(baseLoss, expectedBlock);
+  return {
+    expectedDamage,
+    expectedBlock,
+    expectedSelfDamage,
+    expectedBurn,
+    expectedResourcesCreated,
+    preventedIncomingDamage,
+    expectedHpLoss: Math.max(0, baseLoss - preventedIncomingDamage) + expectedSelfDamage,
+    unusedResources: unusedResourcesAfter(state, command.coins.length),
   };
 };
 
@@ -394,6 +431,8 @@ const outcomesForCommand = (
   legalCommandKeys: ReadonlySet<string>,
 ): PublicOutcome[] => {
   switch (command.type) {
+    case "useImmediateFlipSkill":
+      return [immediateFlipOutcome(state, command, db)];
     case "useFlipSkill":
       return [flipOutcome(state, command, db)];
     case "useConsumeSkill":

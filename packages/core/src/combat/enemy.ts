@@ -226,7 +226,7 @@ const tickMarchAfterEnemyTurn = (state: CombatState, enemyIndex: number, events:
   }));
 };
 
-const CLEANSE_ORDER: readonly StatusId[] = ['burn', 'poison', 'frostbite', 'shock', 'healLock'];
+const CLEANSE_ORDER: readonly StatusId[] = ['burn', 'poison', 'bleed', 'frostbite', 'frost', 'shock', 'healLock'];
 const PUBLIC_ELEMENT_ORDER: readonly Element[] = ['fire', 'mana', 'frost', 'lightning', 'blood'];
 
 const beginCoinSeizureTelegraph = (state: CombatState, enemyIndex: number, db: ContentDb, events: CombatEvent[]): CombatState => {
@@ -867,14 +867,14 @@ export const runEnemyPhase = (input: CombatState, db: ContentDb): { state: Comba
   }
 
   for (let enemyIndex = 0; enemyIndex < state.enemies.length; enemyIndex += 1) {
-    for (const status of ['burn', 'poison'] as const) {
+    for (const status of ['burn', 'poison', 'bleed'] as const) {
       const enemy = state.enemies[enemyIndex];
       const stacks = enemy === undefined ? 0 : statusStacks(enemy.statuses, status);
       if (enemy === undefined || enemy.hp <= 0 || enemy.summonSick === true || stacks <= 0) continue;
-      state = applyDamage(state, { type: 'enemy', index: enemyIndex }, stacks, status, events);
+      if (status !== 'bleed') state = applyDamage(state, { type: 'enemy', index: enemyIndex }, stacks, status, events);
       const updated = state.enemies[enemyIndex];
       if (updated !== undefined) {
-        const remaining = status === 'burn' ? Math.max(0, stacks - 1) : stacks;
+        const remaining = status === 'burn' || status === 'bleed' ? Math.max(0, stacks - 1) : stacks;
         state = withEnemy(state, enemyIndex, (candidate) => ({
           ...candidate,
           statuses: { ...candidate.statuses, [status]: { kind: 'stack' as const, stacks: remaining } }

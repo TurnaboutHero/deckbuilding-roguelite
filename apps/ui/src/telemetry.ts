@@ -11,6 +11,12 @@ type RewardStage = "coin" | "removal" | "fallback-coin" | "skill";
 type RewardResolution = "selected" | "skipped" | "declined";
 
 export type TelemetryCommand =
+  | {
+      type: "useImmediateFlipSkill";
+      slot: number;
+      coins: number[];
+      target?: number;
+    }
   | { type: "placeCoin"; coin: number; slot: number }
   | { type: "unplaceCoin"; coin: number }
   | {
@@ -37,7 +43,7 @@ export interface HumanDamageFact {
   enemyIndex?: number;
   amount: number;
   blocked: number;
-  source: "skill" | "coin" | "burn" | "poison" | "enemy" | "self";
+  source: "skill" | "coin" | "burn" | "poison" | "enemy" | "self" | "fixed";
 }
 
 export interface HumanDecisionFact {
@@ -202,6 +208,15 @@ const leadSnapshot = (state: CombatState): HumanDecisionFact["hp"]["enemyLeadBef
   );
 
 const commandFact = (command: Command): TelemetryCommand => {
+  if (command.type === "useImmediateFlipSkill") {
+    const fact: TelemetryCommand = {
+      type: command.type,
+      slot: Number(command.slot),
+      coins: command.coins.map(Number),
+    };
+    if (command.target !== undefined) fact.target = command.target;
+    return fact;
+  }
   if (command.type === "placeCoin") {
     return {
       type: command.type,
@@ -658,6 +673,7 @@ const sanitizeCommand = (value: unknown, label: string): TelemetryCommand => {
   const type = literalValue(
     object.type,
     [
+      "useImmediateFlipSkill",
       "placeCoin",
       "unplaceCoin",
       "useFlipSkill",
@@ -666,6 +682,16 @@ const sanitizeCommand = (value: unknown, label: string): TelemetryCommand => {
     ] as const,
     `${label}.type`,
   );
+  if (type === "useImmediateFlipSkill") {
+    const command: Extract<TelemetryCommand, { type: "useImmediateFlipSkill" }> = {
+      type,
+      slot: nonNegativeInteger(object, "slot", label),
+      coins: numberArray(object.coins, `${label}.coins`),
+    };
+    const target = optionalIndex(object, "target", label);
+    if (target !== undefined) command.target = target;
+    return command;
+  }
   if (type === "placeCoin") {
     return {
       type,

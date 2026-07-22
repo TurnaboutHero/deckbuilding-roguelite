@@ -251,6 +251,18 @@ export const dropCommands = (
 
 export const sameCommand = (left: Command, right: Command): boolean => {
   if (left.type !== right.type) return false;
+  if (left.type === "useImmediateFlipSkill" && right.type === "useImmediateFlipSkill") {
+    return (
+      left.slot === right.slot &&
+      left.target === right.target &&
+      left.chosenSummon === right.chosenSummon &&
+      left.chosenEquipment === right.chosenEquipment &&
+      left.desiredCoin === right.desiredCoin &&
+      JSON.stringify(left.chosen ?? []) === JSON.stringify(right.chosen ?? []) &&
+      left.coins.length === right.coins.length &&
+      left.coins.every((coin, index) => coin === right.coins[index])
+    );
+  }
   if (left.type === "placeCoin" && right.type === "placeCoin")
     return left.coin === right.coin && left.slot === right.slot;
   if (left.type === "unplaceCoin" && right.type === "unplaceCoin")

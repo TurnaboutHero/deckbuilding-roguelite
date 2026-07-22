@@ -1,7 +1,7 @@
 import type { EnemyFurnaceReason, EnemyIntent, StatusId, TargetRef } from '../content-types';
 import type { CoinEnchantId, CoinUid, Element, Face, SkillId, SlotId } from '../ids';
 
-export type DamageSource = 'skill' | 'coin' | 'burn' | 'poison' | 'enemy' | 'self';
+export type DamageSource = 'skill' | 'coin' | 'fixed' | 'burn' | 'poison' | 'enemy' | 'self';
 
 export type CombatEvent =
   | { type: 'coinsDrawn'; coins: CoinUid[] }

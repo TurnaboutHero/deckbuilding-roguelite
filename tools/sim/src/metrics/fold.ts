@@ -136,8 +136,14 @@ const validateTurn = (turn: M6TurnTrace, path: string): void => {
   if (turn.unusedCoinCount > turn.drawnCoinCount) {
     throw new Error(`${path}.unusedCoinCount cannot exceed drawnCoinCount`);
   }
-  if (turn.elementalCoinsFlippedHeads + turn.elementalCoinsConsumed > turn.elementalCoinsSeen) {
-    throw new Error(`${path} elemental coin uses cannot exceed seen coins`);
+  // Immediate/repeat resolution can transform, return, then reuse the same
+  // physical elemental coin within a turn. Uses are therefore not bounded by
+  // distinct coin ids seen; they must only have an observed elemental source.
+  if (
+    turn.elementalCoinsSeen === 0 &&
+    (turn.elementalCoinsFlippedHeads > 0 || turn.elementalCoinsConsumed > 0)
+  ) {
+    throw new Error(`${path} elemental coin uses require an observed elemental coin`);
   }
   if (turn.burnDamageDealt > turn.playerDamageDealt) {
     throw new Error(`${path}.burnDamageDealt cannot exceed playerDamageDealt`);

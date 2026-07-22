@@ -62,53 +62,71 @@ const event = (value: string) => value as EventDefId;
 const passive = (value: string) => value as PassiveId;
 const equip = (value: string) => value as EquipmentDefId;
 
-// P7 D4 — 양면 속성 코인 (v1.3 표 그대로): 공격형 proc 대상은 단일 스킬→그 적,
-// 전체 스킬→모든 생존 적, 자기 대상 스킬→선택한 적. 우호형(방어·회복)은 항상 플레이어.
+// v4.5 — 모든 동전은 스킬의 성공/실패 효과와 별개로, 플립한 각 면 효과를 해결한다.
+// 기존 적·스킬 데이터의 `frostbite`는 저장 호환용 레거시 상태이며, 새 동전 데이터는
+// v4.5의 authored 상태 ID인 `frost`를 사용한다.
 export const coins = {
-  basic: { id: coin('basic'), element: null },
+  basic: {
+    id: coin('basic'),
+    element: null,
+    procs: {
+      heads: [{ kind: 'damage', amount: 4 }],
+      tails: [{ kind: 'block', amount: 4 }]
+    }
+  },
   counterfeit: { id: coin('counterfeit'), element: null, counterfeit: true },
   fire: {
     id: coin('fire'),
     element: 'fire',
     procs: {
-      heads: [{ kind: 'applyStatus', status: 'burn', stacks: 1, to: 'target' }],
-      tails: [{ kind: 'damage', amount: 1 }]
+      heads: [
+        { kind: 'damage', amount: 3 },
+        { kind: 'applyStatus', status: 'burn', stacks: 2, to: 'target' }
+      ],
+      tails: [
+        { kind: 'block', amount: 3 },
+        { kind: 'damageIfTargetStatus', status: 'burn', amount: 2 }
+      ]
     }
   },
   mana: {
     id: coin('mana'),
     element: 'mana',
     procs: {
-      heads: [{ kind: 'block', amount: 1 }],
-      tails: [{ kind: 'block', amount: 2 }]
+      heads: [{ kind: 'addCoin', coin: coin('basic'), zone: 'discard', count: 1 }],
+      tails: [{ kind: 'nextTurnDraw', count: 1 }]
     }
   },
   frost: {
     id: coin('frost'),
     element: 'frost',
     procs: {
-      heads: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }],
-      tails: [{ kind: 'block', amount: 1 }]
+      heads: [{ kind: 'applyStatus', status: 'frost', stacks: 2, to: 'target' }],
+      tails: [
+        { kind: 'block', amount: 3 },
+        { kind: 'nextTurnBlock', amount: 2 }
+      ]
     }
   },
   lightning: {
     id: coin('lightning'),
     element: 'lightning',
     procs: {
-      heads: [{ kind: 'applyStatus', status: 'shock', stacks: 1, to: 'target' }],
-      tails: [{ kind: 'damage', amount: 1 }]
+      heads: [{ kind: 'fixedDamage', amount: 3 }],
+      tails: [{ kind: 'applyStatus', status: 'shock', stacks: 2, to: 'target' }]
     }
   },
-  // P7 D4 — 피 코인: 비시그니처 단독 드래프트 가치(회복/방어 유지 픽)
+  // v4.5 피 코인: 앞면은 HP 2를 지불하고 피해 7. loseHp의 사전 검사(`hp <= amount`)
+  // 덕분에 HP 2 이하에서는 면 효과 전체가 해결되지 않는다.
   blood: {
     id: coin('blood'),
     element: 'blood',
     procs: {
-      heads: [{ kind: 'coinDamage', amount: 1 }],
-      tails: [
-        { kind: 'loseHp', amount: 1 },
-        { kind: 'coinDamage', amount: 2 }
-      ]
+      heads: [
+        { kind: 'loseHp', amount: 2 },
+        { kind: 'coinDamage', amount: 7 }
+      ],
+      tails: [{ kind: 'applyStatus', status: 'bleed', stacks: 2, to: 'target' }]
     }
   }
 } satisfies Record<string, CoinDef>;

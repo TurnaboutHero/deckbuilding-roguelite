@@ -27,7 +27,9 @@ export const statusKo = (value: string): string =>
     burn: '화상',
     poison: '중독',
     frostbite: '동상',
+    frost: '동상',
     shock: '감전',
+    bleed: '출혈',
     healLock: '회복 봉인'
   })[value] ?? value;
 

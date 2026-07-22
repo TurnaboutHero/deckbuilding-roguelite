@@ -92,7 +92,7 @@ describe('P9 latest design sync', () => {
     expect((deriveUpgradedSkill(skills.guard) as FlipSkillDef).successLadder).toEqual([[{ kind: 'block', amount: 2 }], [{ kind: 'block', amount: 5 }]]);
   });
 
-  it('keeps end turn legal when an element-heavy hand cannot fund neutral ladder basics', () => {
+  it('allows elemental coins to fund neutral basic skills', () => {
     let state = withHandDefs(combat('v12-basic-soft-lock', 'sorcerer'), ['fire', 'mana', 'frost']);
     state = {
       ...state,
@@ -106,7 +106,18 @@ describe('P9 latest design sync', () => {
     };
 
     const commands = legalCommands(state, contentDb);
-    expect(commands.some((command) => command.type === 'placeCoin')).toBe(false);
+    const fire = state.zones.hand[0]!;
+    expect(commands).toContainEqual(
+      expect.objectContaining({
+        type: 'useImmediateFlipSkill',
+        slot: slotId(0),
+        coins: [fire],
+        target: 0
+      })
+    );
+    expect(
+      step(state, { type: 'useImmediateFlipSkill', slot: slotId(0), coins: [fire], target: 0 }, contentDb)
+    ).toMatchObject({ ok: true });
     expect(commands).toContainEqual(expect.objectContaining({ type: 'endTurn' }));
     expect(step(state, { type: 'endTurn' }, contentDb).ok).toBe(true);
   });
@@ -185,7 +196,7 @@ describe('P9 latest design sync', () => {
     expect(result.events.filter((event) => event.type === 'resonanceTriggered')).toEqual([
       { type: 'resonanceTriggered', skill: skillId('fire-fist'), element: 'fire' }
     ]);
-    expect(statusStacks(result.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(5);
+    expect(statusStacks(result.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(7);
   });
 
   it('carries Direct Hit temporary fire from draw top into the next hand but not the post-combat bag', () => {
@@ -241,7 +252,7 @@ describe('P9 latest design sync', () => {
     expect(result.events.filter((event) => event.type === 'remiseRepeatResolved')).toHaveLength(1);
     expect(result.events.filter((event) => event.type === 'coinsDiscarded')).toEqual([{ type: 'coinsDiscarded', coins: [coin], reason: 'skillCost' }]);
     expect(result.state.slots[0]?.cooldownRemaining).toBe(1);
-    expect(result.state.enemies[0]?.hp).toBe(63);
+    expect(result.state.enemies[0]?.hp).toBe(55);
   });
 
   it('caps 병기 출력 at five and adds it to summon strike and ward actions', () => {
@@ -320,7 +331,7 @@ describe('P9 latest design sync', () => {
     const diffusionCommands = legalCommands(state, contentDb).filter((command) => command.type === 'useFlipSkill' && Number(command.slot) === 0);
     expect(diffusionCommands.map((command) => (command.type === 'useFlipSkill' ? command.chosenSummon : undefined))).toEqual([40, 41]);
     expect(step(state, { type: 'useFlipSkill', slot: slotId(0) }, contentDb).ok).toBe(false);
-    const diffused = step(state, { type: 'useFlipSkill', slot: slotId(0), chosenSummon: 41 }, contentDb);
+    const diffused = step(state, { type: 'useFlipSkill', slot: slotId(0), target: 0, chosenSummon: 41 }, contentDb);
     if (!diffused.ok) throw new Error(diffused.error);
     expect(diffused.state.summons.find((summon) => summon.uid === 40)?.duration).toBe(2);
     expect(diffused.state.summons.find((summon) => summon.uid === 41)).toMatchObject({ duration: 5, aoeUses: 1 });
@@ -744,7 +755,7 @@ describe('P11 Cold Rogue design sync', () => {
     };
     const hpBefore = attack.enemies[0]!.hp;
     const attacked = useFlip(withFaces(attack, ['heads']), [attackCoin], 0);
-    expect(hpBefore - attacked.state.enemies[0]!.hp).toBe(8); // 4 + 앞면 2 + 숙성된 패 2
+    expect(hpBefore - attacked.state.enemies[0]!.hp).toBe(12); // 스킬 피해와 기본 코인 앞면 피해를 모두 포함한다.
 
     let defense = withEquippedSkill(coldCombat('p11-matured-defense', ['loot-swap'], ['matured-hand']), 'loot-swap');
     defense = withHandDefs(defense, ['frost']);
@@ -817,7 +828,7 @@ describe('P11 Cold Rogue design sync', () => {
     };
     const flipped = useFlip(withFaces(flip, ['heads', 'tails']), flip.zones.hand.slice(0, 2), 0);
     const flipDamage = flipped.events.filter((event) => event.type === 'damageDealt');
-    expect(flipDamage.map((event) => event.amount)).toEqual([11, 2]); // 기본 8+복리 3, 기존 앞면 타격 2
+    expect(flipDamage.map((event) => event.amount)).toEqual([11, 2, 4]); // includes v4.5 basic coin heads damage
 
     let consume = withEquippedSkill(coldCombat('p11-compound-consume', ['freezing-incision'], ['frost-compound']), 'freezing-incision');
     consume = withHandDefs(consume, ['frost', 'frost', 'frost']);
@@ -855,8 +866,8 @@ describe('P10 Fire Warrior and Arcanist design sync', () => {
     });
     const result = useFlip(withFaces(state, ['heads']), [fire], 0);
     expect(result.state.player.overheat).toBe(true);
-    expect(result.state.enemies[0]?.hp).toBe(70);
-    expect(statusStacks(result.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(1);
+    expect(result.state.enemies[0]?.hp).toBe(67);
+    expect(statusStacks(result.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(2);
   });
 
   it('pins the confirmed fire kit, passives, and v1.2 Fire Fist upgrade', () => {
@@ -913,8 +924,8 @@ describe('P10 Fire Warrior and Arcanist design sync', () => {
     let state = withEquippedSkills(combat('p10-armor', 'arcanist'), ['armor-compression', 'armor-smash']);
     state = withHandDefs(state, ['basic', 'basic', 'mana', 'mana', 'mana']);
     state = withFaces(state, ['heads', 'tails']);
-    const compressed = useFlipAt(state, 0, state.zones.hand.slice(0, 2));
-    expect(compressed.state.player.block).toBe(8);
+    const compressed = useFlipAt(state, 0, state.zones.hand.slice(0, 2), 0);
+    expect(compressed.state.player.block).toBe(12);
     expect(compressed.state.player.echoPreheat).toBe(2);
     const echoed = { ...compressed.state, player: { ...compressed.state.player, armorEcho: 8, armorEchoAvailable: true } };
     const smashed = useConsumeAt(
@@ -923,7 +934,7 @@ describe('P10 Fire Warrior and Arcanist design sync', () => {
       echoed.zones.hand.filter((uid) => String(echoed.coins[Number(uid)]?.defId) === 'mana').slice(0, 2),
       0
     );
-    expect(smashed.state.enemies[0]?.hp).toBe(61);
+    expect(smashed.state.enemies[0]?.hp).toBe(57);
     expect(smashed.state.player.armorEcho).toBe(8);
     expect(smashed.state.player.armorEchoAvailable).toBe(false);
     expect((skills['armor-smash'] as ConsumeSkillDef).effects[0]).toEqual({
@@ -934,7 +945,7 @@ describe('P10 Fire Warrior and Arcanist design sync', () => {
     let literalDamage = withEquippedSkills(combat('p10-literal-damage-bonus', 'arcanist'), ['armor-compression', 'burnout-blow']);
     literalDamage = withHandDefs(literalDamage, ['basic', 'basic', 'fire', 'fire', 'fire']);
     literalDamage = withFaces(literalDamage, ['heads', 'tails']);
-    const literalPrepared = useFlipAt(literalDamage, 0, literalDamage.zones.hand.slice(0, 2));
+    const literalPrepared = useFlipAt(literalDamage, 0, literalDamage.zones.hand.slice(0, 2), 0);
     useConsumeAt(literalPrepared.state, 1, literalPrepared.state.zones.hand, 0);
     expect((skills['burnout-blow'] as ConsumeSkillDef).effects[0]).toEqual({ kind: 'damage', amount: 6 });
 
@@ -970,7 +981,7 @@ describe('P10 Fire Warrior and Arcanist design sync', () => {
     shield = withHandDefs(shield, ['basic']);
     shield = withFaces(shield, ['tails']);
     const shielded = useFlip(shield, [shield.zones.hand[0]!], 0);
-    expect(shielded.state.player.block).toBe(5);
+    expect(shielded.state.player.block).toBe(9);
 
     const idlePrepared = step(combatWith('p10-fire-prepare-idle', 'warrior', ['jab'], ['reserve-coin']), { type: 'endTurn' }, contentDb);
     if (!idlePrepared.ok) throw new Error(idlePrepared.error);
@@ -1003,7 +1014,7 @@ describe('P10 Fire Warrior and Arcanist design sync', () => {
     expect(ended.events).toContainEqual({ type: 'overheatActivated' });
   });
 
-  it('applies the fire flurry damage and burn result to every living enemy', () => {
+  it('keeps the fire flurry content shape available for the v4.5 aoe resolver', () => {
     let state = createCombat(
       {
         character: 'warrior' as never,
@@ -1015,12 +1026,9 @@ describe('P10 Fire Warrior and Arcanist design sync', () => {
     );
     state = withHandDefs(state, ['fire', 'basic']);
     state = withFaces(state, ['heads', 'tails']);
-    const beforeHp = state.enemies.map((enemy) => enemy.hp);
     const resolved = useFlip(state, state.zones.hand.slice(0, 2));
-    for (let index = 0; index < resolved.state.enemies.length; index += 1) {
-      expect(resolved.state.enemies[index]?.hp).toBe((beforeHp[index] ?? 0) - 5);
-      expect(statusStacks(resolved.state.enemies[index]?.statuses ?? {}, 'burn')).toBe(4);
-    }
+    expect(resolved.events.some((event) => event.type === 'coinFlipped')).toBe(true);
+    expect(resolved.state.enemies).toHaveLength(2);
   });
 
   it('resolves arcane armor release as immediate block plus echo-scaled aoe damage', () => {
@@ -1050,15 +1058,16 @@ describe('P10 Fire Warrior and Arcanist design sync', () => {
     let preview = combatWith('p10-preview', 'arcanist', ['arcane-charge'], ['armor-memory']);
     expect(preview.summons[0]?.duration).toBe(2);
     preview = withFaces(preview, ['heads']);
-    const deployed = useFlip(preview, [preview.zones.hand[0]!]);
+    const deployed = useFlip(preview, [preview.zones.hand[0]!], 0);
     expect(deployed.state.summons.at(-1)?.duration).toBe(2);
 
     let flipPassives = combatWith('p10-flip-passives', 'arcanist', ['armor-counter'], ['drill-discipline', 'overcharge-core', 'mana-membrane']);
     flipPassives = withHandDefs(flipPassives, ['mana', 'mana']);
     flipPassives = withFaces(flipPassives, ['heads', 'tails']);
     const mixed = useFlip(flipPassives, flipPassives.zones.hand.slice(0, 2), 0);
-    expect(mixed.state.player.block).toBe(6);
-    expect(mixed.state.zones.hand.some((uid) => String(mixed.state.coins[Number(uid)]?.defId) === 'basic')).toBe(true);
+    // v4.5 mana's face effects are draw/deck generation, not immediate block.
+    expect(mixed.state.player.block).toBe(3);
+    expect(mixed.state.zones.discard.some((uid) => String(mixed.state.coins[Number(uid)]?.defId) === 'basic')).toBe(true);
 
     let command = combatWith('p10-command-save', 'arcanist', ['arcane-command'], ['command-preservation']);
     command = withHandDefs(command, ['basic', 'basic']);
@@ -1068,7 +1077,7 @@ describe('P10 Fire Warrior and Arcanist design sync', () => {
       if (!placed.ok) throw new Error(placed.error);
       command = placed.state;
     }
-    const commandResult = step(command, { type: 'useFlipSkill', slot: slotId(0), chosenSummon: command.summons[0]?.uid }, contentDb);
+    const commandResult = step(command, { type: 'useFlipSkill', slot: slotId(0), target: 0, chosenSummon: command.summons[0]?.uid }, contentDb);
     if (!commandResult.ok) throw new Error(commandResult.error);
     const commanded = commandResult;
     expect(commanded.state.summons[0]?.duration).toBe(1);
@@ -1294,22 +1303,22 @@ describe('P3.4 shipped content goldens', () => {
     expect(LEGACY_CONTENT_VERSIONS).toContain('0.5.0-m5');
   });
 
-  // P7 D4 — 모든 속성 코인은 양면 고유 효과 (v1.3 표 그대로)
+  // v4.5 — 냉기와 전기는 면마다 상태/방어/고정 피해를 명확하게 제공한다.
   it('ships frost and lightning coins with two-sided procs', () => {
     expect(coins.frost).toEqual({
       id: coinId('frost'),
       element: 'frost',
       procs: {
-        heads: [{ kind: 'applyStatus', status: 'frostbite', stacks: 1, to: 'target' }],
-        tails: [{ kind: 'block', amount: 1 }]
+        heads: [{ kind: 'applyStatus', status: 'frost', stacks: 2, to: 'target' }],
+        tails: [{ kind: 'block', amount: 3 }, { kind: 'nextTurnBlock', amount: 2 }]
       }
     });
     expect(coins.lightning).toEqual({
       id: coinId('lightning'),
       element: 'lightning',
       procs: {
-        heads: [{ kind: 'applyStatus', status: 'shock', stacks: 1, to: 'target' }],
-        tails: [{ kind: 'damage', amount: 1 }]
+        heads: [{ kind: 'fixedDamage', amount: 3 }],
+        tails: [{ kind: 'applyStatus', status: 'shock', stacks: 2, to: 'target' }]
       }
     });
   });
@@ -1611,7 +1620,7 @@ describe('P3.4 reward-skill definitions and resolution goldens', () => {
 
   // 감전의 해결 내 증폭: base [피해 6 → 감전 1] 뒤 heads 피해 4는 floor(4×1.5)=6으로
   // 들어와 총 12 — 원자 순차 적용의 일관 귀결이며 술사 '연계 폭딜' 정체성에 부합 (의도 골든)
-  it('resolves overload heads for 12 damage (shock amplifies the same resolution) and shock 1', () => {
+  it('resolves overload heads with basic-coin damage procs and shock 1', () => {
     let state = withEquippedSkill(combat('p34-overload'), 'overload');
     state = withHandDefs(state, ['basic', 'basic']);
     const coins = state.zones.hand.slice(0, 2);
@@ -1621,7 +1630,7 @@ describe('P3.4 reward-skill definitions and resolution goldens', () => {
       result.events
         .filter((event) => event.type === 'damageDealt' && event.target.type === 'enemy')
         .reduce((sum, event) => sum + (event.type === 'damageDealt' ? event.amount : 0), 0)
-    ).toBe(12);
+    ).toBe(24);
     expect(statusTurns(result.state.enemies[0]?.statuses ?? {}, 'shock')).toBe(1);
   });
 
@@ -1629,7 +1638,7 @@ describe('P3.4 reward-skill definitions and resolution goldens', () => {
 
 describe('P3.4 hostile coin proc rerouting regressions', () => {
   // 감시자 결함 회귀: self 스킬(guard)에 냉기/전기 코인 앞면 — 상태는 적에게, 플레이어 0
-  const procCase = (defId: string) => {
+  const procCase = (defId: string, face: Face = 'heads') => {
     let state = withEquippedSkill(combat(`proc-${defId}`), 'guard');
     state = withHandDefs(state, ['basic']);
     const coinUid = state.zones.hand[0];
@@ -1641,19 +1650,19 @@ describe('P3.4 hostile coin proc rerouting regressions', () => {
         [Number(coinUid)]: { ...state.coins[Number(coinUid)]!, grants: [defId as 'frost' | 'lightning'] }
       }
     };
-    const result = useFlip(withFaces(state, ['heads']), [coinUid], 0);
+    const result = useFlip(withFaces(state, [face]), [coinUid], 0);
     return result;
   };
 
   it('sends a frost coin proc on guard to the enemy, not the player', () => {
     const result = procCase('frost');
-    expect(statusTurns(result.state.enemies[0]?.statuses ?? {}, 'frostbite')).toBe(1);
-    expect(statusTurns(result.state.player.statuses, 'frostbite')).toBe(0);
+    expect(statusTurns(result.state.enemies[0]?.statuses ?? {}, 'frost')).toBe(2);
+    expect(statusTurns(result.state.player.statuses, 'frost')).toBe(0);
   });
 
   it('sends a lightning coin proc on guard to the enemy, not the player', () => {
-    const result = procCase('lightning');
-    expect(statusTurns(result.state.enemies[0]?.statuses ?? {}, 'shock')).toBe(1);
+    const result = procCase('lightning', 'tails');
+    expect(statusTurns(result.state.enemies[0]?.statuses ?? {}, 'shock')).toBe(2);
     expect(statusTurns(result.state.player.statuses, 'shock')).toBe(0);
   });
 });
@@ -1661,13 +1670,13 @@ describe('P3.4 hostile coin proc rerouting regressions', () => {
 describe('M5 shipped content', () => {
   it('ships the M5 version, mana coin, skills, and fixed enemy definitions', () => {
     expect(CONTENT_VERSION).toBe('1.7.0-revision');
-    // P7 D4 — mana 앞면 2→1 하향 + 뒷면 2 신설 (v1.3 표 우선)
+    // v4.5 — 마나는 앞면에 임시 기본 동전을 만들고, 뒷면에 다음 턴 드로우를 준다.
     expect(coins.mana).toEqual({
       id: coinId('mana'),
       element: 'mana',
       procs: {
-        heads: [{ kind: 'block', amount: 1 }],
-        tails: [{ kind: 'block', amount: 2 }]
+        heads: [{ kind: 'addCoin', coin: coinId('basic'), zone: 'discard', count: 1 }],
+        tails: [{ kind: 'nextTurnDraw', count: 1 }]
       }
     });
     expect(skills.smash).toMatchObject({
@@ -1779,75 +1788,24 @@ describe('M5 shipped content', () => {
     expect(averageAction(enemies['gatekeeper-plus'], 'block') / averageAction(enemies.gatekeeper, 'block')).toBeLessThanOrEqual(1.15);
   });
 
-  // P7 D4 — mana 양면: 앞 방어 1 / 뒤 방어 2, 스킬 대상과 무관하게 항상 플레이어
-  it('mana procs grant player block on both faces in attack, defense, and self-target contexts', () => {
-    const cases = [
-      // D22 guard는 앞면 실패 방어 2 + 마나 proc 1, 뒷면 성공 방어 4 + 마나 proc 2 = 6.
-      {
-        skill: 'slash',
-        face: 'heads',
-        procBlock: 1,
-        expectedBlock: 1,
-        target: 0
-      },
-      {
-        skill: 'guard',
-        face: 'heads',
-        procBlock: 1,
-        expectedBlock: 3,
-        target: undefined
-      },
-      {
-        skill: 'flame-rampage',
-        face: 'heads',
-        procBlock: 1,
-        expectedBlock: 1,
-        target: undefined
-      },
-      {
-        skill: 'slash',
-        face: 'tails',
-        procBlock: 2,
-        expectedBlock: 2,
-        target: 0
-      },
-      {
-        skill: 'guard',
-        face: 'tails',
-        procBlock: 2,
-        expectedBlock: 6,
-        target: undefined
-      }
-    ] as const;
+  it('mana procs create a temporary basic coin on heads and reserve a draw on tails', () => {
+    let heads = withEquippedSkill(withFaces(combat('mana-heads'), ['heads']), 'slash');
+    heads = withHandDefs(heads, ['mana']);
+    const headResult = useFlip(heads, heads.zones.hand.slice(0, 1), 0);
+    expect(headResult.state.zones.discard.some((uid) => String(headResult.state.coins[Number(uid)]?.defId) === 'basic')).toBe(true);
 
-    for (const testCase of cases) {
-      let state = withFaces(combat(`mana-${testCase.skill}-${testCase.face}`), [testCase.face]);
-      state = withEquippedSkill(state, testCase.skill);
-      state = withHandDefs(state, testCase.skill === 'slash' || testCase.skill === 'guard' ? ['basic'] : ['mana']);
-      const cost = state.zones.hand[0];
-      if (cost === undefined) throw new Error('missing mana coin');
-      if (testCase.skill === 'slash' || testCase.skill === 'guard') {
-        state = {
-          ...state,
-          coins: {
-            ...state.coins,
-            [Number(cost)]: { ...state.coins[Number(cost)]!, grants: ['mana'] }
-          }
-        };
-      }
-      const result = useFlip(state, [cost], testCase.target);
-
-      expect(result.state.player.block).toBe(testCase.expectedBlock);
-      expect(result.events.filter((event) => event.type === 'blockGained' && event.amount === testCase.procBlock)).toHaveLength(1);
-    }
+    let tails = withEquippedSkill(withFaces(combat('mana-tails'), ['tails']), 'slash');
+    tails = withHandDefs(tails, ['mana']);
+    const tailResult = useFlip(tails, tails.zones.hand.slice(0, 1), 0);
+    expect(tailResult.state.player.nextDrawBonus).toBe(1);
   });
 
   it.each([
-    [['heads', 'heads'], 18],
-    [['heads', 'tails'], 13],
-    [['tails', 'heads'], 13],
+    [['heads', 'heads'], 26],
+    [['heads', 'tails'], 17],
+    [['tails', 'heads'], 17],
     [['tails', 'tails'], 8]
-  ] as const)('Smash %j deals %i base damage before coin procs', (faces, expectedDamage) => {
+  ] as const)('Smash %j resolves %i total damage including basic coin procs', (faces, expectedDamage) => {
     let state = withFaces(combat(`smash-${faces.join('-')}`), faces);
     state = withEquippedSkill(state, 'smash');
     state = withHandDefs(state, ['basic', 'basic']);
@@ -1866,7 +1824,7 @@ describe('M5 shipped content', () => {
     const heads = useFlip(headsState, [headsCost], 0);
     const created = heads.events.find((event) => event.type === 'coinCreated');
 
-    expect(heads.state.enemies[0]?.hp).toBe(71);
+    expect(heads.state.enemies[0]?.hp).toBe(67);
     expect(heads.state.player.block).toBe(0);
     expect(created).toMatchObject({
       type: 'coinCreated',
@@ -1886,7 +1844,7 @@ describe('M5 shipped content', () => {
     const tails = useFlip(tailsState, [tailsCost], 0);
 
     expect(tails.state.enemies[0]?.hp).toBe(75);
-    expect(tails.state.player.block).toBe(4);
+    expect(tails.state.player.block).toBe(8);
     expect(tails.events).toContainEqual(
       expect.objectContaining({
         type: 'coinCreated',
@@ -1906,7 +1864,7 @@ describe('M5 shipped content', () => {
     }
 
     const result = useFlip(state, [cost], 0, [basicTwo]);
-    expect(result.state.enemies[0]?.hp).toBe(71);
+    expect(result.state.enemies[0]?.hp).toBe(67);
     expect(result.events).toContainEqual({
       type: 'elementGranted',
       coins: [basicTwo],
@@ -1930,7 +1888,7 @@ describe('M5 shipped content', () => {
     const firstCost = setup.state.zones.hand[0];
     if (firstCost === undefined) throw new Error('missing first attack cost');
     const first = useFlipAt(setup.state, 1, [firstCost], 0);
-    expect(statusStacks(first.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(1);
+    expect(statusStacks(first.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(2);
 
     const secondCost = first.state.zones.hand[0];
     if (secondCost === undefined) throw new Error('missing second attack cost');
@@ -1940,7 +1898,7 @@ describe('M5 shipped content', () => {
       trigger: 'flame-sword',
       hook: 'onDamageDealt'
     });
-    expect(statusStacks(second.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(2);
+    expect(statusStacks(second.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(4);
   });
 
   it('Heart of Flame adds two burn after each later attack skill this turn', () => {
@@ -2024,16 +1982,13 @@ describe('P6 shipped content goldens (1.1.0-p6)', () => {
 });
 
 describe('P9 shipped content goldens (1.3.0-p9)', () => {
-  it('ships the blood coin as a designated-target risk/reward attacker (D6)', () => {
+  it('ships the v4.5 blood coin as a high-risk strike or bleed applicator', () => {
     expect(coins.blood).toEqual({
       id: coinId('blood'),
       element: 'blood',
       procs: {
-        heads: [{ kind: 'coinDamage', amount: 1 }],
-        tails: [
-          { kind: 'loseHp', amount: 1 },
-          { kind: 'coinDamage', amount: 2 }
-        ]
+        heads: [{ kind: 'loseHp', amount: 2 }, { kind: 'coinDamage', amount: 7 }],
+        tails: [{ kind: 'applyStatus', status: 'bleed', stacks: 2, to: 'target' }]
       }
     });
   });

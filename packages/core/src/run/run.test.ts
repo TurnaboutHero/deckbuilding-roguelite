@@ -575,6 +575,18 @@ describe("run progression", () => {
     ]);
   });
 
+  it("lets the opening map confirm its single first node before combat", () => {
+    const db = testDb();
+    const openingMap = { ...newRun("OPENING-MAP"), phase: "choose-node" as const };
+
+    expect(openingMap.graph.layers[0]).toHaveLength(1);
+    const selected = chooseRunNode(openingMap, 0, db);
+
+    expect(selected.phase).toBe("ready");
+    expect(selected.combatIndex).toBe(0);
+    expect(() => startRunCombat(selected, db)).not.toThrow();
+  });
+
   it("guards graph invariants at every public entry point (P4.1 통합 감사)", () => {
     const db = testDb();
     const run = newRun();

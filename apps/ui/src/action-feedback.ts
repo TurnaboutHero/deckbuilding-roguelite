@@ -20,7 +20,7 @@ export const cooldownReason = (turns: number): string =>
 
 const slotReason = (
   state: CombatState,
-  command: Extract<Command, { type: "useFlipSkill" | "useConsumeSkill" }>,
+  command: Extract<Command, { type: "useImmediateFlipSkill" | "useFlipSkill" | "useConsumeSkill" }>,
   db: ContentDb,
 ): string | null => {
   const slotState = state.slots[Number(command.slot)];
@@ -32,6 +32,14 @@ const slotReason = (
     return REJECTION_TEXT.usedThisCombat;
   if (slotState.cooldownRemaining > 0)
     return cooldownReason(slotState.cooldownRemaining);
+
+  if (command.type === "useImmediateFlipSkill") {
+    if (skill.type !== "flip") return null;
+    if (command.coins.length !== skill.cost) return REJECTION_TEXT.coinCost;
+    if (command.coins.some((coin) => !state.zones.hand.includes(coin)))
+      return REJECTION_TEXT.coinNotSelectable;
+    return null;
+  }
 
   if (command.type === "useFlipSkill") {
     if (skill.type !== "flip") return null;
@@ -91,7 +99,7 @@ export function rejectionReason(
     return placed ? REJECTION_TEXT.generic : REJECTION_TEXT.coinNotSelectable;
   }
 
-  if (command.type === "useFlipSkill" || command.type === "useConsumeSkill")
+  if (command.type === "useImmediateFlipSkill" || command.type === "useFlipSkill" || command.type === "useConsumeSkill")
     return slotReason(state, command, db) ?? REJECTION_TEXT.generic;
 
   return REJECTION_TEXT.generic;

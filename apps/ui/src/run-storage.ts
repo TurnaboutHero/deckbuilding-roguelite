@@ -695,7 +695,12 @@ const normalizeRunSave = (
     return null;
   if (value.phase === "rewards" && value.combatIndex === 0) return null;
   if (value.phase === "victory" && value.combatIndex !== graph.layers.length - 1) return null;
-  if (value.phase === "choose-node" && (graph.layers[value.combatIndex]?.length ?? 0) < 2) return null;
+  if (
+    value.phase === "choose-node" &&
+    ((graph.layers[value.combatIndex]?.length ?? 0) < 1 ||
+      (value.combatIndex !== 0 && (graph.layers[value.combatIndex]?.length ?? 0) < 2))
+  )
+    return null;
   if (!isNonNegativeSafeInteger(value.attempt)) return null;
   if (value.phase === "rewards" && value.attempt !== 0) return null;
   if (!isNonNegativeSafeInteger(value.gold)) return null;

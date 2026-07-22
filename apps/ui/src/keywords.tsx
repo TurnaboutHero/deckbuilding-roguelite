@@ -8,11 +8,13 @@ import "./keywords.css";
 export type KeywordTerm =
   | "burn"
   | "poison"
+  | "bleed"
   | "wither"
   | "block"
   | "flip"
   | "consume"
   | "frostbite"
+  | "frost"
   | "shock"
   | "healLock"
   | "trigger"
@@ -44,6 +46,10 @@ export const KEYWORD_GLOSSARY: Record<KeywordTerm, { label: string; description:
     label: "중독",
     description: "대상의 턴이 끝날 때 스택만큼 피해를 준다 (방어 무시). 화상과 달리 스택은 줄지 않는다.",
   },
+  bleed: {
+    label: "출혈",
+    description: "중첩된 출혈은 턴 종료에 피해를 주며, 방어로 막을 수 없습니다.",
+  },
   wither: {
     label: "위축",
     description: "다음 턴에 뽑는 동전이 그만큼 줄어든다.",
@@ -54,7 +60,7 @@ export const KEYWORD_GLOSSARY: Record<KeywordTerm, { label: string; description:
   },
   flip: {
     label: "플립",
-    description: "장전한 동전을 던져 앞·뒤를 정한다. 기본 효과는 항상 발동하고, 면 결과는 보너스만 더한다.",
+    description: "스킬에 건 동전을 던져 앞·뒤를 무작위로 정한다. 기본 효과는 항상 발동하고, 면 결과는 보너스만 더한다.",
   },
   consume: {
     label: "소비",
@@ -63,6 +69,10 @@ export const KEYWORD_GLOSSARY: Record<KeywordTerm, { label: string; description:
   frostbite: {
     label: "동상",
     description: "남은 턴 동안 대상이 가하는 공격 피해가 25% 줄어든다. 자기 턴이 끝날 때 1턴씩 줄어든다.",
+  },
+  frost: {
+    label: "동상",
+    description: "동상은 다음 행동의 효율을 낮추는 지속 상태입니다.",
   },
   shock: {
     label: "감전",

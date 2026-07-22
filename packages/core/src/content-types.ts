@@ -14,8 +14,10 @@ import type {
 } from './ids';
 
 // P13 Batch B adds persistent poison stacks and a player-only healing lock.
-export const STACK_STATUS_IDS = ['burn', 'poison'] as const;
-export const DURATION_STATUS_IDS = ['frostbite', 'shock', 'healLock'] as const;
+export const STACK_STATUS_IDS = ['burn', 'poison', 'bleed'] as const;
+// `frostbite` remains accepted for existing saves/content; `frost` is the
+// v4.5 authored name and has the same duration semantics.
+export const DURATION_STATUS_IDS = ['frostbite', 'frost', 'shock', 'healLock'] as const;
 export type StatusId = (typeof STACK_STATUS_IDS)[number] | (typeof DURATION_STATUS_IDS)[number];
 
 export const isStackStatus = (status: StatusId): status is (typeof STACK_STATUS_IDS)[number] =>
@@ -269,7 +271,13 @@ export interface TurnTriggerDef {
 export type EffectAtom =
   | { kind: 'damage'; amount: number }
   | { kind: 'coinDamage'; amount: number }
+  /** Direct damage that intentionally bypasses block and attack modifiers. */
+  | { kind: 'fixedDamage'; amount: number }
+  /** Damage only when the selected target currently has the given status. */
+  | { kind: 'damageIfTargetStatus'; status: StatusId; amount: number }
   | { kind: 'block'; amount: number }
+  /** Block granted at the beginning of the player's next turn. */
+  | { kind: 'nextTurnBlock'; amount: number }
   | { kind: 'selfDamage'; amount: number }
   | { kind: 'loseHp'; amount: number }
   | { kind: 'payHp'; amount: number }
@@ -686,7 +694,7 @@ const validateAtomAmounts = (db: Omit<ContentDb, 'validate'>): string[] => {
         errors.push(`${owner}: ${atom.kind} count must be a positive integer`);
       }
       if (
-        (atom.kind === 'heal' || atom.kind === 'payHp' || atom.kind === 'lifesteal' || atom.kind === 'reduceCooldown') &&
+        (atom.kind === 'heal' || atom.kind === 'payHp' || atom.kind === 'lifesteal' || atom.kind === 'reduceCooldown' || atom.kind === 'fixedDamage' || atom.kind === 'damageIfTargetStatus' || atom.kind === 'nextTurnBlock') &&
         (!Number.isInteger(atom.amount) || atom.amount <= 0)
       ) {
         errors.push(`${owner}: ${atom.kind} amount must be a positive integer`);
@@ -725,18 +733,15 @@ const validateAtomAmounts = (db: Omit<ContentDb, 'validate'>): string[] => {
 };
 
 // P7 D4 — 양면 코인 검증: 속성 코인은 앞뒤 모두 1+ 효과, proc은 안전 원자만
-const COIN_PROC_ATOMS = new Set(['damage', 'coinDamage', 'block', 'heal', 'loseHp', 'applyStatus']);
+const COIN_PROC_ATOMS = new Set(['damage', 'coinDamage', 'fixedDamage', 'damageIfTargetStatus', 'block', 'nextTurnBlock', 'heal', 'loseHp', 'applyStatus', 'addCoin', 'nextTurnDraw']);
 
 const validateCoinProcs = (coins: Record<string, CoinDef>): string[] => {
   const errors: string[] = [];
   for (const coin of Object.values(coins)) {
     const owner = `coin ${String(coin.id)}`;
-    if (coin.element === null) {
-      if (coin.procs !== undefined) errors.push(`${owner}: basic coin cannot declare procs`);
-      continue;
-    }
+    if (coin.procs === undefined) continue;
     if ((coin.procs?.heads?.length ?? 0) === 0 || (coin.procs?.tails?.length ?? 0) === 0) {
-      errors.push(`${owner}: elemental coin must declare both heads and tails effects`);
+      errors.push(`${owner}: coin with procs must declare both heads and tails effects`);
       continue;
     }
     for (const face of ['heads', 'tails'] as const) {

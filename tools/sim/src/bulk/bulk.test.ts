@@ -104,6 +104,22 @@ describe("M6 bulk episode integration", () => {
     expect(simulation.transcript.combats[0]?.commands).toHaveLength(1);
     expect(simulation.trace.combats[0]?.turns).toHaveLength(1);
   });
+
+  it("keeps the coin ledger balanced when the Coin King exhausts lead coins", () => {
+    const simulation = simulatePolicyRun({
+      baseSeed: "1",
+      runSeed: "m6:3157346294:594952797:267463072:3581622666",
+      episodeId: "episode-00000034-2fb7b26d",
+      episodeIndex: 34,
+      policyId: "greedy",
+    });
+
+    expect(simulation.trace.result).not.toBe("crash");
+    expect(simulation.trace.crash).toBeNull();
+    expect(
+      simulation.trace.combats.flatMap((combat) => combat.invariantViolations),
+    ).not.toContain("coin ledger mismatch");
+  });
 });
 
 describe("M6 deterministic bulk and CRN", () => {

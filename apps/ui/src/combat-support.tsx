@@ -1,8 +1,4 @@
-import { useEffect, useRef } from "react";
-
-import type { ResolutionSummary } from "./resolution-summary";
-import type { RecommendedLoadProposal } from "./recommended-load";
-import type { TurnResourceSummary } from "./turn-resource-summary";
+import { useEffect } from "react";
 
 export function CombatHelp({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }): JSX.Element {
   useEffect(() => {
@@ -13,6 +9,7 @@ export function CombatHelp({ open, onOpenChange }: { open: boolean; onOpenChange
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [onOpenChange, open]);
+
   return (
     <div className="combat-help-host">
       <button aria-controls="combat-help-panel" aria-expanded={open} aria-label="전투 도움말 열기" className="combat-help-open" data-testid="combat-help-open" type="button" onClick={() => onOpenChange(!open)}>?</button>
@@ -20,57 +17,16 @@ export function CombatHelp({ open, onOpenChange }: { open: boolean; onOpenChange
         <section aria-label="전투 도움말" className="combat-help-panel" data-testid="combat-help" id="combat-help-panel" role="region">
           <header><strong>전투 도움말</strong><button aria-label="전투 도움말 닫기" data-testid="combat-help-close" type="button" onClick={() => onOpenChange(false)}>×</button></header>
           <dl>
-            <div><dt>장전</dt><dd>손패 동전을 스킬 슬롯에 넣습니다. 장전한 동전은 발동 전까지 다시 빼거나 서로 바꿀 수 있습니다.</dd></div>
-            <div><dt>행동 확정</dt><dd>동전을 모두 배분하고 실행 순서를 정한 뒤, 화면 아래 행동 확정을 한 번 누르세요.</dd></div>
-            <div><dt>실행 순서</dt><dd>아직 사용하지 않은 완전 장전 스킬에 번호가 붙습니다. 실행 레일의 앞·뒤 버튼이나 드래그로 순서를 바꿉니다.</dd></div>
-            <div><dt>순차 판정</dt><dd>확정하면 완전히 장전된 스킬을 번호 순서대로 판정하고, 이후 적 턴으로 넘어갑니다.</dd></div>
-            <div><dt>대상</dt><dd>선택이 필요한 스킬은 실행을 잠시 멈춥니다. 강조된 적이나 장비를 고르세요.</dd></div>
-            <div><dt>버림·보존</dt><dd>실행하지 않은 동전은 턴 종료 때 버립니다. 보존 능력이 있으면 마지막에 남길 동전을 고릅니다.</dd></div>
-            <div><dt>쿨타임</dt><dd>사용한 스킬은 표시된 턴 동안 다시 장전할 수 없습니다.</dd></div>
-            <div><dt>상태</dt><dd>화상·동상·감전 아이콘의 숫자는 현재 중첩입니다. 아이콘을 가리키거나 눌러 설명을 확인하세요.</dd></div>
+            <div><dt>동전 걸기</dt><dd>손패 동전을 고른 뒤 사용할 스킬을 선택합니다. 사용 전에는 동전 선택을 자유롭게 바꿀 수 있습니다.</dd></div>
+            <div><dt>즉시 사용</dt><dd>필요한 동전을 고르고 사용 버튼을 누르면 각 동전을 플립하고 스킬을 바로 해결합니다.</dd></div>
+            <div><dt>연속 행동</dt><dd>반복 스킬은 손패와 코스트가 남는 한 같은 턴에 다시 사용할 수 있습니다. 행동을 미리 저장하거나 전체 계획을 확정할 필요는 없습니다.</dd></div>
+            <div><dt>대상</dt><dd>대상이 필요한 스킬은 사용 전에 적이나 장비를 고릅니다.</dd></div>
+            <div><dt>버림·보존</dt><dd>사용하지 않은 동전은 턴 종료 때 버립니다. 보존 능력이 있으면 선택한 동전을 다음 턴까지 남깁니다.</dd></div>
+            <div><dt>쿨타임</dt><dd>사용한 스킬은 표시된 턴 동안 다시 사용할 수 없습니다.</dd></div>
+            <div><dt>상태</dt><dd>화상·동상·감전·출혈 아이콘의 숫자가 현재 중첩입니다. 아이콘을 가리키거나 눌러 설명을 확인하세요.</dd></div>
           </dl>
         </section>
       ) : null}
     </div>
-  );
-}
-
-export function TurnResourceStrip({ summary }: { summary: TurnResourceSummary }): JSX.Element {
-  return (
-    <div aria-label="현재 턴 동전 요약" className="turn-resource-summary" data-testid="turn-resource-summary">
-      <span aria-label={`사용 가능한 동전 ${summary.usable}개`}>손패 <strong>{summary.usable}</strong></span>
-      <span aria-label={`장전된 동전 ${summary.loaded}개`}>장전 <strong>{summary.loaded}</strong></span>
-      <span aria-label={`실행할 동전 ${summary.queued}개`}>실행 <strong>{summary.queued}</strong></span>
-      <span aria-label={`턴 종료 때 버릴 동전 ${summary.discardedOnEnd}개`} className={summary.discardedOnEnd > 0 ? "warn" : ""}>버림 <strong>{summary.discardedOnEnd}</strong></span>
-    </div>
-  );
-}
-
-export function RecommendedLoadPreview({ proposal, onConfirm, onCancel }: { proposal: RecommendedLoadProposal; onConfirm: () => void; onCancel: () => void }): JSX.Element {
-  const panelRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    panelRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCancel();
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [onCancel]);
-  return (
-    <section aria-label="추천 장전 미리보기" className="recommended-load-preview" data-testid="recommended-load-preview" id="recommended-load-preview" ref={panelRef} role="dialog" tabIndex={-1}>
-      <strong>추천 장전 미리보기</strong>
-      <p>왼쪽 스킬부터 빈 슬롯을 채웁니다. 스킬은 발동하지 않으며 대상·선택 효과도 정하지 않습니다.</p>
-      <ol>{proposal.placements.map((placement) => <li key={`${Number(placement.coin)}-${Number(placement.slot)}`}>{placement.order}. 동전 → {Number(placement.slot) + 1}번 스킬</li>)}</ol>
-      <div><button data-testid="recommended-load-confirm" type="button" onClick={onConfirm}>이대로 장전</button><button data-testid="recommended-load-cancel" type="button" onClick={onCancel}>취소</button></div>
-    </section>
-  );
-}
-
-export function CombatHistory({ entries }: { entries: readonly ResolutionSummary[] }): JSX.Element {
-  return (
-    <details className="combat-history" data-testid="combat-history">
-      <summary>전투 기록 {entries.length}</summary>
-      <ol>{entries.length === 0 ? <li className="empty">아직 해결된 스킬이 없습니다.</li> : entries.map((entry, index) => <li key={`${index}-${entry.skillName}`}><strong>{entry.skillName}</strong><span>{entry.totalLine}</span>{entry.faces.length > 0 ? <small>{entry.faces.map((face) => face === "heads" ? "앞" : "뒤").join(" · ")}</small> : null}</li>)}</ol>
-    </details>
   );
 }

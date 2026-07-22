@@ -84,7 +84,7 @@ describe("skillEffectRows", () => {
 
   it("tags overheat entry with the overheat keyword", () => {
     const rows = skillEffectRows(skill("inner-passion"));
-    expect(rows.find((row) => row.kind === "cost")?.segments).toEqual([{ text: "화염 ×1 장전" }]);
+    expect(rows.find((row) => row.kind === "cost")?.segments).toEqual([{ text: "화염 ×1 걸기" }]);
     expect(rows.find((row) => row.kind === "base")?.segments).toEqual([{ text: "과열 진입", term: "overheat" }]);
   });
 
@@ -92,7 +92,7 @@ describe("skillEffectRows", () => {
     const manaAmplification = skillEffectRows(skill("mana-amplification"));
     expect(manaAmplification[1]?.segments).toEqual([
       { text: "방어 6" },
-      { text: "정밀 방어 예약", term: "precisionDefense" },
+      { text: "정밀 방어 준비", term: "precisionDefense" },
     ]);
 
     const armorSmash = skillEffectRows(skill("armor-smash"));

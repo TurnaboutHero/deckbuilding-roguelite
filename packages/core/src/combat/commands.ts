@@ -6,6 +6,21 @@ import { isSkillCommandSealed, MAX_PRESERVED_COINS } from './state';
 import type { CombatState } from './state';
 
 export type Command =
+  /**
+   * Immediate v4.5 predictive action. The caller explicitly selects the hand
+   * coins; there is no placement, reservation, or later execution phase.
+   * Coin faces always come from the combat RNG when the command resolves.
+   */
+  | {
+      type: 'useImmediateFlipSkill';
+      slot: SlotId;
+      coins: CoinUid[];
+      target?: number;
+      chosen?: CoinUid[];
+      desiredCoin?: CoinDefId;
+      chosenEquipment?: EquipmentDefId;
+      chosenSummon?: number;
+    }
   | { type: 'placeCoin'; coin: CoinUid; slot: SlotId }
   | { type: 'unplaceCoin'; coin: CoinUid }
   | {
@@ -23,17 +38,28 @@ export type Command =
 
 const livingEnemyTargets = (state: CombatState): number[] => state.enemies.flatMap((enemy, index) => (enemy.hp > 0 ? [index] : []));
 
-const HOSTILE_STATUSES = new Set(['burn', 'frostbite', 'shock']);
+const HOSTILE_STATUSES = new Set(['burn', 'bleed', 'frostbite', 'frost', 'shock']);
 
 const isHostileProc = (atom: EffectAtom): boolean =>
   atom.kind === 'damage' ||
   atom.kind === 'coinDamage' ||
+  atom.kind === 'fixedDamage' ||
+  atom.kind === 'damageIfTargetStatus' ||
   atom.kind === 'damagePerTargetBurn' ||
   atom.kind === 'damageByConsumed' ||
   atom.kind === 'damageByTargetFrostbite' ||
   atom.kind === 'damageByBloodSword' ||
   atom.kind === 'damagePerBlock' ||
   (atom.kind === 'applyStatus' && atom.to === 'target' && HOSTILE_STATUSES.has(atom.status));
+
+const coinProcDefs = (state: CombatState, db: ContentDb, coinUid: CoinUid) => {
+  const instance = state.coins[Number(coinUid)];
+  if (instance === undefined) return [];
+  const base = db.coins[String(instance.defId)];
+  const granted = effectiveElements(instance, db)
+    .flatMap((element) => Object.values(db.coins).filter((candidate) => candidate.element === element));
+  return [...new Map([base, ...granted].filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined).map((candidate) => [String(candidate.id), candidate])).values()];
+};
 
 /**
  * 자기/무대상 플립 스킬에 공격형 속성 코인이 장전되면 적용할 적을 명시해야 한다.
@@ -48,10 +74,7 @@ export const flipSkillRequiresEnemyTarget = (
 ): boolean => {
   if (skill.targetType === 'single-enemy') return false;
   for (const coinUid of coinUids) {
-    const instance = state.coins[Number(coinUid)];
-    if (instance === undefined) continue;
-    for (const element of effectiveElements(instance, db)) {
-      const coinDef = Object.values(db.coins).find((candidate) => candidate.element === element);
+    for (const coinDef of coinProcDefs(state, db, coinUid)) {
       const procs = [...(coinDef?.procs?.heads ?? []), ...(coinDef?.procs?.tails ?? [])];
       if (skill.targetType === 'all-enemies') {
         if (procs.some((atom) => atom.kind === 'coinDamage')) return true;
@@ -84,11 +107,9 @@ const isBasicCoinInHand = (state: CombatState, db: ContentDb, coin: CoinUid): bo
 export const coinSatisfiesFlipRequirement = (state: CombatState, db: ContentDb, skill: FlipSkillDef, coin: CoinUid): boolean => {
   const instance = state.coins[Number(coin)];
   if (instance?.lead === true) return skill.requiredElement === undefined && skill.requiredCoin === undefined && skill.element === null;
-  if (isSuccessLadderFlipSkill(skill)) {
-    const coinDef = instance === undefined ? undefined : db.coins[String(instance.defId)];
-    if (coinDef === undefined) return false;
-    return coinDef.element === null || skill.element !== undefined;
-  }
+  // v4.5: neutral predictive skills accept both basic and elemental coins.
+  // Elemental restrictions are opt-in through requiredElement/requiredCoin.
+  if (isSuccessLadderFlipSkill(skill)) return instance !== undefined;
   if (skill.requiredCoin !== undefined) {
     return instance !== undefined && String(instance.defId) === String(skill.requiredCoin);
   }
@@ -150,6 +171,15 @@ export const skillCoinChoiceCandidates = (state: CombatState, db: ContentDb, ski
 
 export const skillRequiresCoinChoice = (skill: FlipSkillDef): boolean => hasChooseBasicInHand(skill) || hasPreserveChoice(skill);
 
+const chooseCoinGroups = (coins: readonly CoinUid[], count: number, start = 0): CoinUid[][] => {
+  if (count === 0) return [[]];
+  const groups: CoinUid[][] = [];
+  for (let index = start; index <= coins.length - count; index += 1) {
+    for (const rest of chooseCoinGroups(coins, count - 1, index + 1)) groups.push([coins[index]!, ...rest]);
+  }
+  return groups;
+};
+
 export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
   if (state.phase !== 'player') return [];
   const basePreserve = db.characters[String(state.characterId)]?.trait.mechanic === 'preserveHand' ? 1 : 0;
@@ -170,6 +200,9 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
       .slice(0, Math.min(newPreserveCapacity, Math.max(0, MAX_PRESERVED_COINS - alreadyPreserved.length)))
   ];
   const commands: Command[] = [{ type: 'endTurn', ...(autoPreserve.length > 0 ? { preserve: autoPreserve } : {}) }];
+  // Pre-v4.5 save states can still contain placed/reserved coins. Keep those
+  // commands reachable only to drain such a state; new states never enter it.
+  const legacyPlanningActive = state.flipReservations.length > 0 || Object.values(state.zones.placed).some((coins) => coins.length > 0);
 
   for (let i = 0; i < state.slots.length; i += 1) {
     const slot = i as SlotId;
@@ -190,10 +223,9 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
     );
     if (unavailableDiscardCoin) continue;
 
-    if (skill.type === 'flip') {
+    if (skill.type === 'flip' && legacyPlanningActive) {
       const reservations = state.flipReservations.filter((reservation) => reservation.slot === slot);
       for (const reservation of reservations) {
-        // P6 D6 — 명령 스킬은 소환이 있어야 합법 (없으면 낭비 사용 제안 안 함)
         if (skillRequiresSummonChoice(skill) && state.summons.length === 0) continue;
         const chosen = skillRequiresCoinChoice(skill) ? suggestedChosen(state, db, skill) : undefined;
         const desiredCoin =
@@ -216,6 +248,32 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
       if ((state.zones.placed[slot]?.length ?? 0) < skill.cost && (!limited || reservations.length === 0)) {
         for (const coin of state.zones.hand) {
           if (coinSatisfiesFlipRequirement(state, db, skill, coin)) commands.push({ type: 'placeCoin', coin, slot });
+        }
+      }
+      continue;
+    }
+
+    if (skill.type === 'flip') {
+      if (skillRequiresSummonChoice(skill) && state.summons.length === 0) continue;
+      const chosen = skillRequiresCoinChoice(skill) ? suggestedChosen(state, db, skill) : undefined;
+        // P6 D6 — 명령 스킬은 소환이 있어야 합법 (없으면 낭비 사용 제안 안 함)
+      const desiredCoin =
+        desiredCoinOptions(skill).find((defId) => state.zones.draw.some((uid) => String(state.coins[Number(uid)]?.defId) === String(defId))) ??
+        desiredCoinOptions(skill)[0];
+      const chosenEquipment = skillRequiresEquipmentChoice(skill) ? (Object.keys(db.equipment ?? {}).sort()[0] as EquipmentDefId | undefined) : undefined;
+      const summonChoices = skillRequiresSummonChoice(skill) ? state.summons.map((summon) => summon.uid) : [undefined];
+      const eligibleCoins = state.zones.hand.filter((coin) => coinSatisfiesFlipRequirement(state, db, skill, coin));
+
+      for (const coins of chooseCoinGroups(eligibleCoins, skill.cost)) {
+        for (const target of targetsForSkill(state, skill, slot, db, coins)) {
+          for (const chosenSummon of summonChoices) {
+            const command: Command = { type: 'useImmediateFlipSkill', slot, coins, target };
+            if (chosen !== undefined) command.chosen = chosen;
+            if (desiredCoin !== undefined) command.desiredCoin = desiredCoin;
+            if (chosenEquipment !== undefined) command.chosenEquipment = chosenEquipment;
+            if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
+            commands.push(command);
+          }
         }
       }
     } else {
@@ -256,12 +314,13 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
     }
   }
 
-  for (const [key, coins] of Object.entries(state.zones.placed)) {
-    void key;
-    for (const coin of coins) commands.push({ type: 'unplaceCoin', coin });
-  }
-  for (const reservation of state.flipReservations) {
-    for (const coin of reservation.coinUids) commands.push({ type: 'unplaceCoin', coin });
+  if (legacyPlanningActive) {
+    for (const coins of Object.values(state.zones.placed)) {
+      for (const coin of coins) commands.push({ type: 'unplaceCoin', coin });
+    }
+    for (const reservation of state.flipReservations) {
+      for (const coin of reservation.coinUids) commands.push({ type: 'unplaceCoin', coin });
+    }
   }
 
   return commands;
@@ -275,7 +334,7 @@ export const isSlotUsableNow = (state: CombatState, db: ContentDb, slot: SlotId)
   if (skill === undefined || slotState.cooldownRemaining > 0 || (skill.oncePerCombat === true && slotState.usedThisCombat)) return false;
   if (skill.targetType === 'single-enemy' && livingEnemyTargets(state).length === 0) return false;
   // A flip skill is usable when equipped, off cooldown, and targetable; coin
-  // placement is preparatory rather than a distinct skill availability gate.
+  // selection and face declaration are handled by the immediate-use flow.
   if (skill.type === 'flip') return true;
   return legalCommands(state, db).some(
     (command) =>

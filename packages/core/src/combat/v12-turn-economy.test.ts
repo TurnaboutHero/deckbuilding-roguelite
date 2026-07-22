@@ -99,9 +99,9 @@ const withCoin = (input: CombatState, coin: CoinUid, defId: string): CombatState
   }
 });
 
-const canPlace = (state: CombatState, db: ContentDb, coin: CoinUid, skillSlot: number): boolean =>
+const canUseImmediate = (state: CombatState, db: ContentDb, coin: CoinUid, skillSlot: number): boolean =>
   legalCommands(state, db).some(
-    (command) => command.type === 'placeCoin' && command.coin === coin && command.slot === slot(skillSlot)
+    (command) => command.type === 'useImmediateFlipSkill' && command.coins.includes(coin) && command.slot === slot(skillSlot)
   );
 
 describe('v1.2 turn-start draw economy', () => {
@@ -119,10 +119,10 @@ describe('v1.2 turn-start draw economy', () => {
   });
 });
 
-describe('v1.2 ladder placement legality', () => {
+describe('v4.5 predictive coin eligibility', () => {
   const cases = [
     { coin: 'basic', skillSlot: 0, allowed: true, label: 'basic -> neutral ladder' },
-    { coin: 'fire', skillSlot: 0, allowed: false, label: 'element -> neutral ladder' },
+    { coin: 'fire', skillSlot: 0, allowed: true, label: 'element -> neutral ladder' },
     { coin: 'basic', skillSlot: 1, allowed: true, label: 'basic -> element ladder' },
     { coin: 'fire', skillSlot: 1, allowed: true, label: 'matching element -> element ladder' },
     { coin: 'frost', skillSlot: 1, allowed: true, label: 'off-element -> element ladder' },
@@ -131,42 +131,28 @@ describe('v1.2 ladder placement legality', () => {
   ] as const;
 
   for (const entry of cases) {
-    it(`enforces ${entry.label} in legalCommands and step`, () => {
+    it(`allows ${entry.label} through the immediate predictive command`, () => {
       const db = testDb();
       let state = combat(db);
       const coin = state.zones.hand[0]!;
       state = withCoin(state, coin, entry.coin);
-      expect(canPlace(state, db, coin, entry.skillSlot)).toBe(entry.allowed);
+      expect(canUseImmediate(state, db, coin, entry.skillSlot)).toBe(entry.allowed);
 
       const snapshot = structuredClone(state);
-      const placed = step(state, { type: 'placeCoin', coin, slot: slot(entry.skillSlot) }, db);
-      expect(placed.ok).toBe(entry.allowed);
+      const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(entry.skillSlot), coins: [coin], target: 0 }, db);
+      expect(used.ok).toBe(entry.allowed);
       expect(state).toEqual(snapshot);
     });
   }
 
-  it('revalidates the rule when placed coins are moved or swapped between slots', () => {
+  it('keeps elemental coins legal when moved to a neutral predictive skill', () => {
     const db = testDb();
     let state = combat(db);
     const basic = state.zones.hand[0]!;
     const element = state.zones.hand[1]!;
     state = withCoin(state, element, 'fire');
 
-    const basicPlaced = step(state, { type: 'placeCoin', coin: basic, slot: slot(0) }, db);
-    if (!basicPlaced.ok) throw new Error(basicPlaced.error);
-    const elementPlaced = step(basicPlaced.state, { type: 'placeCoin', coin: element, slot: slot(1) }, db);
-    if (!elementPlaced.ok) throw new Error(elementPlaced.error);
-
-    const basicUnplaced = step(elementPlaced.state, { type: 'unplaceCoin', coin: basic }, db);
-    if (!basicUnplaced.ok) throw new Error(basicUnplaced.error);
-    const elementUnplaced = step(basicUnplaced.state, { type: 'unplaceCoin', coin: element }, db);
-    if (!elementUnplaced.ok) throw new Error(elementUnplaced.error);
-
-    expect(step(elementUnplaced.state, { type: 'placeCoin', coin: element, slot: slot(0) }, db)).toMatchObject({
-      ok: false
-    });
-    expect(step(elementUnplaced.state, { type: 'placeCoin', coin: basic, slot: slot(1) }, db)).toMatchObject({
-      ok: true
-    });
+    expect(step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [element], target: 0 }, db)).toMatchObject({ ok: true });
+    expect(step(state, { type: 'useImmediateFlipSkill', slot: slot(1), coins: [basic], target: 0 }, db)).toMatchObject({ ok: true });
   });
 });

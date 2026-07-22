@@ -5,9 +5,9 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "feedback-regression": "node scripts/feedback-regression.mjs",
+    "feedback-regression": "node scripts/v45-immediate-flow.mjs",
     "shot": "node scripts/screenshot.mjs",
-    "playtest": "node scripts/playtest.mjs"
+    "playtest": "node scripts/v45-immediate-flow.mjs"
   },
   "dependencies": {
     "@game/content": "workspace:*",

@@ -11,12 +11,16 @@ interface TitleScreenProps {
   save: TitleSaveSummary | null;
   onContinue: () => void;
   onNewRun: () => void;
+  onTutorial: () => void;
+  onSettings: () => void;
 }
 
 export const TitleScreen = ({
   save,
   onContinue,
   onNewRun,
+  onTutorial,
+  onSettings,
 }: TitleScreenProps) => {
   const [confirming, setConfirming] = useState(false);
   const primaryRef = useRef<HTMLButtonElement | null>(null);
@@ -108,6 +112,22 @@ export const TitleScreen = ({
             onClick={() => (save === null ? onNewRun() : setConfirming(true))}
           >
             새 런 시작
+          </button>
+          <button
+            className="secondary-action"
+            data-testid="title-tutorial"
+            type="button"
+            onClick={onTutorial}
+          >
+            튜토리얼
+          </button>
+          <button
+            className="secondary-action"
+            data-testid="title-settings"
+            type="button"
+            onClick={onSettings}
+          >
+            설정
           </button>
         </div>
       </div>

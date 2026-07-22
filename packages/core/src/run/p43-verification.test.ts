@@ -262,7 +262,7 @@ describe("P4.3 independent verification", () => {
     expect(next.equippedSkills).toEqual(shop.equippedSkills);
   });
 
-  it("allows only current two-node layer choices and rejects skips or non-branch choices", () => {
+  it("allows the opening node and current branch choices while rejecting invalid selections", () => {
     const db = testDb();
     const choice = reachLayerThreeChoice(db);
 
@@ -275,9 +275,14 @@ describe("P4.3 independent verification", () => {
     expect(() => chooseRunNode({ ...choice, phase: "ready" }, 0, db)).toThrow(
       "run is not choosing a node",
     );
-    expect(() =>
-      chooseRunNode({ ...newRun(db), phase: "choose-node" }, 0, db),
-    ).toThrow("current layer is not a branch");
+    const opening = chooseRunNode(
+      { ...newRun(db), phase: "choose-node" },
+      0,
+      db,
+    );
+    expect(opening.phase).toBe("ready");
+    expect(opening.combatIndex).toBe(0);
+    expect(opening.nodeChoices[0]).toBe(0);
 
     const eventBranch = chooseRunNode(choice, 1, db);
     expect(eventBranch.phase).toBe("event");
