@@ -1,5 +1,5 @@
 import type { ContentDb, EffectAtom, FlipSkillDef, SkillDef } from '../content-types';
-import { effectiveElements, flipSkillEffects, isRepeatReservationEligible, isSuccessLadderFlipSkill } from '../content-types';
+import { effectiveElements, flipSkillEffects, isSuccessLadderFlipSkill } from '../content-types';
 import type { CoinDefId, CoinUid, EquipmentDefId, SlotId } from '../ids';
 import { consumeRequirementFor } from './consume-requirement';
 import { isSkillCommandSealed, MAX_PRESERVED_COINS } from './state';
@@ -15,18 +15,6 @@ export type Command =
       type: 'useImmediateFlipSkill';
       slot: SlotId;
       coins: CoinUid[];
-      target?: number;
-      chosen?: CoinUid[];
-      desiredCoin?: CoinDefId;
-      chosenEquipment?: EquipmentDefId;
-      chosenSummon?: number;
-    }
-  | { type: 'placeCoin'; coin: CoinUid; slot: SlotId }
-  | { type: 'unplaceCoin'; coin: CoinUid }
-  | {
-      type: 'useFlipSkill';
-      slot: SlotId;
-      reservationId?: string;
       target?: number;
       chosen?: CoinUid[];
       desiredCoin?: CoinDefId;
@@ -189,8 +177,7 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
   // 자동 보존이 용량을 초과하지 않는다.
   const endTurnHand = [
     ...state.zones.hand,
-    ...Object.values(state.zones.placed).flat(),
-    ...state.flipReservations.flatMap((reservation) => reservation.coinUids)
+    ...Object.values(state.zones.placed).flat()
   ];
   const alreadyPreserved = endTurnHand.filter((coin) => state.coins[Number(coin)]?.preserved === true);
   const autoPreserve = [
@@ -200,10 +187,6 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
       .slice(0, Math.min(newPreserveCapacity, Math.max(0, MAX_PRESERVED_COINS - alreadyPreserved.length)))
   ];
   const commands: Command[] = [{ type: 'endTurn', ...(autoPreserve.length > 0 ? { preserve: autoPreserve } : {}) }];
-  // Pre-v4.5 save states can still contain placed/reserved coins. Keep those
-  // commands reachable only to drain such a state; new states never enter it.
-  const legacyPlanningActive = state.flipReservations.length > 0 || Object.values(state.zones.placed).some((coins) => coins.length > 0);
-
   for (let i = 0; i < state.slots.length; i += 1) {
     const slot = i as SlotId;
     const slotState = state.slots[i];
@@ -222,36 +205,6 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
       (effect) => effect.kind === 'returnDiscardCoin' && !state.zones.discard.some((coin) => String(state.coins[Number(coin)]?.defId) === String(effect.coin))
     );
     if (unavailableDiscardCoin) continue;
-
-    if (skill.type === 'flip' && legacyPlanningActive) {
-      const reservations = state.flipReservations.filter((reservation) => reservation.slot === slot);
-      for (const reservation of reservations) {
-        if (skillRequiresSummonChoice(skill) && state.summons.length === 0) continue;
-        const chosen = skillRequiresCoinChoice(skill) ? suggestedChosen(state, db, skill) : undefined;
-        const desiredCoin =
-          desiredCoinOptions(skill).find((defId) => state.zones.draw.some((uid) => String(state.coins[Number(uid)]?.defId) === String(defId))) ??
-          desiredCoinOptions(skill)[0];
-        const chosenEquipment = skillRequiresEquipmentChoice(skill) ? (Object.keys(db.equipment ?? {}).sort()[0] as EquipmentDefId | undefined) : undefined;
-        const summonChoices = skillRequiresSummonChoice(skill) ? state.summons.map((summon) => summon.uid) : [undefined];
-        for (const target of targetsForSkill(state, skill, slot, db, reservation.coinUids)) {
-          for (const chosenSummon of summonChoices) {
-            const command: Command = { type: 'useFlipSkill', slot, reservationId: reservation.id, target };
-            if (chosen !== undefined) command.chosen = chosen;
-            if (desiredCoin !== undefined) command.desiredCoin = desiredCoin;
-            if (chosenEquipment !== undefined) command.chosenEquipment = chosenEquipment;
-            if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
-            commands.push(command);
-          }
-        }
-      }
-      const limited = !isRepeatReservationEligible(skill);
-      if ((state.zones.placed[slot]?.length ?? 0) < skill.cost && (!limited || reservations.length === 0)) {
-        for (const coin of state.zones.hand) {
-          if (coinSatisfiesFlipRequirement(state, db, skill, coin)) commands.push({ type: 'placeCoin', coin, slot });
-        }
-      }
-      continue;
-    }
 
     if (skill.type === 'flip') {
       if (skillRequiresSummonChoice(skill) && state.summons.length === 0) continue;
@@ -311,15 +264,6 @@ export const legalCommands = (state: CombatState, db: ContentDb): Command[] => {
           }
         }
       }
-    }
-  }
-
-  if (legacyPlanningActive) {
-    for (const coins of Object.values(state.zones.placed)) {
-      for (const coin of coins) commands.push({ type: 'unplaceCoin', coin });
-    }
-    for (const reservation of state.flipReservations) {
-      for (const coin of reservation.coinUids) commands.push({ type: 'unplaceCoin', coin });
     }
   }
 

@@ -78,13 +78,7 @@ const combat = (faces: readonly Face[]): CombatState => {
 };
 
 const resolve = (state: CombatState) => {
-  let current = state;
-  for (const coin of state.zones.hand) {
-    const placed = step(current, { type: 'placeCoin', coin, slot: slot(0) }, db);
-    if (!placed.ok) throw new Error(placed.error);
-    current = placed.state;
-  }
-  const result = step(current, { type: 'useFlipSkill', slot: slot(0), target: 0 }, db);
+  const result = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [...state.zones.hand], target: 0 }, db);
   if (!result.ok) throw new Error(result.error);
   return result;
 };

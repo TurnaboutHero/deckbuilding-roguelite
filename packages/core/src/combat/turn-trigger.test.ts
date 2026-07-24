@@ -5,7 +5,6 @@ import type { ContentDb } from '../content-types';
 import type { Rng, RngSnapshot } from '../rng';
 import { createCombat, step, zoneCoinCount } from './reducer';
 import { legalCommands } from './commands';
-import { previewFlip } from './preview';
 import { applyDamage } from './resolve/flip';
 import { statusStacks } from './state';
 import type { CombatEvent } from './events';
@@ -191,14 +190,13 @@ const withTrigger = (state: CombatState, instance: TurnTriggerInstance): CombatS
   nextTurnTriggerUid: Math.max(state.nextTurnTriggerUid, instance.uid + 1)
 });
 
-const place = (state: CombatState, slotIndex: number, coin: CoinUid = state.zones.hand[0]!, db = testDb()): CombatState => {
-  const result = step(state, { type: 'placeCoin', coin, slot: slot(slotIndex) }, db);
-  if (!result.ok) throw new Error(result.error);
-  return result.state;
-};
-
-const useFlip = (state: CombatState, slotIndex: number, db = testDb()) => {
-  const result = step(state, { type: 'useFlipSkill', slot: slot(slotIndex), target: 0 }, db);
+const useFlip = (
+  state: CombatState,
+  slotIndex: number,
+  db = testDb(),
+  coins: readonly CoinUid[] = [state.zones.hand[0]!]
+) => {
+  const result = step(state, { type: 'useImmediateFlipSkill', slot: slot(slotIndex), coins: [...coins], target: 0 }, db);
   if (!result.ok) throw new Error(result.error);
   return result;
 };
@@ -213,9 +211,9 @@ const burn = (state: CombatState): number => statusStacks(state.enemies[0]?.stat
 
 describe('turn triggers', () => {
   it('fires onDamageDealt once for a player skill damage packet', () => {
-    const state = place(withFlips(combat(), ['heads', 'heads']), 0);
+    const state = withFlips(combat(), ['heads', 'heads']);
     const added = useFlip(state, 0);
-    const attack = useFlip(place(added.state, 1), 1);
+    const attack = useFlip(added.state, 1);
 
     expect(added.events).toContainEqual({ type: 'turnTriggerAdded', trigger: 'burn-on-damage' });
     expect(attack.events).toContainEqual({ type: 'turnTriggerFired', trigger: 'burn-on-damage', hook: 'onDamageDealt' });
@@ -226,7 +224,7 @@ describe('turn triggers', () => {
     const db = testDb();
     let state = withTrigger(combat(), { uid: 1, trigger: burnOnDamage });
     state = { ...state, enemies: state.enemies.map((enemy) => ({ ...enemy, block: 99 })) };
-    const blocked = useFlip(place(state, 1, state.zones.hand[0]!, db), 1, db);
+    const blocked = useFlip(state, 1, db);
     expect(blocked.events).toContainEqual({ type: 'damageDealt', target: { type: 'enemy', index: 0 }, amount: 0, blocked: 4, source: 'skill' });
     expect(burn(blocked.state)).toBe(1);
 
@@ -243,8 +241,7 @@ describe('turn triggers', () => {
 
   it('treats a two-coin per-mode attack as one combined damage packet', () => {
     const state = withTrigger(withFlips(combat('per'), ['heads', 'heads']), { uid: 1, trigger: burnOnDamage });
-    const placed = place(place(state, 2, state.zones.hand[0]!), 2, state.zones.hand[1]!);
-    const result = useFlip(placed, 2);
+    const result = useFlip(state, 2, testDb(), state.zones.hand.slice(0, 2));
 
     expect(result.events.filter((event) => event.type === 'damageDealt' && event.source === 'skill')).toHaveLength(1);
     expect(result.events.filter((event) => event.type === 'turnTriggerFired')).toHaveLength(1);
@@ -265,7 +262,7 @@ describe('turn triggers', () => {
 
   it('does not recursively fire onDamageDealt for damage created by a trigger effect', () => {
     const state = withTrigger(combat('loop'), { uid: 1, trigger: damageOnDamage });
-    const result = useFlip(place(state, 1), 1);
+    const result = useFlip(state, 1);
 
     expect(result.events.filter((event) => event.type === 'turnTriggerFired')).toHaveLength(1);
     expect(result.events.filter((event) => event.type === 'damageDealt' && event.source === 'skill')).toHaveLength(2);
@@ -275,7 +272,7 @@ describe('turn triggers', () => {
   it('expires all turn triggers at turn end and allows duplicate triggers to fire independently', () => {
     let state = withTrigger(combat('duplicates'), { uid: 1, trigger: burnOnDamage });
     state = withTrigger(state, { uid: 2, trigger: burnOnDamage });
-    const attack = useFlip(place(state, 1), 1);
+    const attack = useFlip(state, 1);
     expect(attack.events.filter((event) => event.type === 'turnTriggerFired')).toHaveLength(2);
     expect(burn(attack.state)).toBe(2);
 
@@ -285,22 +282,10 @@ describe('turn triggers', () => {
     expect(ended.state.turnTriggers).toHaveLength(0);
   });
 
-  it('previews addTurnTrigger without adding a new axis or mutating state', () => {
-    const state = place(combat('preview'), 0);
-    const before = JSON.stringify(state);
-    const preview = previewFlip(state, slot(0), testDb());
-
-    // P7 D4 — heal 축 추가 (혈액 코인/heal 원자 프리뷰)
-    expect(Object.keys(preview.byAxis)).toEqual(['damage', 'block', 'selfDamage', 'heal', 'burn', 'coinsCreated']);
-    expect(preview.expected).toEqual({ damage: 0, block: 0, selfDamage: 0, heal: 0, burn: 0, coinsCreated: 0 });
-    expect(JSON.stringify(state)).toBe(before);
-    expect(state.turnTriggers).toHaveLength(0);
-  });
-
   // P3.3 감사 결정: 종료 판정이 훅보다 우선한다 (P5 미시 규칙 > §12 "피해 여부 무관" 자구 —
   // 후자는 0피해 취지). 치명 해결은 onAttackSkillResolved를 발동시키지 않는다.
   it('does not fire onAttackSkillResolved when the resolution is lethal (terminal-first)', () => {
-    const armed = useFlip(place(withFlips(combat(), ['heads', 'heads']), 0), 0);
+    const armed = useFlip(withFlips(combat(), ['heads', 'heads']), 0);
     let state = armed.state;
     // 적 HP를 4로 낮춰 strike(피해 4)가 치명이 되게 한다
     state = {
@@ -309,7 +294,7 @@ describe('turn triggers', () => {
         index === 0 ? { ...enemy, hp: 4 } : enemy
       )
     };
-    const lethal = useFlip(place(withFlips(state, ['tails']), 1), 1);
+    const lethal = useFlip(withFlips(state, ['tails']), 1);
 
     expect(lethal.state.phase).toBe('victory');
     expect(
@@ -342,7 +327,7 @@ describe('turn triggers', () => {
         index === 0 ? { ...enemy, hp: 5 } : enemy
       )
     };
-    const kill = useFlip(place(withFlips(state, ['tails']), 1), 1, db);
+    const kill = useFlip(withFlips(state, ['tails']), 1, db);
 
     expect(kill.state.phase).toBe('victory');
     // 트리거의 후속 화상 원자가 죽은 적에게 적용되지 않았다
@@ -353,11 +338,10 @@ describe('turn triggers', () => {
     const run = () => {
       let state = withFlips(combat('deterministic'), ['heads', 'heads']);
       const events = [];
-      const first = step(place(state, 0), { type: 'useFlipSkill', slot: slot(0), target: 0 }, testDb());
-      if (!first.ok) throw new Error(first.error);
+      const first = useFlip(state, 0);
       events.push(...first.events);
       state = first.state;
-      const second = useFlip(place(state, 1), 1);
+      const second = useFlip(state, 1);
       events.push(...second.events);
       return JSON.stringify({ state: second.state, events });
     };
@@ -377,7 +361,7 @@ describe('turn triggers', () => {
         if (!result.ok) throw new Error(`${seed}:${stepIndex}:${result.error}`);
         state = result.state;
         expectedCoins += result.events.filter((event) => event.type === 'coinCreated').length;
-        expect(zoneCoinCount(state.zones, [], state.flipReservations)).toBe(Object.keys(state.coins).length);
+        expect(zoneCoinCount(state.zones, state.custody)).toBe(Object.keys(state.coins).length);
         expect(Object.keys(state.coins)).toHaveLength(expectedCoins);
         expect(state.player.hp).toBeGreaterThanOrEqual(0);
         expect(state.player.hp).toBeLessThanOrEqual(state.player.maxHp);

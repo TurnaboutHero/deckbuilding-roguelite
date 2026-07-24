@@ -323,15 +323,20 @@ describe('P9 latest design sync', () => {
       },
       ['tails', 'tails']
     );
-    for (const coin of state.zones.hand.slice(0, 2)) {
-      const placed = step(state, { type: 'placeCoin', coin, slot: slotId(0) }, contentDb);
-      if (!placed.ok) throw new Error(placed.error);
-      state = placed.state;
-    }
-    const diffusionCommands = legalCommands(state, contentDb).filter((command) => command.type === 'useFlipSkill' && Number(command.slot) === 0);
-    expect(diffusionCommands.map((command) => (command.type === 'useFlipSkill' ? command.chosenSummon : undefined))).toEqual([40, 41]);
-    expect(step(state, { type: 'useFlipSkill', slot: slotId(0) }, contentDb).ok).toBe(false);
-    const diffused = step(state, { type: 'useFlipSkill', slot: slotId(0), target: 0, chosenSummon: 41 }, contentDb);
+    const diffusionCoins = state.zones.hand.slice(0, 2);
+    const diffusionCommands = legalCommands(state, contentDb).filter(
+      (command) =>
+        command.type === 'useImmediateFlipSkill' &&
+        Number(command.slot) === 0 &&
+        command.coins.every((coin, index) => coin === diffusionCoins[index])
+    );
+    expect(diffusionCommands.map((command) => (command.type === 'useImmediateFlipSkill' ? command.chosenSummon : undefined))).toEqual([40, 41]);
+    expect(step(state, { type: 'useImmediateFlipSkill', slot: slotId(0), coins: diffusionCoins }, contentDb).ok).toBe(false);
+    const diffused = step(
+      state,
+      { type: 'useImmediateFlipSkill', slot: slotId(0), coins: diffusionCoins, target: 0, chosenSummon: 41 },
+      contentDb
+    );
     if (!diffused.ok) throw new Error(diffused.error);
     expect(diffused.state.summons.find((summon) => summon.uid === 40)?.duration).toBe(2);
     expect(diffused.state.summons.find((summon) => summon.uid === 41)).toMatchObject({ duration: 5, aoeUses: 1 });
@@ -525,25 +530,13 @@ describe('P9 latest design sync', () => {
 });
 
 const useFlip = (state: CombatState, coinsToUse: readonly CoinUid[], target?: number, chosen?: CoinUid[]) => {
-  let current = state;
-  for (const coin of coinsToUse) {
-    const placed = step(current, { type: 'placeCoin', coin, slot: slotId(0) }, contentDb);
-    if (!placed.ok) throw new Error(placed.error);
-    current = placed.state;
-  }
-  const result = step(current, { type: 'useFlipSkill', slot: slotId(0), target, chosen }, contentDb);
+  const result = step(state, { type: 'useImmediateFlipSkill', slot: slotId(0), coins: [...coinsToUse], target, chosen }, contentDb);
   if (!result.ok) throw new Error(result.error);
   return result;
 };
 
 const useFlipAt = (state: CombatState, slot: number, coinsToUse: readonly CoinUid[], target?: number, chosen?: CoinUid[]) => {
-  let current = state;
-  for (const coin of coinsToUse) {
-    const placed = step(current, { type: 'placeCoin', coin, slot: slotId(slot) }, contentDb);
-    if (!placed.ok) throw new Error(placed.error);
-    current = placed.state;
-  }
-  const result = step(current, { type: 'useFlipSkill', slot: slotId(slot), target, chosen }, contentDb);
+  const result = step(state, { type: 'useImmediateFlipSkill', slot: slotId(slot), coins: [...coinsToUse], target, chosen }, contentDb);
   if (!result.ok) throw new Error(result.error);
   return result;
 };
@@ -602,7 +595,7 @@ describe('P11 Cold Rogue design sync', () => {
     expect(used.state.zones.discard).toContain(kept);
   });
 
-  it('keeps a previously preserved reserved coin within the end-turn capacity', () => {
+  it('keeps a previously preserved coin within the end-turn capacity', () => {
     let state = coldCombat('p11-preserved-placed', ['slash']);
     const kept = state.zones.hand[0]!;
     state = {
@@ -610,15 +603,12 @@ describe('P11 Cold Rogue design sync', () => {
       player: { ...state.player, additionalPreserveThisTurn: 2 },
       coins: { ...state.coins, [Number(kept)]: { ...state.coins[Number(kept)]!, preserved: true } }
     };
-    const placed = step(state, { type: 'placeCoin', coin: kept, slot: slotId(0) }, contentDb);
-    if (!placed.ok) throw new Error(placed.error);
-    expect(placed.state.flipReservations).toContainEqual(expect.objectContaining({ coinUids: [kept] }));
-    const command = legalCommands(placed.state, contentDb).find((candidate) => candidate.type === 'endTurn');
+    const command = legalCommands(state, contentDb).find((candidate) => candidate.type === 'endTurn');
     expect(command).toMatchObject({ type: 'endTurn' });
     if (command?.type !== 'endTurn') throw new Error('missing end-turn command');
     expect(command.preserve).toContain(kept);
     expect(command.preserve).toHaveLength(3);
-    const ended = step(placed.state, command, contentDb);
+    const ended = step(state, command, contentDb);
     expect(ended).toMatchObject({ ok: true });
     if (!ended.ok) throw new Error(ended.error);
     expect(ended.state.zones.hand).toContain(kept);
@@ -633,18 +623,23 @@ describe('P11 Cold Rogue design sync', () => {
     let state = withEquippedSkill(coldCombat('p11-desired'), 'frost-mark');
     const fuel = state.zones.hand[0]!;
     const frostInDraw = state.zones.draw.find((uid) => String(state.coins[Number(uid)]?.defId) === 'frost')!;
-    let placed = step(state, { type: 'placeCoin', coin: fuel, slot: slotId(0) }, contentDb);
-    if (!placed.ok) throw new Error(placed.error);
-    let used = step(withFaces(placed.state, ['tails']), { type: 'useFlipSkill', slot: slotId(0), target: 0, desiredCoin: coinId('frost') }, contentDb);
+    let used = step(
+      withFaces(state, ['tails']),
+      { type: 'useImmediateFlipSkill', slot: slotId(0), coins: [fuel], target: 0, desiredCoin: coinId('frost') },
+      contentDb
+    );
     if (!used.ok) throw new Error(used.error);
     expect(used.state.zones.hand).toContain(frostInDraw);
 
     state = withEquippedSkill(coldCombat('p11-desired-none'), 'frost-mark');
     state = { ...state, zones: { ...state.zones, draw: state.zones.draw.filter((uid) => String(state.coins[Number(uid)]?.defId) !== 'frost') } };
-    placed = step(state, { type: 'placeCoin', coin: state.zones.hand[0]!, slot: slotId(0) }, contentDb);
-    if (!placed.ok) throw new Error(placed.error);
-    const handBefore = placed.state.zones.hand.length;
-    used = step(withFaces(placed.state, ['tails']), { type: 'useFlipSkill', slot: slotId(0), target: 0, desiredCoin: coinId('frost') }, contentDb);
+    const noDrawFuel = state.zones.hand[0]!;
+    const handBefore = state.zones.hand.length - 1;
+    used = step(
+      withFaces(state, ['tails']),
+      { type: 'useImmediateFlipSkill', slot: slotId(0), coins: [noDrawFuel], target: 0, desiredCoin: coinId('frost') },
+      contentDb
+    );
     if (!used.ok) throw new Error(used.error);
     expect(used.state.zones.hand).toHaveLength(handBefore);
   });
@@ -860,7 +855,7 @@ describe('P10 Fire Warrior and Arcanist design sync', () => {
     state = withHandDefs(state, ['basic', 'fire']);
     const basic = state.zones.hand[0]!;
     const fire = state.zones.hand[1]!;
-    expect(step(state, { type: 'placeCoin', coin: basic, slot: slotId(0) }, contentDb)).toMatchObject({
+    expect(step(state, { type: 'useImmediateFlipSkill', slot: slotId(0), coins: [basic], target: 0 }, contentDb)).toMatchObject({
       ok: false,
       error: 'coin does not satisfy required flip element'
     });
@@ -1050,12 +1045,17 @@ describe('P10 Fire Warrior and Arcanist design sync', () => {
     let command = combatWith('p10-command-save', 'arcanist', ['arcane-command'], ['command-preservation']);
     command = withHandDefs(command, ['basic', 'basic']);
     command = withFaces(command, ['heads', 'heads']);
-    for (const coin of command.zones.hand.slice(0, 2)) {
-      const placed = step(command, { type: 'placeCoin', coin, slot: slotId(0) }, contentDb);
-      if (!placed.ok) throw new Error(placed.error);
-      command = placed.state;
-    }
-    const commandResult = step(command, { type: 'useFlipSkill', slot: slotId(0), target: 0, chosenSummon: command.summons[0]?.uid }, contentDb);
+    const commandResult = step(
+      command,
+      {
+        type: 'useImmediateFlipSkill',
+        slot: slotId(0),
+        coins: command.zones.hand.slice(0, 2),
+        target: 0,
+        chosenSummon: command.summons[0]?.uid
+      },
+      contentDb
+    );
     if (!commandResult.ok) throw new Error(commandResult.error);
     const commanded = commandResult;
     expect(commanded.state.summons[0]?.duration).toBe(1);
@@ -1252,9 +1252,11 @@ describe('P3.3 heart-of-flame interaction regressions', () => {
     const state = armedHeart();
     const coin = state.zones.hand.find((candidate) => String(state.coins[Number(candidate)]?.defId) === 'basic');
     if (coin === undefined) throw new Error('missing coin');
-    const placed = step(state, { type: 'placeCoin', coin, slot: slotId(1) }, contentDb);
-    if (!placed.ok) throw new Error(placed.error);
-    const attack = step(withFaces(placed.state, ['tails']), { type: 'useFlipSkill', slot: slotId(1), target: 0 }, contentDb);
+    const attack = step(
+      withFaces(state, ['tails']),
+      { type: 'useImmediateFlipSkill', slot: slotId(1), coins: [coin], target: 0 },
+      contentDb
+    );
     if (!attack.ok) throw new Error(attack.error);
 
     expect(attack.events.filter((event) => event.type === 'turnTriggerFired' && event.trigger === 'heart-of-flame')).toHaveLength(1);

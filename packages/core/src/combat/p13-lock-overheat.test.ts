@@ -72,9 +72,7 @@ const combat = (db: ContentDb): CombatState => ({
 });
 
 const useFlip = (state: CombatState, db: ContentDb, slotIndex = 0): ReturnType<typeof step> & { ok: true } => {
-  const placed = step(state, { type: 'placeCoin', coin: state.zones.hand[0]!, slot: slot(slotIndex) }, db);
-  if (!placed.ok) throw new Error(placed.error);
-  const used = step(placed.state, { type: 'useFlipSkill', slot: slot(slotIndex), target: 0 }, db);
+  const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(slotIndex), coins: [state.zones.hand[0]!], target: 0 }, db);
   if (!used.ok) throw new Error(used.error);
   return used;
 };
@@ -88,7 +86,7 @@ describe('P13 overheat contract lock', () => {
     expect(result.state.player.pendingOverheat).toBe(false);
   });
 
-  it('locks scheduleOverheat as next-turn reservation instead of immediate overheat', () => {
+  it('locks scheduleOverheat as a next-turn effect instead of immediate overheat', () => {
     const db = dbFor([skill('fire-fist', [{ kind: 'scheduleOverheat' }, { kind: 'damage', amount: 1 }])]);
     const scheduled = useFlip(combat(db), db);
     expect(scheduled.events).toContainEqual({ type: 'overheatScheduled' });

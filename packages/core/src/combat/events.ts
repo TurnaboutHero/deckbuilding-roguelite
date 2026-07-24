@@ -5,8 +5,6 @@ export type DamageSource = 'skill' | 'coin' | 'fixed' | 'burn' | 'poison' | 'ene
 
 export type CombatEvent =
   | { type: 'coinsDrawn'; coins: CoinUid[] }
-  | { type: 'coinPlaced'; coin: CoinUid; slot: SlotId }
-  | { type: 'coinUnplaced'; coin: CoinUid; slot: SlotId }
   | { type: 'coinFlipped'; coin: CoinUid; face: Face }
   | {
       type: 'enchantTriggered';

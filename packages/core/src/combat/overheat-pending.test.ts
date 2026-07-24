@@ -84,9 +84,7 @@ const combat = (db: ContentDb, faces: readonly Face[] = ['heads']): CombatState 
 });
 
 const useFlip = (state: CombatState, db: ContentDb, slotIndex = 0): ReturnType<typeof step> & { ok: true } => {
-  const placed = step(state, { type: 'placeCoin', coin: state.zones.hand[0]!, slot: slot(slotIndex) }, db);
-  if (!placed.ok) throw new Error(placed.error);
-  const used = step(placed.state, { type: 'useFlipSkill', slot: slot(slotIndex), target: 0 }, db);
+  const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(slotIndex), coins: [state.zones.hand[0]!], target: 0 }, db);
   if (!used.ok) throw new Error(used.error);
   return used;
 };
@@ -106,7 +104,7 @@ describe('pending overheat', () => {
     expect(ended.state.player.overheat).toBe(true);
   });
 
-  it('drops a pending reservation without stacking when overheat is already active at turn start', () => {
+  it('drops pending overheat without stacking when overheat is already active at turn start', () => {
     const db = dbFor([attack()]);
     const ended = step({ ...combat(db), player: { ...combat(db).player, overheat: true, pendingOverheat: true } }, { type: 'endTurn' }, db);
     if (!ended.ok) throw new Error(ended.error);

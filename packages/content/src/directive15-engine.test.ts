@@ -320,9 +320,7 @@ describe('Directive 15 engine contracts', () => {
     state.rngImpl = {
       flip: { float: () => 0, int: () => 0, flip: () => 'heads' as const, shuffle: <T>(values: readonly T[]) => [...values], snapshot: () => ({ s: [1, 2, 3, 4] as [number, number, number, number] }) },
     };
-    const placed = step(state, { type: 'placeCoin', coin: handCoin, slot: slot(0) }, contentDb);
-    if (!placed.ok) throw new Error(placed.error);
-    const used = step(placed.state, { type: 'useFlipSkill', slot: slot(0), target: 0 }, contentDb);
+    const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [handCoin], target: 0 }, contentDb);
     if (!used.ok) throw new Error(used.error);
 
     state = used.state;

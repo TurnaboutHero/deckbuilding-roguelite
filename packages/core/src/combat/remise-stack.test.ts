@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import type { CharacterId, CoinDefId, CoinUid, EnemyDefId, Face, Rng, RngSnapshot, SkillId, SlotId } from '../index';
 import type { ConsumeSkillDef, ContentDb, FlipSkillDef, SkillDef } from '../content-types';
-import { previewFlip } from './preview';
 import { createCombat, step } from './reducer';
 import type { CombatState } from './state';
 
@@ -101,9 +100,7 @@ const combat = (db: ContentDb, faces: readonly Face[], skillCount = 1): CombatSt
 };
 
 const useFlip = (state: CombatState, db: ContentDb, slotId: SlotId, coin: CoinUid): ReturnType<typeof step> & { ok: true } => {
-  const placed = step(state, { type: 'placeCoin', coin, slot: slotId }, db);
-  if (!placed.ok) throw new Error(placed.error);
-  const used = step(placed.state, { type: 'useFlipSkill', slot: slotId, target: 0 }, db);
+  const used = step(state, { type: 'useImmediateFlipSkill', slot: slotId, coins: [coin], target: 0 }, db);
   if (!used.ok) throw new Error(used.error);
   return used;
 };
@@ -112,13 +109,10 @@ const skillDamage = (events: CombatState['events']): number =>
   events.reduce((sum, event) => (event.type === 'damageDealt' && event.source === 'skill' ? sum + event.amount : sum), 0);
 
 describe('stack remise contract', () => {
-  it('matches the acceptance math and spends stacks even on tails', () => {
+  it('spends stacks even on tails and resolves the scripted repeat sequence', () => {
     const skills = [attack('attack-0'), attack('attack-1'), attack('attack-2')];
     const db = dbFor(skills);
     const state = { ...combat(db, ['heads', 'heads', 'tails', 'heads', 'heads'], 3), player: { ...combat(db, [], 3).player, remiseCharges: 3 } };
-    const preview = previewFlip({ ...state, zones: { ...state.zones, placed: { ...state.zones.placed, [slot(0)]: [1 as CoinUid] } } }, slot(0), db);
-    const repeatProbability = preview.branches.filter((branch) => branch.damage === 12).reduce((sum, branch) => sum + branch.probability, 0);
-
     let current = state;
     const damages: number[] = [];
     const allEvents: CombatState['events'] = [];
@@ -129,10 +123,6 @@ describe('stack remise contract', () => {
       current = result.state;
     }
 
-    expect(repeatProbability).toBe(0.5);
-    expect(preview.expected.damage * 3).toBe(27);
-    expect(0.5 ** 3).toBe(0.125);
-    expect(preview.byAxis.damage.max * 3).toBe(36);
     expect(damages).toEqual([12, 6, 12]);
     expect(current.player.remiseCharges).toBe(0);
     expect(allEvents.filter((event) => event.type === 'remiseSpent' && event.firstFace === 'tails')).toHaveLength(1);

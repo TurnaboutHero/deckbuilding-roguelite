@@ -92,9 +92,7 @@ const combat = (passives: readonly PassiveId[]): CombatState =>
   );
 
 const useFlip = (state: CombatState, slotId: SlotId, coin: CoinUid, target = 0): CombatState => {
-  const placed = step(state, { type: 'placeCoin', coin, slot: slotId }, db);
-  if (!placed.ok) throw new Error(placed.error);
-  const used = step(placed.state, { type: 'useFlipSkill', slot: slotId, target }, db);
+  const used = step(state, { type: 'useImmediateFlipSkill', slot: slotId, coins: [coin], target }, db);
   if (!used.ok) throw new Error(used.error);
   return used.state;
 };

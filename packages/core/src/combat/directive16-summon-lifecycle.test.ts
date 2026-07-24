@@ -1,17 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ContentDb, EnemyDef, EnemyIntent } from '../content-types';
-import type { CharacterId, CoinDefId, CoinUid, EnemyDefId, SlotId } from '../ids';
+import type { CharacterId, CoinDefId, CoinUid, EnemyDefId } from '../ids';
 import { legalCommands } from './commands';
 import { runEnemyPhase } from './enemy';
 import type { CombatEvent } from './events';
 import { applyDamage } from './resolve/flip';
-import { createCombat, step } from './reducer';
+import { createCombat } from './reducer';
 import type { CombatState, EnemyState } from './state';
 
 const id = <T extends string>(value: string): T => value as T;
-const slot = (value: number): SlotId => value as SlotId;
-
 /**
  * Directive 16 deliberately specifies runtime-facing fields before the shared
  * schema exists. This facade keeps the RED tests executable while requiring
@@ -260,10 +258,12 @@ describe('Directive 16 summoned enemy lifecycle', () => {
     const playerPhase = d16({ ...summoned, phase: 'player' });
     const coin = playerPhase.zones.hand[0];
     if (coin === undefined) throw new Error('expected opening-hand coin');
-    const placed = step(playerPhase, { type: 'placeCoin', coin, slot: slot(0) }, content);
-    if (!placed.ok) throw new Error(placed.error);
-
-    const targets = legalCommands(placed.state, content).filter((command) => command.type === 'useFlipSkill').map((command) => command.target);
+    const targets = legalCommands(playerPhase, content)
+      .filter(
+        (command): command is Extract<typeof command, { type: 'useImmediateFlipSkill' }> =>
+          command.type === 'useImmediateFlipSkill' && command.coins[0] === coin
+      )
+      .map((command) => command.target);
 
     expect(targets).toEqual([0, 1, 2]);
   });

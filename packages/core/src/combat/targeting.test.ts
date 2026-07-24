@@ -121,15 +121,14 @@ const firstHandCoin = (state: CombatState): CoinUid => {
   return coin;
 };
 
-const placeFirstCoin = (state: CombatState, slotIndex: number, db: ContentDb): CombatState => {
-  const result = step(state, { type: 'placeCoin', coin: firstHandCoin(state), slot: slot(slotIndex) }, db);
-  if (!result.ok) throw new Error(result.error);
-  return result.state;
-};
-
-const useFlipTargets = (state: CombatState, slotIndex: number, db: ContentDb): Command[] =>
+const useFlipTargets = (state: CombatState, slotIndex: number, db: ContentDb) =>
   legalCommands(state, db)
-    .filter((command): command is Extract<Command, { type: 'useFlipSkill' }> => command.type === 'useFlipSkill' && command.slot === slot(slotIndex))
+    .filter(
+      (command): command is Extract<Command, { type: 'useImmediateFlipSkill' }> =>
+        command.type === 'useImmediateFlipSkill' &&
+        command.slot === slot(slotIndex) &&
+        command.coins[0] === firstHandCoin(state)
+    )
     .map(({ type, slot: commandSlot, target }) => ({ type, slot: commandSlot, target }));
 
 const useConsumeTargets = (state: CombatState, slotIndex: number, db: ContentDb): Command[] =>
@@ -138,12 +137,12 @@ const useConsumeTargets = (state: CombatState, slotIndex: number, db: ContentDb)
 describe('multi-target legal commands', () => {
   it('lists all three living enemies for usable flip skills in ascending order', () => {
     const db = testDb();
-    const state = placeFirstCoin(combat(db, 'flip-three-targets'), 0, db);
+    const state = combat(db, 'flip-three-targets');
 
     expect(useFlipTargets(state, 0, db)).toEqual([
-      { type: 'useFlipSkill', slot: slot(0), target: 0 },
-      { type: 'useFlipSkill', slot: slot(0), target: 1 },
-      { type: 'useFlipSkill', slot: slot(0), target: 2 }
+      { type: 'useImmediateFlipSkill', slot: slot(0), target: 0 },
+      { type: 'useImmediateFlipSkill', slot: slot(0), target: 1 },
+      { type: 'useImmediateFlipSkill', slot: slot(0), target: 2 }
     ]);
   });
 
@@ -151,13 +150,13 @@ describe('multi-target legal commands', () => {
     const db = testDb();
     const base = combat(db, 'flip-dead-target');
     const state = {
-      ...placeFirstCoin(base, 0, db),
+      ...base,
       enemies: base.enemies.map((enemy, index) => (index === 1 ? { ...enemy, hp: 0 } : enemy))
     };
 
     expect(useFlipTargets(state, 0, db)).toEqual([
-      { type: 'useFlipSkill', slot: slot(0), target: 0 },
-      { type: 'useFlipSkill', slot: slot(0), target: 2 }
+      { type: 'useImmediateFlipSkill', slot: slot(0), target: 0 },
+      { type: 'useImmediateFlipSkill', slot: slot(0), target: 2 }
     ]);
   });
 
@@ -165,15 +164,15 @@ describe('multi-target legal commands', () => {
     const db = testDb();
     const base = combat(db, 'reject-targets');
     const state = {
-      ...placeFirstCoin(base, 0, db),
+      ...base,
       enemies: base.enemies.map((enemy, index) => (index === 1 ? { ...enemy, hp: 0 } : enemy))
     };
 
-    expect(step(state, { type: 'useFlipSkill', slot: slot(0), target: 1 }, db)).toEqual({
+    expect(step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [firstHandCoin(state)], target: 1 }, db)).toEqual({
       ok: false,
       error: 'target enemy is not alive'
     });
-    expect(step(state, { type: 'useFlipSkill', slot: slot(0), target: 99 }, db)).toEqual({
+    expect(step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [firstHandCoin(state)], target: 99 }, db)).toEqual({
       ok: false,
       error: 'target enemy is not alive'
     });
@@ -183,11 +182,11 @@ describe('multi-target legal commands', () => {
     const db = testDb();
     const base = combat(db, 'last-living-target');
     const state = {
-      ...placeFirstCoin(base, 0, db),
+      ...base,
       enemies: base.enemies.map((enemy, index) => (index === 2 ? enemy : { ...enemy, hp: 0 }))
     };
 
-    expect(useFlipTargets(state, 0, db)).toEqual([{ type: 'useFlipSkill', slot: slot(0), target: 2 }]);
+    expect(useFlipTargets(state, 0, db)).toEqual([{ type: 'useImmediateFlipSkill', slot: slot(0), target: 2 }]);
   });
 
   it('applies the same target enumeration to single-enemy consume skills', () => {
@@ -209,7 +208,7 @@ describe('multi-target legal commands', () => {
 
   it('returns deterministic command lists for the same state', () => {
     const db = testDb();
-    const state = placeFirstCoin(combat(db, 'deterministic-targets'), 0, db);
+    const state = combat(db, 'deterministic-targets');
 
     expect(legalCommands(state, db)).toEqual(legalCommands(state, db));
   });
@@ -228,7 +227,7 @@ describe('multi-target legal commands', () => {
         expect(result.ok).toBe(true);
         if (!result.ok) break;
         state = result.state;
-        expect(zoneCoinCount(state.zones, [], state.flipReservations)).toBe(Object.keys(state.coins).length);
+        expect(zoneCoinCount(state.zones, state.custody)).toBe(Object.keys(state.coins).length);
         expect(state.player.hp).toBeGreaterThanOrEqual(0);
         expect(state.player.hp).toBeLessThanOrEqual(state.player.maxHp);
         for (const enemy of state.enemies) {

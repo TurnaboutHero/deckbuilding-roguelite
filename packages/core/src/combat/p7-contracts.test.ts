@@ -185,9 +185,7 @@ const useLoaded = (
 ): CombatState => {
   const coin = state.zones.hand[0];
   if (coin === undefined) throw new Error('no coin in hand');
-  const placed = step(state, { type: 'placeCoin', coin, slot: slot(slotIndex) }, db);
-  if (!placed.ok) throw new Error(placed.error);
-  const used = step(placed.state, { type: 'useFlipSkill', slot: slot(slotIndex), target }, db);
+  const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(slotIndex), coins: [coin], target }, db);
   if (!used.ok) throw new Error(used.error);
   lastEvents = used.events;
   return used.state;
@@ -222,12 +220,9 @@ describe('P7 D1 — 쿨다운 행동 모델', () => {
     state = useLoaded(state, db, 0);
     expect(state.slots[0]!.cooldownRemaining).toBe(1);
     const coin = state.zones.hand[0]!;
-    const placed = step(state, { type: 'placeCoin', coin, slot: slot(0) }, db);
-    expect(placed.ok).toBe(true);
-    if (!placed.ok) return;
-    const again = step(placed.state, { type: 'useFlipSkill', slot: slot(0) }, db);
+    const again = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [coin] }, db);
     expect(again).toEqual({ ok: false, error: 'skill is cooling down' });
-    const ended = step(placed.state, { type: 'endTurn' }, db);
+    const ended = step(state, { type: 'endTurn' }, db);
     expect(ended.ok).toBe(true);
     if (!ended.ok) return;
     expect(ended.state.slots[0]!.cooldownRemaining).toBe(0);
@@ -302,8 +297,8 @@ describe('P7 D2 — 8슬롯·빈 슬롯', () => {
     const db = testDb();
     const state = start([id<SkillId>('basicStrike')], undefined, db);
     const coin = state.zones.hand[0]!;
-    const placed = step(state, { type: 'placeCoin', coin, slot: slot(5) }, db);
-    expect(placed).toEqual({ ok: false, error: 'slot is empty' });
+    const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(5), coins: [coin] }, db);
+    expect(used).toEqual({ ok: false, error: 'slot is not a flip skill' });
   });
 
   it('9개 이상 스킬은 거부된다', () => {
@@ -321,10 +316,7 @@ describe('P7 D4 — 양면 코인 효과', () => {
     let state = start([id<SkillId>('guardSelf')], bag, db);
     state = { ...state, player: { ...state.player, hp: 49, block: 7 } };
     const coin = state.zones.hand[0]!;
-    const placed = step(state, { type: 'placeCoin', coin, slot: slot(0) }, db);
-    expect(placed.ok).toBe(true);
-    if (!placed.ok) return;
-    const used = step(placed.state, { type: 'useFlipSkill', slot: slot(0), target: 0 }, db);
+    const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [coin], target: 0 }, db);
     expect(used.ok).toBe(true);
     if (!used.ok) return;
     expect(used.events.filter((event) => event.type === 'damageDealt' && event.source === 'coin')).toHaveLength(1);
@@ -341,9 +333,7 @@ describe('P7 D4 — 양면 코인 효과', () => {
     for (let i = 0; i < 6 && !sawTailsDamage; i += 1) {
       const coin = state.zones.hand[0];
       if (coin === undefined) break;
-      const placed = step(state, { type: 'placeCoin', coin, slot: slot(0) }, db);
-      if (!placed.ok) break;
-      const used = step(placed.state, { type: 'useFlipSkill', slot: slot(0), target: 0 }, db);
+      const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [coin], target: 0 }, db);
       if (!used.ok) break;
       sawTailsDamage = used.events.some(
         (event) =>
@@ -423,12 +413,9 @@ describe('P7 D5 — 과열', () => {
     state = withOverheatAgain(state);
     // 쿨다운 중 재사용 시도 → 오류 → 과열 유지
     const coin = state.zones.hand[0]!;
-    const placed = step(state, { type: 'placeCoin', coin, slot: slot(1) }, db);
-    if (placed.ok) {
-      const used = step(placed.state, { type: 'useFlipSkill', slot: slot(1), target: 0 }, db);
-      expect(used.ok).toBe(false);
-      expect(placed.state.player.overheat).toBe(true);
-    }
+    const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(1), coins: [coin], target: 0 }, db);
+    expect(used.ok).toBe(false);
+    expect(state.player.overheat).toBe(true);
   });
 
   it('중복 진입은 무스택 no-op이다', () => {
@@ -479,9 +466,7 @@ describe('P7 감사 보정 회귀 (D9)', () => {
     const state = start([id<SkillId>('bigDraw')], bag, db);
     expect(state.zones.hand.length).toBe(3);
     const coin = state.zones.hand[0]!;
-    const placed = step(state, { type: 'placeCoin', coin, slot: slot(0) }, db);
-    if (!placed.ok) throw new Error(placed.error);
-    const used = step(placed.state, { type: 'useFlipSkill', slot: slot(0) }, db);
+    const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [coin] }, db);
     if (!used.ok) throw new Error(used.error);
     // 장전 1 소모 후 2 + draw 9 → 상한 10에서 정지 (11 아님)
     expect(used.state.zones.hand.length).toBe(10);
@@ -504,9 +489,7 @@ describe('P7 감사 보정 회귀 (D9)', () => {
     }
     expect(state.player.overheat).toBe(true);
     const coin = state.zones.hand.find((candidate) => state.coins[Number(candidate)]?.defId === id<CoinDefId>('basic'))!;
-    const placed = step(state, { type: 'placeCoin', coin, slot: slot(1) }, db);
-    if (!placed.ok) throw new Error(placed.error);
-    const used = step(placed.state, { type: 'useFlipSkill', slot: slot(1), target: 0 }, db);
+    const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(1), coins: [coin], target: 0 }, db);
     if (!used.ok) throw new Error(used.error);
     const skillHits = used.events.filter(
       (event) => event.type === 'damageDealt' && event.source === 'skill' && event.target.type === 'enemy'
@@ -533,10 +516,8 @@ describe('P7 감사 보정 회귀 (D9)', () => {
     for (let i = 0; i < 8 && !sawBothHit; i += 1) {
       const coin = state.zones.hand[0];
       if (coin === undefined) break;
-      const placed = step(state, { type: 'placeCoin', coin, slot: slot(0) }, db);
-      if (!placed.ok) break;
-      const before = placed.state.enemies.map((enemy) => enemy.hp);
-      const used = step(placed.state, { type: 'useFlipSkill', slot: slot(0) }, db);
+      const before = state.enemies.map((enemy) => enemy.hp);
+      const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [coin] }, db);
       if (!used.ok) break;
       // 스킬 본체 피해도 proc과 동일하게 모든 생존 적에게 적용되어야 한다.
       expect(used.state.enemies[0]!.hp).toBeLessThan(before[0]!);
@@ -577,25 +558,23 @@ describe('P7 감사 보정 회귀 (D9)', () => {
       'p7-explicit-target-seed'
     );
     const firstCoin = state.zones.hand[0]!;
-    const firstPlaced = step(state, { type: 'placeCoin', coin: firstCoin, slot: slot(0) }, db);
-    if (!firstPlaced.ok) throw new Error(firstPlaced.error);
     expect(
-      legalCommands(firstPlaced.state, db)
-        .filter((command) => command.type === 'useFlipSkill' && command.slot === slot(0))
-        .map((command) => command.type === 'useFlipSkill' ? command.target : undefined)
+      legalCommands(state, db)
+        .filter(
+          (command) =>
+            command.type === 'useImmediateFlipSkill' &&
+            command.slot === slot(0) &&
+            command.coins[0] === firstCoin
+        )
+        .map((command) => command.type === 'useImmediateFlipSkill' ? command.target : undefined)
     ).toEqual([0, 1]);
-    const missingTarget = step(firstPlaced.state, { type: 'useFlipSkill', slot: slot(0) }, db);
+    const missingTarget = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [firstCoin] }, db);
     expect(missingTarget).toEqual({ ok: false, error: 'target enemy is not alive' });
-    const restored = step(firstPlaced.state, { type: 'unplaceCoin', coin: firstCoin }, db);
-    if (!restored.ok) throw new Error(restored.error);
-    state = restored.state;
     let sawExplicitHit = false;
     for (let i = 0; i < 6 && !sawExplicitHit; i += 1) {
       const coin = state.zones.hand[0];
       if (coin === undefined) break;
-      const placed = step(state, { type: 'placeCoin', coin, slot: slot(0) }, db);
-      if (!placed.ok) break;
-      const used = step(placed.state, { type: 'useFlipSkill', slot: slot(0), target: 1 }, db);
+      const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [coin], target: 1 }, db);
       if (!used.ok) break;
       sawExplicitHit = used.events.some(
         (event) => event.type === 'damageDealt' && event.source === 'skill' && event.target.type === 'enemy' && event.target.index === 1

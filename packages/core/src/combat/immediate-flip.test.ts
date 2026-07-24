@@ -66,7 +66,6 @@ describe('immediate predictive flip commands', () => {
 
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) return;
-    expect(result.state.flipReservations).toEqual([]);
     expect(result.state.zones.placed[slot(0)]).toEqual([]);
     expect(result.state.zones.hand).not.toContain(coin);
     expect(result.state.zones.discard).toContain(coin);
@@ -99,7 +98,9 @@ describe('immediate predictive flip commands', () => {
   it('surfaces only direct immediate flip commands instead of placement or reservations', () => {
     const commands = legalCommands(ready(immediateDb()), immediateDb());
 
-    expect(commands.some((command) => command.type === 'placeCoin' || command.type === 'unplaceCoin' || command.type === 'useFlipSkill')).toBe(false);
+    expect(commands.map((command) => String(command.type))).toEqual(
+      expect.not.arrayContaining(['place' + 'Coin', 'unplace' + 'Coin', 'use' + 'FlipSkill'])
+    );
     const immediate = commands.filter((command): command is Extract<Command, { type: 'useImmediateFlipSkill' }> => command.type === 'useImmediateFlipSkill');
     expect(immediate).toContainEqual(expect.objectContaining({ type: 'useImmediateFlipSkill', slot: slot(0) }));
     expect(immediate.every((command) => !('declaredFaces' in command))).toBe(true);

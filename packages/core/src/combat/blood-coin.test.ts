@@ -111,18 +111,16 @@ const withFace = (state: CombatState, face: Face): CombatState => {
   };
 };
 
-const place = (state: CombatState, slotIndex = 0): CombatState => {
+const costCoin = (state: CombatState): CoinUid => {
   const coin = state.zones.hand[0];
   if (coin === undefined) throw new Error('missing blood coin');
-  const result = step(state, { type: 'placeCoin', coin, slot: slot(slotIndex) }, db());
-  if (!result.ok) throw new Error(result.error);
-  return result.state;
+  return coin;
 };
 
 describe('blood coin risk/reward contract', () => {
   it('heads deals one designated coin-damage packet separate from skill damage', () => {
-    const state = place(withFace(combat(['strike']), 'heads'));
-    const result = step(state, { type: 'useFlipSkill', slot: slot(0), target: 0 }, db());
+    const state = withFace(combat(['strike']), 'heads');
+    const result = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [costCoin(state)], target: 0 }, db());
     if (!result.ok) throw new Error(result.error);
 
     expect(result.events.filter((event) => event.type === 'damageDealt' && event.target.type === 'enemy')).toEqual([
@@ -133,8 +131,8 @@ describe('blood coin risk/reward contract', () => {
 
   it('tails bypasses player block, loses one HP, and deals two coin damage', () => {
     const prepared = withFace(combat(['strike']), 'tails');
-    const state = place({ ...prepared, player: { ...prepared.player, block: 9 } });
-    const result = step(state, { type: 'useFlipSkill', slot: slot(0), target: 0 }, db());
+    const state = { ...prepared, player: { ...prepared.player, block: 9 } };
+    const result = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [costCoin(state)], target: 0 }, db());
     if (!result.ok) throw new Error(result.error);
 
     expect(result.state.player).toMatchObject({ hp: 19, block: 9 });
@@ -156,8 +154,8 @@ describe('blood coin risk/reward contract', () => {
 
   it('at one HP the tails loss and coin damage fail together while the skill still resolves', () => {
     const prepared = withFace(combat(['strike']), 'tails');
-    const state = place({ ...prepared, player: { ...prepared.player, hp: 1, block: 9 } });
-    const result = step(state, { type: 'useFlipSkill', slot: slot(0), target: 0 }, db());
+    const state = { ...prepared, player: { ...prepared.player, hp: 1, block: 9 } };
+    const result = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [costCoin(state)], target: 0 }, db());
     if (!result.ok) throw new Error(result.error);
 
     expect(result.state.player).toMatchObject({ hp: 1, block: 9 });
@@ -168,18 +166,18 @@ describe('blood coin risk/reward contract', () => {
   });
 
   it('self-target skills reuse the existing explicit enemy designation flow', () => {
-    const state = place(withFace(combat(['guard'], 3), 'heads'));
+    const state = withFace(combat(['guard'], 3), 'heads');
     expect(
       legalCommands(state, db())
-        .filter((command) => command.type === 'useFlipSkill' && command.slot === slot(0))
-        .map((command) => (command.type === 'useFlipSkill' ? command.target : undefined))
+        .filter((command) => command.type === 'useImmediateFlipSkill' && command.slot === slot(0) && command.coins[0] === costCoin(state))
+        .map((command) => (command.type === 'useImmediateFlipSkill' ? command.target : undefined))
     ).toEqual([0, 1, 2]);
 
-    expect(step(state, { type: 'useFlipSkill', slot: slot(0) }, db())).toEqual({
+    expect(step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [costCoin(state)] }, db())).toEqual({
       ok: false,
       error: 'target enemy is not alive'
     });
-    const result = step(state, { type: 'useFlipSkill', slot: slot(0), target: 1 }, db());
+    const result = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [costCoin(state)], target: 1 }, db());
     if (!result.ok) throw new Error(result.error);
     expect(result.events.filter((event) => event.type === 'damageDealt' && event.source === 'coin')).toEqual([
       { type: 'damageDealt', target: { type: 'enemy', index: 1 }, amount: 1, blocked: 0, source: 'coin' }
@@ -187,14 +185,14 @@ describe('blood coin risk/reward contract', () => {
   });
 
   it('all-enemy skills hit all with the skill but only the designated enemy with the coin', () => {
-    const state = place(withFace(combat(['sweep'], 3), 'heads'));
+    const state = withFace(combat(['sweep'], 3), 'heads');
     expect(
       legalCommands(state, db())
-        .filter((command) => command.type === 'useFlipSkill' && command.slot === slot(0))
-        .map((command) => (command.type === 'useFlipSkill' ? command.target : undefined))
+        .filter((command) => command.type === 'useImmediateFlipSkill' && command.slot === slot(0) && command.coins[0] === costCoin(state))
+        .map((command) => (command.type === 'useImmediateFlipSkill' ? command.target : undefined))
     ).toEqual([0, 1, 2]);
 
-    const result = step(state, { type: 'useFlipSkill', slot: slot(0), target: 2 }, db());
+    const result = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [costCoin(state)], target: 2 }, db());
     if (!result.ok) throw new Error(result.error);
     expect(result.state.enemies.map((enemy) => enemy.hp)).toEqual([19, 19, 18]);
     expect(result.events.filter((event) => event.type === 'damageDealt' && event.source === 'coin')).toEqual([

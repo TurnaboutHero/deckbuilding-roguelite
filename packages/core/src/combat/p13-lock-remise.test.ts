@@ -64,9 +64,7 @@ const combat = (faces: readonly Face[]): CombatState => {
 };
 
 const use = (state: CombatState) => {
-  const placed = step(state, { type: 'placeCoin', coin: 1 as CoinUid, slot: slot(0) }, db);
-  if (!placed.ok) throw new Error(placed.error);
-  const used = step(placed.state, { type: 'useFlipSkill', slot: slot(0), target: 0 }, db);
+  const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [1 as CoinUid], target: 0 }, db);
   if (!used.ok) throw new Error(used.error);
   return used;
 };

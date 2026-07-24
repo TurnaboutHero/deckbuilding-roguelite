@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import type { ConsumeSkillDef, ContentDb, FlipSkillDef } from '../content-types';
 import type { CharacterId, CoinDefId, CoinUid, EnemyDefId, Face, SkillId, SlotId } from '../ids';
 import type { Rng, RngSnapshot } from '../rng';
-import { previewFlip } from './preview';
 import { createCombat, step } from './reducer';
 import type { CombatState } from './state';
 
@@ -137,9 +136,7 @@ const changeCoinDef = (input: CombatState, coin: CoinUid, defId: CoinDefId): Com
 const useFlip = (input: CombatState, db: ContentDb, skillSlot = 0): Extract<ReturnType<typeof step>, { ok: true }> => {
   const coin = input.zones.hand[0];
   if (coin === undefined) throw new Error('missing hand coin');
-  const placed = step(input, { type: 'placeCoin', coin, slot: slot(skillSlot) }, db);
-  if (!placed.ok) throw new Error(placed.error);
-  const used = step(placed.state, { type: 'useFlipSkill', slot: slot(skillSlot), target: 0 }, db);
+  const used = step(input, { type: 'useImmediateFlipSkill', slot: slot(skillSlot), coins: [coin], target: 0 }, db);
   if (!used.ok) throw new Error(used.error);
   return used;
 };
@@ -269,9 +266,7 @@ describe('permanent coin enchant contracts', () => {
       ...enchant(initial, coin, 'sharpness'),
       coins: { ...enchant(initial, coin, 'sharpness').coins, [Number(coin)]: { ...enchant(initial, coin, 'sharpness').coins[Number(coin)]!, permanent: false } }
     } as unknown as CombatState;
-    const placed = step(invalid, { type: 'placeCoin', coin, slot: slot(0) }, db);
-    if (!placed.ok) throw new Error(placed.error);
-    const result = step(placed.state, { type: 'useFlipSkill', slot: slot(0), target: 0 }, db);
+    const result = step(invalid, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [coin], target: 0 }, db);
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/temporary coin.*enchant/i);
@@ -287,20 +282,4 @@ describe('permanent coin enchant contracts', () => {
     expect(result.state.enemies[0]?.hp).toBe(46);
   });
 
-  it('previews 60/40 polish odds and a first-use Pendulum as forced success', () => {
-    const db = dbFor();
-    const place = (enchantId: EnchantId): CombatState => {
-      const initial = combat(db);
-      const coin = initial.zones.hand[0]!;
-      const placed = step(enchant(initial, coin, enchantId), { type: 'placeCoin', coin, slot: slot(0) }, db);
-      if (!placed.ok) throw new Error(placed.error);
-      return placed.state;
-    };
-
-    const polished = previewFlip(place('heads-polish'), slot(0), db);
-    const pendulum = previewFlip(place('pendulum'), slot(0), db);
-
-    expect(polished.branches.map((branch) => branch.probability)).toEqual([0.6, 0.4]);
-    expect(pendulum.branches).toEqual([expect.objectContaining({ damage: 4, probability: 1 })]);
-  });
 });

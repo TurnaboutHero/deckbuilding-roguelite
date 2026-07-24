@@ -49,20 +49,6 @@ const consume = (
   return result;
 };
 
-const place = (
-  state: ReturnType<typeof bloodCombat>,
-  coin: CoinUid,
-  targetSlot = slot(0),
-) => {
-  const result = step(
-    state,
-    { type: "placeCoin", coin, slot: targetSlot },
-    contentDb,
-  );
-  if (!result.ok) throw new Error(result.error);
-  return result.state;
-};
-
 describe("Blood Spellblade design integration", () => {
   it("ships the character, twelve skills, three blood passives, and valid content", () => {
     expect(contentDb.validate()).toEqual([]);
@@ -189,9 +175,10 @@ describe("Blood Spellblade design integration", () => {
 
   it("rejects Sacrifice when the HP payment would reduce the player to zero", () => {
     const state = bloodCombat("blood-sacrifice", ["sacrifice"]);
+    const coin = state.zones.hand[0]!;
     const result = step(
       { ...state, player: { ...state.player, hp: 3 } },
-      { type: "useFlipSkill", slot: slot(0) },
+      { type: "useImmediateFlipSkill", slot: slot(0), coins: [coin] },
       contentDb,
     );
     expect(result).toMatchObject({ ok: false });
@@ -202,11 +189,9 @@ describe("Blood Spellblade design integration", () => {
       bloodCombat("blood-reversal", ["bloodflow-reversal"]),
       2,
     );
-    const withFirst = place(prepared.state, prepared.hand[0]!);
-    const withBoth = place(withFirst, prepared.hand[1]!);
     const result = step(
-      withBoth,
-      { type: "useFlipSkill", slot: slot(0), target: 0 },
+      prepared.state,
+      { type: "useImmediateFlipSkill", slot: slot(0), coins: [...prepared.hand], target: 0 },
       contentDb,
     );
     if (!result.ok) throw new Error(result.error);
@@ -228,11 +213,9 @@ describe("Blood Spellblade design integration", () => {
         },
       },
     };
-    const withFirst = place(state, bloodUid);
-    const withBoth = place(withFirst, basicUid);
     const result = step(
-      withBoth,
-      { type: "useFlipSkill", slot: slot(0), target: 0 },
+      state,
+      { type: "useImmediateFlipSkill", slot: slot(0), coins: [bloodUid, basicUid], target: 0 },
       contentDb,
     );
     if (!result.ok) throw new Error(result.error);

@@ -40,7 +40,7 @@ export interface PlayerState extends UnitState {
   nextDrawPenalty: number;
   // P7 D3 — 다음 턴 드로우 보너스 (턴 시작 총 드로우는 [0,8] 클램프)
   nextDrawBonus: number;
-  /** v4.5 frost reservation: block granted at the start of the next player turn. */
+  /** v4.5 frost effect: block granted at the start of the next player turn. */
   nextTurnBlock: number;
   // P7 D5 — 과열: 비중첩 불리언, 턴 넘어 지속, 과열 강화 스킬 해결 후 소비
   overheat: boolean;
@@ -243,13 +243,6 @@ export interface CombatZones {
   exhausted: CoinUid[];
 }
 
-/** A completed flip package whose identity survives later draft changes. */
-export interface FlipReservation {
-  id: string;
-  slot: SlotId;
-  coinUids: CoinUid[];
-}
-
 export interface CombatState {
   turn: number;
   phase: 'player' | 'enemy' | 'victory' | 'defeat';
@@ -257,8 +250,6 @@ export interface CombatState {
   enemies: EnemyState[];
   coins: Record<number, CoinInstance>;
   zones: CombatZones;
-  flipReservations: FlipReservation[];
-  nextFlipReservationId: number;
   slots: SlotState[];
   turnTriggers: TurnTriggerInstance[];
   rng: { flip: RngSnapshot; shuffle: RngSnapshot; ai: RngSnapshot };
@@ -362,7 +353,6 @@ export const cloneState = (state: CombatState): CombatState => ({
     discard: [...state.zones.discard],
     exhausted: [...state.zones.exhausted]
   },
-  flipReservations: state.flipReservations.map((reservation) => ({ ...reservation, coinUids: [...reservation.coinUids] })),
   slots: state.slots.map((slot) => ({ ...slot })),
   turnTriggers: state.turnTriggers.map((trigger) => ({
     ...trigger,
@@ -389,12 +379,8 @@ export const assertCombatCoinZoneInvariant = (state: CombatState): void => {
     ...Object.values(state.zones.placed).flat(),
     ...state.zones.discard,
     ...state.zones.exhausted,
-    ...state.flipReservations.flatMap((reservation) => reservation.coinUids),
     ...state.custody.flatMap((entry) => entry.coins)
   ];
-  if (new Set(state.flipReservations.map((reservation) => reservation.id)).size !== state.flipReservations.length) {
-    throw new Error('flip reservation ids must be unique');
-  }
   if (locations.length !== Object.keys(state.coins).length || new Set(locations).size !== locations.length) {
     throw new Error('combat coin zone invariant violated');
   }

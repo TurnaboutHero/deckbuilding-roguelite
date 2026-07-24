@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ContentDb, FlipSkillDef, SkillDef } from '../content-types';
-import { isRepeatReservationEligible, validateContentDb } from '../content-types';
+import { validateContentDb } from '../content-types';
 import type { CharacterId, CoinDefId, CoinEnchantId, EnemyDefId, Face, PermanentCoinUid, SkillId, SlotId } from '../ids';
 import type { Rng, RngSnapshot } from '../rng';
 import { createCombat, step } from './reducer';
-import { previewFlip } from './preview';
 import { statusStacks, statusTurns } from './state';
 import type { CombatState } from './state';
 import { deriveUpgradedSkill } from '../run/run';
@@ -159,12 +158,7 @@ const loadAndUse = (input: CombatState, skillSlot: number, count: number, db: Co
     );
     state = { ...state, coins: { ...state.coins, ...replacements } };
   }
-  for (const coin of coins) {
-    const placed = step(state, { type: 'placeCoin', coin, slot: slot(skillSlot) }, db);
-    if (!placed.ok) throw new Error(placed.error);
-    state = placed.state;
-  }
-  const used = step(state, { type: 'useFlipSkill', slot: slot(skillSlot), target: 0 }, db);
+  const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(skillSlot), coins, target: 0 }, db);
   if (!used.ok) throw new Error(used.error);
   return used;
 };
@@ -264,20 +258,6 @@ describe('success-ladder flip resolution', () => {
     expect(ended.state.zones.hand).toContain(created.coin);
   });
 
-  it('uses the real resolver for success-ladder preview EV', () => {
-    const db = testDb();
-    let state = combat(db, ['heads', 'heads']);
-    for (const coin of state.zones.hand.slice(0, 2)) {
-      const placed = step(state, { type: 'placeCoin', coin, slot: slot(3) }, db);
-      if (!placed.ok) throw new Error(placed.error);
-      state = placed.state;
-    }
-    const preview = previewFlip(state, slot(3), db);
-    expect(preview.byAxis.damage).toEqual({ min: 1, max: 6 });
-    expect(preview.expected.damage).toBe(3.75);
-    expect(preview.expected.coinsCreated).toBe(0.75);
-  });
-
   it('consumes the same number of RNG flips as a legacy skill of the same cost', () => {
     const run = (skill: FlipSkillDef): number => {
       const db = testDb([skill]);
@@ -312,25 +292,6 @@ describe('success-ladder validation', () => {
     expect(
       errorsFor({ cost: 1, successFace: 'heads', successLadder: [[{ kind: 'damage', amount: 1 }], [{ kind: 'damage', amount: 4 }]] })
     ).toEqual([]);
-  });
-
-  it('identifies only unrestricted zero-cooldown flip skills as repeat-reservation eligible', () => {
-    expect(isRepeatReservationEligible(basicAttack)).toBe(true);
-    expect(isRepeatReservationEligible({ ...basicAttack, cooldown: 1 })).toBe(false);
-    expect(isRepeatReservationEligible({ ...basicAttack, oncePerCombat: true })).toBe(false);
-    expect(isRepeatReservationEligible({ ...basicAttack, nonRepeatable: true })).toBe(false);
-    expect(
-      isRepeatReservationEligible({
-        id: id<SkillId>('consume'),
-        name: 'consume',
-        type: 'consume',
-        rarity: 'common',
-        tags: ['attack'],
-        targetType: 'single-enemy',
-        consume: { element: 'fire', count: 1 },
-        effects: []
-      })
-    ).toBe(false);
   });
 
   it('requires resonance to match the skill element', () => {

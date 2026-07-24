@@ -169,7 +169,6 @@ export interface SkillDefBase {
   // 잠금이 우선하며, 명시 쿨다운은 일회성 제거 강화의 복귀 주기를 문서화할 수 있다.
   cooldown?: 0 | 1 | 2 | 3 | 4;
   oncePerCombat?: boolean;
-  /** Keeps a zero-cooldown flip skill to one reservation during planning. */
   nonRepeatable?: boolean;
   // P7 D5 — 과열 강화 분기: 해결 시 과열이면 기본 효과 뒤에 추가, 해결 후 과열 소비.
   overheatBonus?: EffectAtom[];
@@ -246,13 +245,6 @@ export const flipSkillEffects = (skill: FlipSkillDef): EffectAtom[] =>
 // 전투당 1회 스킬은 usedThisCombat만으로 잠그며 쿨다운 상태를 만들지 않는다.
 // 강화로 oncePerCombat이 제거되면 다시 기본 쿨다운 1을 적용한다.
 export const skillCooldown = (skill: SkillDefBase): number => (skill.oncePerCombat === true ? 0 : (skill.cooldown ?? 1));
-
-/** Shared reservation rule for flip skills that may be queued more than once. */
-export const isRepeatReservationEligible = (skill: SkillDef): skill is FlipSkillDef =>
-  skill.type === 'flip' &&
-  skillCooldown(skill) === 0 &&
-  skill.oncePerCombat !== true &&
-  skill.nonRepeatable !== true;
 
 export interface ConsumeSkillDef extends SkillDefBase {
   type: 'consume';

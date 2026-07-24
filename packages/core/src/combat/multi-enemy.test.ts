@@ -149,20 +149,13 @@ const withHandDefs = (state: CombatState, defs: readonly string[]): CombatState 
   }
 });
 
-const placeFirstCoin = (state: CombatState, slotIndex: number, db: ContentDb): CombatState => {
-  const placed = step(state, { type: 'placeCoin', coin: firstHandCoin(state), slot: slot(slotIndex) }, db);
-  if (!placed.ok) throw new Error(placed.error);
-  return placed.state;
-};
-
 const useFirstCoin = (
   state: CombatState,
   slotIndex: number,
   target: number | undefined,
   db: ContentDb
 ): ReturnType<typeof step> => {
-  const placed = placeFirstCoin(state, slotIndex, db);
-  return step(placed, { type: 'useFlipSkill', slot: slot(slotIndex), target }, db);
+  return step(state, { type: 'useImmediateFlipSkill', slot: slot(slotIndex), coins: [firstHandCoin(state)], target }, db);
 };
 
 const twoEnemyCombat = (db: ContentDb, seed: string): CombatState =>
@@ -233,12 +226,11 @@ describe('multi-enemy combat harness', () => {
       enemies: state.enemies.map((enemy, index) => (index === 0 ? { ...enemy, hp: 0 } : enemy))
     };
 
-    const loaded = placeFirstCoin(enemy0Dead, 2, db);
-    const missing = step(loaded, { type: 'useFlipSkill', slot: slot(2) }, db);
+    const coin = firstHandCoin(enemy0Dead);
+    const missing = step(enemy0Dead, { type: 'useImmediateFlipSkill', slot: slot(2), coins: [coin] }, db);
     expect(missing).toEqual({ ok: false, error: 'target enemy is not alive' });
-    expect(loaded.flipReservations[0]?.coinUids).toHaveLength(1);
 
-    const focused = step(loaded, { type: 'useFlipSkill', slot: slot(2), target: 1 }, db);
+    const focused = step(enemy0Dead, { type: 'useImmediateFlipSkill', slot: slot(2), coins: [coin], target: 1 }, db);
     expect(focused.ok).toBe(true);
     if (!focused.ok) return;
     expect(statusStacks(focused.state.enemies[0]?.statuses ?? {}, 'burn')).toBe(0);
@@ -329,8 +321,7 @@ describe('multi-enemy combat harness', () => {
       let state = replaceFlipRng(twoEnemyCombat(db, 'same-two-enemy-seed'), ['heads', 'tails']);
       const first = firstHandCoin(state);
       const commands: Command[] = [
-        { type: 'placeCoin', coin: first, slot: slot(0) },
-        { type: 'useFlipSkill', slot: slot(0), target: 1 },
+        { type: 'useImmediateFlipSkill', slot: slot(0), coins: [first], target: 1 },
         { type: 'endTurn' }
       ];
       return commands.flatMap((command) => {
@@ -347,14 +338,15 @@ describe('multi-enemy combat harness', () => {
 
   it('lists every living enemy target for multi-enemy single-target skills', () => {
     const db = testDb();
-    const state = placeFirstCoin(twoEnemyCombat(db, 'legal-targets'), 0, db);
+    const state = twoEnemyCombat(db, 'legal-targets');
     const offered = legalCommands(state, db).filter(
-      (command): command is Extract<Command, { type: 'useFlipSkill' }> => command.type === 'useFlipSkill' && command.slot === slot(0)
+      (command): command is Extract<Command, { type: 'useImmediateFlipSkill' }> =>
+        command.type === 'useImmediateFlipSkill' && command.slot === slot(0) && command.coins[0] === firstHandCoin(state)
     );
 
     expect(offered.map(({ type, slot: commandSlot, target }) => ({ type, slot: commandSlot, target }))).toEqual([
-      { type: 'useFlipSkill', slot: slot(0), target: 0 },
-      { type: 'useFlipSkill', slot: slot(0), target: 1 }
+      { type: 'useImmediateFlipSkill', slot: slot(0), target: 0 },
+      { type: 'useImmediateFlipSkill', slot: slot(0), target: 1 }
     ]);
   });
 });

@@ -155,26 +155,17 @@ const removeCounterfeitsAtCombatEnd = (state: CombatState, events: CombatEvent[]
   };
 };
 
-const abortFlipReservations = (state: CombatState): CombatState =>
-  state.flipReservations.length === 0
-    ? state
-    : {
-        ...state,
-        flipReservations: [],
-        zones: { ...state.zones, hand: [...state.zones.hand, ...state.flipReservations.flatMap((reservation) => reservation.coinUids)] }
-      };
-
 export const checkCombatEnd = (state: CombatState, events: CombatEvent[]): CombatState => {
   if (state.phase === 'victory' || state.phase === 'defeat') return state;
   if (state.player.hp <= 0) {
     events.push({ type: 'combatEnded', result: 'defeat', turns: state.turn });
-    const ended = abortFlipReservations({ ...state, phase: 'defeat' as const, player: { ...state.player, pendingOverheat: false } });
+    const ended = { ...state, phase: 'defeat' as const, player: { ...state.player, pendingOverheat: false } };
     return removeCounterfeitsAtCombatEnd(ended, events);
   }
   if (state.enemies.every((enemy) => enemy.hp <= 0)) {
     // M5 run settlement hook: remove temporary coins from all zones when combat finalization spans combats.
     events.push({ type: 'combatEnded', result: 'victory', turns: state.turn });
-    const ended = abortFlipReservations({ ...state, phase: 'victory' as const, player: { ...state.player, pendingOverheat: false } });
+    const ended = { ...state, phase: 'victory' as const, player: { ...state.player, pendingOverheat: false } };
     return removeCounterfeitsAtCombatEnd(ended, events);
   }
   return state;
@@ -1260,10 +1251,9 @@ export const resolveFlip = (
   skill: FlipSkillDef,
   target: number | undefined,
   db: ContentDb,
+  coinUids: readonly CoinUid[],
   chosen?: readonly CoinUid[],
-  summonChoice?: { chosenEquipment?: EquipmentDefId; chosenSummon?: number; desiredCoin?: import('../../ids').CoinDefId },
-  reservationId?: string,
-  immediateCoinUids?: readonly CoinUid[]
+  summonChoice?: { chosenEquipment?: EquipmentDefId; chosenSummon?: number; desiredCoin?: import('../../ids').CoinDefId }
 ): ResolveResult => {
   const slotState = input.slots[Number(slot)];
   if (slotState === undefined) throw new Error('slot does not exist');
@@ -1271,9 +1261,7 @@ export const resolveFlip = (
   if (isSkillCommandSealed(input, slot)) throw new Error('skill is sealed');
   if (skill.oncePerCombat === true && slotState.usedThisCombat) throw new Error('skill already used this combat');
 
-  const reservation = reservationId === undefined ? undefined : input.flipReservations.find((candidate) => candidate.id === reservationId && candidate.slot === slot);
-  if (reservationId !== undefined && reservation === undefined) throw new Error('flip reservation does not exist');
-  const placed = immediateCoinUids ?? reservation?.coinUids ?? input.zones.placed[slot] ?? [];
+  const placed = coinUids;
   if (placed.length !== skill.cost) throw new Error('placed coin count must equal skill cost');
   assertCoinEnchantEligibility(input, placed);
   if (skill.requiredCoin !== undefined && placed.some((coin) => String(input.coins[Number(coin)]?.defId) !== String(skill.requiredCoin))) {
@@ -1373,7 +1361,6 @@ export const resolveFlip = (
 
   let state: CombatState = {
     ...input,
-    ...(reservation === undefined ? {} : { flipReservations: input.flipReservations.filter((candidate) => candidate.id !== reservation.id) }),
     slots: input.slots.map((candidate, index) =>
       index === Number(slot)
         ? {

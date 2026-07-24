@@ -167,21 +167,13 @@ const firstHandCoin = (state: CombatState): CoinUid => {
 };
 
 const useFirstCoin = (state: CombatState, slotIndex: number, target = 0, db = testDb()) => {
-  const placed = step(state, { type: 'placeCoin', coin: firstHandCoin(state), slot: slot(slotIndex) }, db);
-  if (!placed.ok) throw new Error(placed.error);
-  const used = step(placed.state, { type: 'useFlipSkill', slot: slot(slotIndex), target }, db);
+  const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(slotIndex), coins: [firstHandCoin(state)], target }, db);
   if (!used.ok) throw new Error(used.error);
   return used;
 };
 
 const useHandCoins = (state: CombatState, slotIndex: number, coins: readonly CoinUid[], target = 0, db = testDb()) => {
-  let current = state;
-  for (const coin of coins) {
-    const placed = step(current, { type: 'placeCoin', coin, slot: slot(slotIndex) }, db);
-    if (!placed.ok) throw new Error(placed.error);
-    current = placed.state;
-  }
-  const used = step(current, { type: 'useFlipSkill', slot: slot(slotIndex), target }, db);
+  const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(slotIndex), coins: [...coins], target }, db);
   if (!used.ok) throw new Error(used.error);
   return used;
 };
@@ -324,10 +316,7 @@ describe('M4 consume skills, grants, and once per combat', () => {
       'tails'
     ]);
     const cost = firstHandCoin(state);
-    const placed = step(state, { type: 'placeCoin', coin: cost, slot: slot(5) }, db);
-    expect(placed.ok).toBe(true);
-    if (!placed.ok) return;
-    const rampage = step(placed.state, { type: 'useFlipSkill', slot: slot(5) }, db);
+    const rampage = step(state, { type: 'useImmediateFlipSkill', slot: slot(5), coins: [cost] }, db);
     expect(rampage.ok).toBe(true);
     if (!rampage.ok) return;
     state = rampage.state;
@@ -349,10 +338,7 @@ describe('M4 consume skills, grants, and once per combat', () => {
     const state = replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'grant-expire'), [
       'tails'
     ]);
-    const placed = step(state, { type: 'placeCoin', coin: firstHandCoin(state), slot: slot(5) }, db);
-    expect(placed.ok).toBe(true);
-    if (!placed.ok) return;
-    const rampage = step(placed.state, { type: 'useFlipSkill', slot: slot(5) }, db);
+    const rampage = step(state, { type: 'useImmediateFlipSkill', slot: slot(5), coins: [firstHandCoin(state)] }, db);
     expect(rampage.ok).toBe(true);
     if (!rampage.ok) return;
     const consume = legalCommands(rampage.state, db).find((command) => command.type === 'useConsumeSkill' && command.slot === slot(4));
@@ -376,11 +362,8 @@ describe('M4 consume skills, grants, and once per combat', () => {
       'heads'
     ]);
     const cost = firstHandCoin(headsState);
-    const placed = step(headsState, { type: 'placeCoin', coin: cost, slot: slot(5) }, db);
-    expect(placed.ok).toBe(true);
-    if (!placed.ok) return;
-    const snapshot = [...placed.state.zones.hand];
-    const heads = step(placed.state, { type: 'useFlipSkill', slot: slot(5) }, db);
+    const snapshot = headsState.zones.hand.slice(1);
+    const heads = step(headsState, { type: 'useImmediateFlipSkill', slot: slot(5), coins: [cost] }, db);
     expect(heads.ok).toBe(true);
     if (!heads.ok) return;
     expect(heads.state.coins[Number(cost)]?.grants).toEqual([]);
@@ -393,10 +376,7 @@ describe('M4 consume skills, grants, and once per combat', () => {
       ...replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'rampage-tails'), ['tails']),
       player: { ...headsState.player, block: 1 }
     };
-    const tailsPlaced = step(tailsState, { type: 'placeCoin', coin: firstHandCoin(tailsState), slot: slot(5) }, db);
-    expect(tailsPlaced.ok).toBe(true);
-    if (!tailsPlaced.ok) return;
-    const tails = step(tailsPlaced.state, { type: 'useFlipSkill', slot: slot(5) }, db);
+    const tails = step(tailsState, { type: 'useImmediateFlipSkill', slot: slot(5), coins: [firstHandCoin(tailsState)] }, db);
     expect(tails.ok).toBe(true);
     if (!tails.ok) return;
     expect(tails.state.player.hp).toBe(69);
@@ -407,20 +387,17 @@ describe('M4 consume skills, grants, and once per combat', () => {
   it('rejects flame rampage after it was used once, even on later turns', () => {
     const db = testDb();
     let state = replaceFlipRng(createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'once'), ['tails']);
-    const placed = step(state, { type: 'placeCoin', coin: firstHandCoin(state), slot: slot(5) }, db);
-    expect(placed.ok).toBe(true);
-    if (!placed.ok) return;
-    const first = step(placed.state, { type: 'useFlipSkill', slot: slot(5) }, db);
+    const first = step(state, { type: 'useImmediateFlipSkill', slot: slot(5), coins: [firstHandCoin(state)] }, db);
     expect(first.ok).toBe(true);
     if (!first.ok) return;
     state = first.state;
-    expect(step(state, { type: 'useFlipSkill', slot: slot(5) }, db).ok).toBe(false);
+    expect(step(state, { type: 'useImmediateFlipSkill', slot: slot(5), coins: [firstHandCoin(state)] }, db).ok).toBe(false);
 
     const ended = step(state, { type: 'endTurn' }, db);
     expect(ended.ok).toBe(true);
     if (!ended.ok) return;
     expect(ended.state.slots[5]?.usedThisCombat).toBe(true);
-    expect(legalCommands(ended.state, db).some((command) => command.type === 'useFlipSkill' && command.slot === slot(5))).toBe(false);
+    expect(legalCommands(ended.state, db).some((command) => command.type === 'useImmediateFlipSkill' && command.slot === slot(5))).toBe(false);
   });
 
   it('keeps exhausted coins isolated from reshuffle and draw', () => {
@@ -479,10 +456,7 @@ describe('M4 consume skills, grants, and once per combat', () => {
     const consume = step(state, { type: 'useConsumeSkill', slot: slot(4), coins: [fire], target: 0 }, db);
     expect(consume.ok).toBe(true);
     if (!consume.ok) return; // ignite-sword: 65 → 55, 화상 2
-    const fourthPlaced = step(consume.state, { type: 'placeCoin', coin: firstHandCoin(consume.state), slot: slot(3) }, db);
-    expect(fourthPlaced.ok).toBe(true);
-    if (!fourthPlaced.ok) return;
-    const fourth = step(fourthPlaced.state, { type: 'useFlipSkill', slot: slot(3), target: 0 }, db);
+    const fourth = step(consume.state, { type: 'useImmediateFlipSkill', slot: slot(3), coins: [firstHandCoin(consume.state)], target: 0 }, db);
     expect(fourth.ok).toBe(true);
     if (!fourth.ok) return;
     // ignite 앞면: 기본 화상 1 + 앞면 화상 1 → 총 4
@@ -508,8 +482,7 @@ describe('combat determinism and D0', () => {
       let state = createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'same-seed');
       const coin = firstHandCoin(state);
       const commands: Command[] = [
-        { type: 'placeCoin', coin, slot: slot(0) },
-        { type: 'useFlipSkill', slot: slot(0), target: 0 },
+        { type: 'useImmediateFlipSkill', slot: slot(0), coins: [coin], target: 0 },
         { type: 'endTurn' }
       ];
       return commands.flatMap((cmd) => {
@@ -550,10 +523,7 @@ describe('combat determinism and D0', () => {
     state = first.state;
     expect(state.slots[0]?.cooldownRemaining).toBe(1);
 
-    const sameSkill = step(state, { type: 'placeCoin', coin: firstHandCoin(state), slot: slot(0) }, db);
-    expect(sameSkill.ok).toBe(true);
-    if (!sameSkill.ok) return;
-    const reuse = step(sameSkill.state, { type: 'useFlipSkill', slot: slot(0), target: 0 }, db);
+    const reuse = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [firstHandCoin(state)], target: 0 }, db);
     expect(reuse).toEqual({ ok: false, error: 'skill is cooling down' });
 
     const second = useFirstCoin(state, 1);
@@ -570,8 +540,9 @@ describe('combat determinism and D0', () => {
     if (ended.ok) {
       // 턴 시작 감소: 쿨1 스킬 전부 다시 가용
       expect(ended.state.slots.every((s) => s.cooldownRemaining === 0)).toBe(true);
-      const reloaded = step(ended.state, { type: 'placeCoin', coin: firstHandCoin(ended.state), slot: slot(0) }, db);
-      expect(reloaded.ok && step(reloaded.state, { type: 'useFlipSkill', slot: slot(0), target: 0 }, db).ok).toBe(true);
+      expect(
+        step(ended.state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [firstHandCoin(ended.state)], target: 0 }, db).ok
+      ).toBe(true);
     }
   });
 });
@@ -609,28 +580,6 @@ describe('draw and win loss', () => {
     expect(ended.ok).toBe(true);
     if (!ended.ok) return;
     expect(ended.events).toContainEqual({ type: 'coinsDiscarded', coins: unused, reason: 'turnEnd' });
-  });
-
-  it('does not auto-use a loaded skill when the player ends the turn', () => {
-    const db = testDb();
-    const state = createCombat({ character: id('warrior'), enemies: [id('raider')] }, db, 'loaded-turn-end');
-    const loadedCoin = firstHandCoin(state);
-    const loaded = step(state, { type: 'placeCoin', coin: loadedCoin, slot: slot(0) }, db);
-    expect(loaded.ok).toBe(true);
-    if (!loaded.ok) return;
-
-    const ended = step(loaded.state, { type: 'endTurn' }, db);
-    expect(ended.ok).toBe(true);
-    if (!ended.ok) return;
-    expect(ended.events.some((event) => event.type === 'skillUsed')).toBe(false);
-    expect(ended.events).toContainEqual(
-      expect.objectContaining({
-        type: 'coinsDiscarded',
-        coins: expect.arrayContaining([loadedCoin]),
-        reason: 'turnEnd'
-      })
-    );
-    expect(Object.values(ended.state.zones.placed).flat()).toEqual([]);
   });
 
   it('ends on enemy hp zero, player hp zero, and checks after each atom', () => {
@@ -731,15 +680,14 @@ describe('draw and win loss', () => {
       nextUid: 19,
       zones: {
         ...state.zones,
-        hand: [...state.zones.hand.slice(1), ...extra],
-        placed: { ...state.zones.placed, [slot(0)]: [loadedCoin] }
+        hand: [loadedCoin, ...state.zones.hand.slice(1), ...extra]
       },
       coins: {
         ...state.coins,
         ...Object.fromEntries(extra.map((coin) => [Number(coin), { uid: coin, defId: id<CoinDefId>('basic'), permanent: true, grants: [] }]))
       }
     };
-    const result = step(capped, { type: 'useFlipSkill', slot: slot(0), target: 0 }, db);
+    const result = step(capped, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [loadedCoin], target: 0 }, db);
     if (!result.ok) throw new Error(result.error);
     expect(result.state.zones.hand).toHaveLength(10);
     const created = result.events.find((event) => event.type === 'coinCreated');
@@ -774,8 +722,7 @@ describe('combat fuzz smoke', () => {
       for (let i = 0; i < 50 && state.phase === 'player'; i += 1) {
         const legal = legalCommands(state, db);
         const cmd =
-          legal.find((candidate) => candidate.type === 'useFlipSkill') ??
-          legal.find((candidate) => candidate.type === 'placeCoin') ??
+          legal.find((candidate) => candidate.type === 'useImmediateFlipSkill') ??
           ({ type: 'endTurn' } as Command);
         const result = step(state, cmd, db);
         expect(result.ok).toBe(true);
@@ -784,7 +731,7 @@ describe('combat fuzz smoke', () => {
         expect(state.player.hp).toBeLessThanOrEqual(state.player.maxHp);
         expect(state.player.block).toBeGreaterThanOrEqual(0);
         expect(Object.keys(state.coins).length).toBeGreaterThanOrEqual(10);
-        expect(zoneCoinCount(state.zones, [], state.flipReservations)).toBe(Object.keys(state.coins).length);
+        expect(zoneCoinCount(state.zones, state.custody)).toBe(Object.keys(state.coins).length);
       }
     }
   });

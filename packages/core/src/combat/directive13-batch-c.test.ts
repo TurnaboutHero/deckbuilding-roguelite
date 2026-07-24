@@ -80,9 +80,7 @@ const endTurn = (state: CombatState, db: ContentDb) => {
 const useAttack = (state: CombatState, target: number, db: ContentDb, slotIndex = 0): CombatState => {
   const coin = state.zones.hand[0];
   if (coin === undefined) throw new Error('expected a coin in hand');
-  const placed = step(state, { type: 'placeCoin', coin, slot: slot(slotIndex) }, db);
-  if (!placed.ok) throw new Error(placed.error);
-  const used = step(placed.state, { type: 'useFlipSkill', slot: slot(slotIndex), target }, db);
+  const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(slotIndex), coins: [coin], target }, db);
   if (!used.ok) throw new Error(used.error);
   return used.state;
 };

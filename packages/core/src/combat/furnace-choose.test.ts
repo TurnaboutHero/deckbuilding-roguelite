@@ -102,21 +102,19 @@ const withHandDefs = (state: CombatState, defs: readonly string[]): CombatState 
   };
 };
 
-const placeFirst = (state: CombatState, slotIndex = 0): CombatState => {
+const firstCostCoin = (state: CombatState): CombatState['zones']['hand'][number] => {
   const coin = state.zones.hand[0];
   if (coin === undefined) throw new Error('missing cost coin');
-  const placed = step(state, { type: 'placeCoin', coin, slot: slot(slotIndex) }, testDb());
-  if (!placed.ok) throw new Error(placed.error);
-  return placed.state;
+  return coin;
 };
 
 describe('furnace chooseBasicInHand', () => {
   it('grants fire only to the chosen basic coin in hand', () => {
-    const state = placeFirst(withHandDefs(withFaces(combat(), ['heads']), ['basic', 'basic', 'basic', 'fire', 'mana']));
+    const state = withHandDefs(withFaces(combat(), ['heads']), ['basic', 'basic', 'basic', 'fire', 'mana']);
     const chosen = state.zones.hand[1];
     if (chosen === undefined) throw new Error('missing chosen coin');
 
-    const result = step(state, { type: 'useFlipSkill', slot: slot(0), target: 0, chosen: [chosen] }, testDb());
+    const result = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [firstCostCoin(state)], target: 0, chosen: [chosen] }, testDb());
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.error);
@@ -127,23 +125,23 @@ describe('furnace chooseBasicInHand', () => {
   });
 
   it.each([
-    ['elemental coin', (state: CombatState) => [state.zones.hand[2]!]],
+    ['elemental coin', (state: CombatState) => [state.zones.hand[3]!]],
     ['coin outside hand', (state: CombatState) => [state.zones.draw[0]!]],
     ['two coins', (state: CombatState) => [state.zones.hand[0]!, state.zones.hand[1]!]],
     ['empty chosen', () => []],
     ['omitted chosen', () => undefined]
   ])('rejects %s chosen input when a basic coin exists', (_label, choose) => {
-    const state = placeFirst(withHandDefs(combat(), ['basic', 'basic', 'basic', 'fire', 'mana']));
+    const state = withHandDefs(combat(), ['basic', 'basic', 'basic', 'fire', 'mana']);
 
-    const result = step(state, { type: 'useFlipSkill', slot: slot(0), target: 0, chosen: choose(state) }, testDb());
+    const result = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [firstCostCoin(state)], target: 0, chosen: choose(state) }, testDb());
 
     expect(result.ok).toBe(false);
   });
 
   it('allows omitted chosen when no basic coin is in hand and still resolves damage', () => {
-    const state = placeFirst(withHandDefs(withFaces(combat(), ['heads']), ['fire', 'fire', 'mana', 'fire', 'mana']));
+    const state = withHandDefs(withFaces(combat(), ['heads']), ['fire', 'fire', 'mana', 'fire', 'mana']);
 
-    const result = step(state, { type: 'useFlipSkill', slot: slot(0), target: 0 }, testDb());
+    const result = step(state, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [firstCostCoin(state)], target: 0 }, testDb());
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.error);
@@ -152,25 +150,31 @@ describe('furnace chooseBasicInHand', () => {
   });
 
   it('auto-suggests the first basic coin in hand deterministically', () => {
-    const state = placeFirst(withHandDefs(combat(), ['basic', 'fire', 'basic', 'basic', 'mana']));
-    const expected = state.zones.hand[1];
+    const state = withHandDefs(combat(), ['basic', 'fire', 'basic', 'basic', 'mana']);
+    const expected = state.zones.hand[0];
     if (expected === undefined) throw new Error('missing expected chosen coin');
 
-    const first = legalCommands(state, testDb()).filter((command) => command.type === 'useFlipSkill');
-    const second = legalCommands(state, testDb()).filter((command) => command.type === 'useFlipSkill');
+    const first = legalCommands(state, testDb()).filter(
+      (command) => command.type === 'useImmediateFlipSkill' && command.coins[0] === firstCostCoin(state)
+        && command.slot === slot(0)
+    );
+    const second = legalCommands(state, testDb()).filter(
+      (command) => command.type === 'useImmediateFlipSkill' && command.coins[0] === firstCostCoin(state)
+        && command.slot === slot(0)
+    );
 
-    expect(first).toEqual([{ type: 'useFlipSkill', slot: slot(0), reservationId: state.flipReservations[0]!.id, target: 0, chosen: [expected] }]);
+    expect(first).toEqual([{ type: 'useImmediateFlipSkill', slot: slot(0), coins: [firstCostCoin(state)], target: 0, chosen: [expected] }]);
     expect(second).toEqual(first);
   });
 
   it('keeps allBasicInHand flame-rampage behavior unchanged', () => {
-    const state = placeFirst(withHandDefs(combat(), ['basic', 'basic', 'basic', 'fire', 'mana']), 1);
-    const [basicOne, basicTwo, fire, mana] = state.zones.hand;
+    const state = withHandDefs(combat(), ['basic', 'basic', 'basic', 'fire', 'mana']);
+    const [, basicOne, basicTwo, fire, mana] = state.zones.hand;
     if (basicOne === undefined || basicTwo === undefined || fire === undefined || mana === undefined) {
       throw new Error('missing rampage hand');
     }
 
-    const result = step(state, { type: 'useFlipSkill', slot: slot(1) }, testDb());
+    const result = step(state, { type: 'useImmediateFlipSkill', slot: slot(1), coins: [firstCostCoin(state)] }, testDb());
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.error);

@@ -277,11 +277,13 @@ describe('Directive 14 Batch D M10 seal and repeat foundations', () => {
     expect(d14(first).player.skillSeals?.[0]).toMatchObject({ turns: 1 });
     expect(d14(second).player.skillSeals?.[0]).toBeUndefined();
     expect(legalCommands(d14(first), content)).toContainEqual(expect.objectContaining({ type: 'endTurn' }));
-    expect(legalCommands(d14(first), content)).not.toContainEqual(expect.objectContaining({ type: 'useFlipSkill', slot: 0 }));
-    expect(step(d14(first), { type: 'useFlipSkill', slot: slot(0), target: 0 }, content)).toMatchObject({ ok: false, error: 'skill is sealed' });
+    expect(legalCommands(d14(first), content)).not.toContainEqual(expect.objectContaining({ type: 'useImmediateFlipSkill', slot: 0 }));
     const handCoin = first.zones.hand[0];
     if (handCoin === undefined) throw new Error('expected a hand coin');
-    expect(step(d14(first), { type: 'placeCoin', coin: handCoin, slot: slot(0) }, content)).toMatchObject({ ok: false, error: 'skill is sealed' });
+    expect(step(d14(first), { type: 'useImmediateFlipSkill', slot: slot(0), coins: [handCoin], target: 0 }, content)).toMatchObject({
+      ok: false,
+      error: 'skill is sealed'
+    });
   });
 
   it('uses the alternate strike without refreshing a seal owned by the active source', () => {
@@ -336,9 +338,7 @@ describe('Directive 14 Batch D M10 seal and repeat foundations', () => {
     ready.rngImpl = { ...ready.rngImpl, flip: scriptedFlips(['heads']) };
     ready.player.skillSeals = { 0: { turns: 1, effectMultiplier: 0.75, fallback: true } };
     ready.player.nextAttackDamageBonus = 2;
-    const placed = step(ready, { type: 'placeCoin', coin: blood, slot: slot(0) }, content);
-    if (!placed.ok) throw new Error(placed.error);
-    const used = step(placed.state, { type: 'useFlipSkill', slot: slot(0), target: 0 }, content);
+    const used = step(ready, { type: 'useImmediateFlipSkill', slot: slot(0), coins: [blood], target: 0 }, content);
     if (!used.ok) throw new Error(used.error);
 
     const skillDamage = testEvents(used).filter((event) => event.type === 'damageDealt' && event.source === 'skill');

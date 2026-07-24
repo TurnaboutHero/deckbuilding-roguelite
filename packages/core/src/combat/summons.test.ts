@@ -121,9 +121,7 @@ const useSkillAt = (
 ): { state: CombatState; events: readonly unknown[] } => {
   const coin = state.zones.hand[0];
   if (coin === undefined) throw new Error('no coin in hand');
-  const placed = step(state, { type: 'placeCoin', coin, slot: slot(slotIndex) }, db);
-  if (!placed.ok) throw new Error(placed.error);
-  const used = step(placed.state, { type: 'useFlipSkill', slot: slot(slotIndex), ...extra }, db);
+  const used = step(state, { type: 'useImmediateFlipSkill', slot: slot(slotIndex), coins: [coin], ...extra }, db);
   if (!used.ok) throw new Error(used.error);
   return { state: used.state, events: used.events };
 };
