@@ -40,11 +40,10 @@ jobs:
       - run: pnpm test
       - run: pnpm ci:sim
       - run: pnpm build
-      - run: pnpm check:feedback-regression
       - run: pnpm check:content
       - run: pnpm check:assets
       - run: node scripts/check-budget.mjs
-      - run: pnpm -F @game/ui playtest -- ../../playtest-artifacts
+      - run: pnpm check:mobile -- ../../playtest-artifacts
       - run: node apps/ui/scripts/a11y-contrast.mjs contrast-report.json
       - run: node apps/ui/scripts/perf-check.mjs perf-report.json
 

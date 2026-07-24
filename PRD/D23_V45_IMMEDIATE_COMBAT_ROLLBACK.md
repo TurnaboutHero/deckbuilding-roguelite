@@ -117,4 +117,4 @@
 
 ## 8. 검토 상태
 
-WSL Claude CLI의 Fable 최종 릴리스 심사를 완료했다. Fable은 일반 스킬에서 면을 선언하지 않고 실제 코인을 고른 뒤 즉시 RNG 플립하는 결정 B와 D23 계약이 구현되었음을 확인하고 `APPROVE` 판정을 내렸다. 최종 승인 기록은 `.omx/artifacts/claude-fable-v45-release-approval-2026-07-22.md`에 보관한다.
+승인 주체는 WSL Claude CLI의 Fable이며 승인일은 2026-07-22다. Fable은 일반 스킬에서 면을 선언하지 않고 실제 코인을 고른 뒤 즉시 RNG 플립하는 결정 B와 D23 계약이 구현되었음을 확인하고 최종 릴리스 심사에서 `APPROVE` 판정을 내렸다.

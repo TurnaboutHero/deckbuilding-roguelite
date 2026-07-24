@@ -63,8 +63,7 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm --filter @game/ui exec playwright install --with-deps chromium
       - run: pnpm -F @game/ui build
-      - run: pnpm check:feedback-regression
-      - run: pnpm -F @game/ui playtest -- ../../playtest-artifacts
+      - run: pnpm check:mobile -- ../../playtest-artifacts
       # P5.5: 접근성 대비 게이트 (차단)
       - run: node apps/ui/scripts/a11y-contrast.mjs contrast-report.json
         working-directory: .

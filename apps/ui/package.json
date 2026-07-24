@@ -5,7 +5,6 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "feedback-regression": "node scripts/v45-immediate-flow.mjs",
     "shot": "node scripts/screenshot.mjs",
     "playtest": "node scripts/v45-immediate-flow.mjs"
   },
