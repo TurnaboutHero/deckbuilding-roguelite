@@ -46,10 +46,10 @@ describe("policy contract", () => {
 
   it("provides an insertion-order-independent command key and comparator", () => {
     const commands: Command[] = [
-      { type: "useFlipSkill", slot: slot(2), target: 0 },
+      { type: "useImmediateFlipSkill", slot: slot(2), coins: [coin(4)], target: 0 },
       { type: "endTurn" },
-      { type: "placeCoin", coin: coin(10), slot: slot(1) },
-      { type: "placeCoin", coin: coin(2), slot: slot(1) },
+      { type: "useImmediateFlipSkill", slot: slot(1), coins: [coin(10)], target: 0 },
+      { type: "useImmediateFlipSkill", slot: slot(1), coins: [coin(2)], target: 0 },
       {
         type: "useConsumeSkill",
         slot: slot(4),
@@ -75,7 +75,7 @@ describe("policy contract", () => {
   it("uses endTurn as the canonical fallback when it is legal", () => {
     expect(
       canonicalFallbackCommand([
-        { type: "placeCoin", coin: coin(1), slot: slot(0) },
+        { type: "useImmediateFlipSkill", slot: slot(0), coins: [coin(1)], target: 0 },
         { type: "endTurn" },
       ]),
     ).toEqual({ type: "endTurn" });

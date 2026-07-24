@@ -44,8 +44,9 @@ describe("explicit telemetry command replay", () => {
   it("reconstructs every optional reducer choice and accepts legacy omissions", () => {
     expect(
       commandFromHumanTelemetry({
-        type: "useFlipSkill",
+        type: "useImmediateFlipSkill",
         slot: 2,
+        coins: [1, 2],
         target: 1,
         chosen: [3],
         desiredCoin: "fire",
@@ -53,8 +54,9 @@ describe("explicit telemetry command replay", () => {
         chosenSummon: 8,
       }),
     ).toEqual({
-      type: "useFlipSkill",
+      type: "useImmediateFlipSkill",
       slot: 2,
+      coins: [1, 2],
       target: 1,
       chosen: [3],
       desiredCoin: "fire",
@@ -79,23 +81,29 @@ describe("explicit telemetry command replay", () => {
     expect(
       commandFromHumanTelemetry({ type: "endTurn", preserve: [6] }),
     ).toEqual({ type: "endTurn", preserve: [6] });
-    expect(
-      commandFromHumanTelemetry({ type: "useFlipSkill", slot: 0 }),
-    ).toEqual({ type: "useFlipSkill", slot: 0 });
   });
 });
 
 const commandFact = (command: Command): HumanDecisionFact["commands"][number] => {
-  if (command.type === "placeCoin") {
-    return { type: "placeCoin", coin: Number(command.coin), slot: Number(command.slot) };
-  }
-  if (command.type === "unplaceCoin") {
-    return { type: "unplaceCoin", coin: Number(command.coin) };
-  }
-  if (command.type === "useFlipSkill") {
-    return command.target === undefined
-      ? { type: "useFlipSkill", slot: Number(command.slot) }
-      : { type: "useFlipSkill", slot: Number(command.slot), target: command.target };
+  if (command.type === "useImmediateFlipSkill") {
+    return {
+      type: "useImmediateFlipSkill",
+      slot: Number(command.slot),
+      coins: command.coins.map(Number),
+      ...(command.target === undefined ? {} : { target: command.target }),
+      ...(command.chosen === undefined
+        ? {}
+        : { chosen: command.chosen.map(Number) }),
+      ...(command.desiredCoin === undefined
+        ? {}
+        : { desiredCoin: String(command.desiredCoin) }),
+      ...(command.chosenEquipment === undefined
+        ? {}
+        : { chosenEquipment: String(command.chosenEquipment) }),
+      ...(command.chosenSummon === undefined
+        ? {}
+        : { chosenSummon: command.chosenSummon }),
+    };
   }
   if (command.type === "useConsumeSkill") {
     const fact = {
@@ -347,6 +355,14 @@ describe("human log report", () => {
   it("reads generated logs and verifies replay", () => {
     const dir = mkdtempSync(join(tmpdir(), "human-log-"));
     const trace = makeTrace("human-fixture-1");
+    expect(
+      trace.combats[0]?.decisions.some((decision) =>
+        decision.commands.some(
+          (command) => command.type === "useImmediateFlipSkill",
+        ),
+      ),
+    ).toBe(true);
+    expect(trace.combats[0]?.outcome?.result).toBe("victory");
     writeTrace(dir, "a.json", trace);
 
     const read = readHumanLogDirectory(dir);
@@ -364,8 +380,9 @@ describe("human log report", () => {
     decision.source = "auto-turn-end";
     decision.commands = [
       {
-        type: "useFlipSkill",
+        type: "useImmediateFlipSkill",
         slot: 0,
+        coins: [1, 2],
         target: 1,
         chosen: [2],
         desiredCoin: "fire",
@@ -490,7 +507,6 @@ describe("human log report", () => {
           commands: [],
           events: [
             { type: "skillUsed", slot: 0 as never, skill: "slash" as never, kind: "flip" },
-            { type: "coinPlaced", coin: 1 as never, slot: 0 as never },
             { type: "coinFlipped", coin: 1 as never, face: "heads" },
           ],
         },

@@ -57,7 +57,6 @@ const zoneCoins = (state: CombatState): CoinUid[] => [
   ...Object.values(state.zones.placed).flat(),
   ...state.zones.discard,
   ...state.zones.exhausted,
-  ...state.flipReservations.flatMap((reservation) => reservation.coinUids),
   ...state.custody.flatMap((entry) => entry.coins),
 ];
 
@@ -68,7 +67,7 @@ export const combatInvariantViolations = (
   const violations: string[] = [];
   const ledgerSize = Object.keys(state.coins).length;
   const zoned = zoneCoins(state);
-  if (zoneCoinCount(state.zones, state.custody, state.flipReservations) !== ledgerSize) {
+  if (zoneCoinCount(state.zones, state.custody) !== ledgerSize) {
     violations.push("zone coin count mismatch");
   }
   if (ledgerSize !== expectedCoins) violations.push("coin ledger mismatch");
@@ -193,36 +192,13 @@ const observeEnchantActivations = (
   }
 };
 
-const multiCoinOpportunity = (
-  state: CombatState,
-  commands: readonly Command[],
-): boolean => {
+const multiCoinOpportunity = (commands: readonly Command[]): boolean => {
   for (const command of commands) {
     if (command.type === "useConsumeSkill" && command.coins.length >= 2) {
       return true;
     }
     if (command.type === "useImmediateFlipSkill" && command.coins.length >= 2) {
       return true;
-    }
-    if (command.type === "useFlipSkill") {
-      const slot = state.slots[Number(command.slot)];
-      const skill =
-        slot === undefined ? undefined : contentDb.skills[String(slot.skillId)];
-      if (skill?.type === "flip" && skill.cost >= 2) return true;
-    }
-    if (command.type === "placeCoin") {
-      const slot = state.slots[Number(command.slot)];
-      const skill =
-        slot === undefined ? undefined : contentDb.skills[String(slot.skillId)];
-      if (
-        skill?.type === "flip" &&
-        skill.cost >= 2 &&
-        (state.zones.placed[command.slot]?.length ?? 0) +
-          state.zones.hand.length >=
-          skill.cost
-      ) {
-        return true;
-      }
     }
   }
   return false;
@@ -243,13 +219,12 @@ const opportunitySnapshot = (
     handCoinUids: state.zones.hand.map(Number).sort((left, right) => left - right),
     placedCoinUids: Object.values(state.zones.placed)
       .flat()
-      .concat(state.flipReservations.flatMap((reservation) => reservation.coinUids))
       .map(Number)
       .sort((left, right) => left - right),
     consumeOpportunity: commands.some(
       (command) => command.type === "useConsumeSkill",
     ),
-    multiCoinSkillOpportunity: multiCoinOpportunity(state, commands),
+    multiCoinSkillOpportunity: multiCoinOpportunity(commands),
   };
 };
 
@@ -260,7 +235,6 @@ const decisionSkillTrace = (
 ): M6SkillDecisionTrace | null => {
   if (
     command.type !== "useImmediateFlipSkill" &&
-    command.type !== "useFlipSkill" &&
     command.type !== "useConsumeSkill"
   ) {
     return null;
@@ -268,14 +242,7 @@ const decisionSkillTrace = (
   const slot = before.slots[Number(command.slot)];
   if (slot === undefined) return null;
   const resolution = command.type === "useConsumeSkill" ? "consume" : "flip";
-  const coinCount =
-    command.type === "useImmediateFlipSkill"
-      ? command.coins.length
-      : command.type === "useFlipSkill"
-      ? (before.flipReservations.find(
-          (reservation) => reservation.id === command.reservationId,
-        )?.coinUids.length ?? before.zones.placed[command.slot]?.length ?? 0)
-      : command.coins.length;
+  const coinCount = command.coins.length;
   const directDamage = events.reduce(
     (total, event) =>
       total +
@@ -330,11 +297,7 @@ const finalizeTurn = (turn: MutableTurnTrace): M6TurnTrace => ({
 
 const unusedCoinCount = (state: CombatState): number =>
   state.zones.hand.length +
-  Object.values(state.zones.placed).flat().length +
-  state.flipReservations.reduce(
-    (total, reservation) => total + reservation.coinUids.length,
-    0,
-  );
+  Object.values(state.zones.placed).flat().length;
 
 export const playPolicyCombat = (
   initial: CombatState,

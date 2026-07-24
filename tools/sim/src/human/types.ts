@@ -5,21 +5,10 @@ export type RewardStage = "coin" | "removal" | "fallback-coin" | "skill";
 export type RewardResolution = "selected" | "skipped" | "declined";
 
 export type TelemetryCommand =
-  | { type: "placeCoin"; coin: number; slot: number }
-  | { type: "unplaceCoin"; coin: number }
   | {
       type: "useImmediateFlipSkill";
       slot: number;
       coins: number[];
-      target?: number;
-      chosen?: number[];
-      desiredCoin?: string;
-      chosenEquipment?: string;
-      chosenSummon?: number;
-    }
-  | {
-      type: "useFlipSkill";
-      slot: number;
       target?: number;
       chosen?: number[];
       desiredCoin?: string;

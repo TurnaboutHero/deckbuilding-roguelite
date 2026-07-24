@@ -343,9 +343,8 @@ const skillIdFor = (
   command: Command,
 ): string | undefined => {
   if (
-    command.type !== "useFlipSkill" &&
-    command.type !== "useConsumeSkill" &&
-    command.type !== "placeCoin"
+    command.type !== "useImmediateFlipSkill" &&
+    command.type !== "useConsumeSkill"
   ) {
     return undefined;
   }
@@ -356,10 +355,10 @@ const skillIdFor = (
 
 const coinPriority = (
   state: CombatState,
-  command: Extract<Command, { type: "placeCoin" }>,
+  coin: Extract<Command, { type: "useImmediateFlipSkill" }>["coins"][number],
   skillId: string,
 ): number => {
-  const defId = String(state.coins[Number(command.coin)]?.defId ?? "");
+  const defId = String(state.coins[Number(coin)]?.defId ?? "");
   const ordered = [
     "ice-claw",
     "ice-sleight",
@@ -390,28 +389,38 @@ const firstUseForSkill = (
   state: CombatState,
   commands: readonly Command[],
   skillId: string,
-): Command | undefined =>
-  commands.find(
-    (command) =>
-      (command.type === "useFlipSkill" ||
-        command.type === "useConsumeSkill") &&
-      skillIdFor(state, command) === skillId,
-  );
-
-const firstPlacementForSkill = (
-  state: CombatState,
-  commands: readonly Command[],
-  skillId: string,
 ): Command | undefined => {
-  const placements = commands.filter(
-    (command): command is Extract<Command, { type: "placeCoin" }> =>
-      command.type === "placeCoin" &&
-      skillIdFor(state, command) === skillId,
+  const uses = commands.filter(
+    (
+      command,
+    ): command is Extract<
+      Command,
+      { type: "useImmediateFlipSkill" | "useConsumeSkill" }
+    > => skillIdFor(state, command) === skillId,
   );
-  return placements.sort(
-    (left, right) =>
-      coinPriority(state, left, skillId) - coinPriority(state, right, skillId),
-  )[0];
+  const consume = uses.find((command) => command.type === "useConsumeSkill");
+  if (consume !== undefined) return consume;
+  return uses
+    .filter(
+      (
+        command,
+      ): command is Extract<Command, { type: "useImmediateFlipSkill" }> =>
+        command.type === "useImmediateFlipSkill",
+    )
+    .sort((left, right) => {
+      const leftPriorities = left.coins
+        .map((coin) => coinPriority(state, coin, skillId))
+        .sort((a, b) => a - b);
+      const rightPriorities = right.coins
+        .map((coin) => coinPriority(state, coin, skillId))
+        .sort((a, b) => a - b);
+      for (let index = 0; index < leftPriorities.length; index += 1) {
+        const difference =
+          leftPriorities[index]! - (rightPriorities[index] ?? 0);
+        if (difference !== 0) return difference;
+      }
+      return 0;
+    })[0];
 };
 
 export const chooseRunCommand = (state: CombatState): Command => {
@@ -424,10 +433,6 @@ export const chooseRunCommand = (state: CombatState): Command => {
   for (const skillId of priorities) {
     const use = firstUseForSkill(state, commands, skillId);
     if (use !== undefined) return use;
-  }
-  for (const skillId of priorities) {
-    const place = firstPlacementForSkill(state, commands, skillId);
-    if (place !== undefined) return place;
   }
   return { type: "endTurn" };
 };
@@ -477,9 +482,6 @@ const progressFingerprint = (state: CombatState): string =>
     state.zones.exhausted.length,
     Object.values(state.zones.placed)
       .map((coins) => coins.length)
-      .join(","),
-    state.flipReservations
-      .map((reservation) => `${String(reservation.slot)}:${reservation.coinUids.length}`)
       .join(","),
     state.slots.map((slot) => slot.cooldownRemaining).join(""),
     state.turnTriggers.length,

@@ -186,9 +186,7 @@ const foldTurn = (fold: MutableFold, group: readonly ReplayedDecision[]): void =
         const skill = contentDb.skills[String(event.skill)];
         if (skill?.type === "flip" && skill.cost >= 2) fold.multiCoinUses += 1;
       }
-      if (event.type === "coinPlaced" && initialHand.has(Number(event.coin))) {
-        touchedDrawn.add(Number(event.coin));
-      }
+      if (event.type === "coinFlipped" && initialHand.has(Number(event.coin))) touchedDrawn.add(Number(event.coin));
       if (event.type === "coinsConsumed") {
         for (const coin of event.coins) {
           if (initialHand.has(Number(coin))) touchedDrawn.add(Number(coin));

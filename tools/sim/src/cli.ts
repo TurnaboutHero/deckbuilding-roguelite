@@ -50,7 +50,7 @@ const eventText = (event: CombatEvent): string => {
 };
 
 const assertInvariants = (state: CombatState, expectedCoins: number): string | undefined => {
-  if (zoneCoinCount(state.zones, state.custody, state.flipReservations) !== Object.keys(state.coins).length) return 'zone coin count mismatch';
+  if (zoneCoinCount(state.zones, state.custody) !== Object.keys(state.coins).length) return 'zone coin count mismatch';
   // 총량 원장: 전 영역 합 = 초기 코인 수 + coinCreated 누적 (§8.1 불변식 1)
   if (Object.keys(state.coins).length !== expectedCoins) return 'coin ledger mismatch';
   if (state.player.hp > state.player.maxHp || state.player.hp < 0) return 'player hp out of bounds';
@@ -67,16 +67,13 @@ const chooseAuto = (state: CombatState): Command => {
     enemy.intent.actions.some((action) => action.kind === 'attack' && enemy.hp > 0)
   );
   const commands = legalCommands(state, contentDb);
-  const useGuard = commands.find((cmd) => cmd.type === 'useFlipSkill' && Number(cmd.slot) === 1);
-  const useSlash = commands.find((cmd) => cmd.type === 'useFlipSkill' && Number(cmd.slot) === 0);
+  const useGuard = commands.find((cmd) => cmd.type === 'useImmediateFlipSkill' && Number(cmd.slot) === 1);
+  const useSlash = commands.find((cmd) => cmd.type === 'useImmediateFlipSkill' && Number(cmd.slot) === 0);
   if (enemyAttacking && useGuard !== undefined) return useGuard;
   if (useSlash !== undefined) return useSlash;
 
-  const preferredSlot = enemyAttacking ? 1 : 0;
-  const place = commands.find((cmd) => cmd.type === 'placeCoin' && Number(cmd.slot) === preferredSlot);
-  if (place !== undefined) return place;
-  const anyPlace = commands.find((cmd) => cmd.type === 'placeCoin');
-  return anyPlace ?? { type: 'endTurn' };
+  const anyImmediate = commands.find((cmd) => cmd.type === 'useImmediateFlipSkill');
+  return anyImmediate ?? { type: 'endTurn' };
 };
 
 const runPlay = () => {

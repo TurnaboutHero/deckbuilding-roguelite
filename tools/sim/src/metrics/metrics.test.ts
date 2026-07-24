@@ -35,7 +35,7 @@ const decision = (
   decisionIndex,
   turn,
   commandKey,
-  commandType: resolvedSkill === null ? "placeCoin" : `use-${resolvedSkill.resolution}`,
+  commandType: resolvedSkill === null ? "endTurn" : `use-${resolvedSkill.resolution}`,
   skill: resolvedSkill,
 });
 
@@ -65,8 +65,8 @@ const gatekeeperSequence = (
 ): readonly M6TurnTrace[] => [
   turn(1, {
     decisions: [
-      decision(0, 1, "placeCoin:1:0", null),
-      decision(1, 1, "useFlipSkill:0:0", firstSkill),
+      decision(0, 1, "endTurn", null),
+      decision(1, 1, "useImmediate:0:0", firstSkill),
     ],
   }),
   turn(2, {
@@ -402,7 +402,7 @@ describe("foldM6Metrics", () => {
       variantId: "baseline",
       combatIndex: 2,
       policyIds: ["greedy", "random"],
-      commandSequence: ["placeCoin:1:0", "useFlipSkill:0:0", "useConsumeSkill:2:1:0"],
+      commandSequence: ["endTurn", "useImmediate:0:0", "useConsumeSkill:2:1:0"],
     });
     expect(report.metadata.informational.find((item) => item.id === "anomalies")?.status).toBe(
       "informational",

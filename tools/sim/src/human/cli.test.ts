@@ -49,17 +49,29 @@ const humanReportEntry = join(repoRoot, "tools", "sim", "src", "human", "human-r
 const hpList = (state: CombatState): number[] =>
   state.enemies.map((enemy) => enemy.hp);
 
+const furnaceList = (state: CombatState): number[] =>
+  state.enemies.map((enemy) => enemy.furnaceTemperature ?? 0);
+
 const commandFact = (command: Command): HumanDecisionFact["commands"][number] => {
-  if (command.type === "placeCoin") {
-    return { type: "placeCoin", coin: Number(command.coin), slot: Number(command.slot) };
-  }
-  if (command.type === "unplaceCoin") {
-    return { type: "unplaceCoin", coin: Number(command.coin) };
-  }
-  if (command.type === "useFlipSkill") {
-    return command.target === undefined
-      ? { type: "useFlipSkill", slot: Number(command.slot) }
-      : { type: "useFlipSkill", slot: Number(command.slot), target: command.target };
+  if (command.type === "useImmediateFlipSkill") {
+    return {
+      type: "useImmediateFlipSkill",
+      slot: Number(command.slot),
+      coins: command.coins.map(Number),
+      ...(command.target === undefined ? {} : { target: command.target }),
+      ...(command.chosen === undefined
+        ? {}
+        : { chosen: command.chosen.map(Number) }),
+      ...(command.desiredCoin === undefined
+        ? {}
+        : { desiredCoin: String(command.desiredCoin) }),
+      ...(command.chosenEquipment === undefined
+        ? {}
+        : { chosenEquipment: String(command.chosenEquipment) }),
+      ...(command.chosenSummon === undefined
+        ? {}
+        : { chosenSummon: command.chosenSummon }),
+    };
   }
   if (command.type === "useConsumeSkill") {
     const fact = {
@@ -113,6 +125,8 @@ const decisionFact = (
     playerAfter: after.player.hp,
     enemiesBefore: hpList(before),
     enemiesAfter: hpList(after),
+    enemyFurnaceBefore: furnaceList(before),
+    enemyFurnaceAfter: furnaceList(after),
   },
 });
 
@@ -190,7 +204,7 @@ const makeTrace = (seed: string): HumanRunTraceLike => {
     contentDb,
   );
   const trace: HumanRunTraceLike = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     source: "human",
     runSeed: seed,
     contentVersion: CONTENT_VERSION,

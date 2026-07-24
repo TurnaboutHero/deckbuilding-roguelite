@@ -128,47 +128,17 @@ const sanitizeCommand = (value: unknown, label: string): TelemetryCommand => {
   const type = literalValue(
     object.type,
     [
-      "placeCoin",
-      "unplaceCoin",
       "useImmediateFlipSkill",
-      "useFlipSkill",
       "useConsumeSkill",
       "endTurn",
     ] as const,
     `${label}.type`,
   );
-  if (type === "placeCoin") {
-    return {
-      type,
-      coin: nonNegativeInteger(object, "coin", label),
-      slot: nonNegativeInteger(object, "slot", label),
-    };
-  }
-  if (type === "unplaceCoin") {
-    return { type, coin: nonNegativeInteger(object, "coin", label) };
-  }
   if (type === "useImmediateFlipSkill") {
     const command: Extract<TelemetryCommand, { type: "useImmediateFlipSkill" }> = {
       type,
       slot: nonNegativeInteger(object, "slot", label),
       coins: numberArray(object.coins, `${label}.coins`),
-    };
-    const target = optionalIndex(object, "target", label);
-    const chosenSummon = optionalIndex(object, "chosenSummon", label);
-    if (target !== undefined) command.target = target;
-    if (object.chosen !== undefined)
-      command.chosen = numberArray(object.chosen, `${label}.chosen`);
-    if (object.desiredCoin !== undefined)
-      command.desiredCoin = stringValue(object, "desiredCoin", label);
-    if (object.chosenEquipment !== undefined)
-      command.chosenEquipment = stringValue(object, "chosenEquipment", label);
-    if (chosenSummon !== undefined) command.chosenSummon = chosenSummon;
-    return command;
-  }
-  if (type === "useFlipSkill") {
-    const command: Extract<TelemetryCommand, { type: "useFlipSkill" }> = {
-      type,
-      slot: nonNegativeInteger(object, "slot", label),
     };
     const target = optionalIndex(object, "target", label);
     const chosenSummon = optionalIndex(object, "chosenSummon", label);

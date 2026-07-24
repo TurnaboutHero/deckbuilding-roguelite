@@ -29,14 +29,13 @@ const zoneCoins = (state: CombatState): CoinUid[] => [
   ...Object.values(state.zones.placed).flat(),
   ...state.zones.discard,
   ...state.zones.exhausted,
-  ...state.flipReservations.flatMap((reservation) => reservation.coinUids),
   ...state.custody.flatMap((entry) => entry.coins),
 ];
 
 const assertInvariants = (state: CombatState, expectedCoins: number): void => {
   const ledgerSize = Object.keys(state.coins).length;
   const zoned = zoneCoins(state);
-  if (zoneCoinCount(state.zones, state.custody, state.flipReservations) !== ledgerSize) {
+  if (zoneCoinCount(state.zones, state.custody) !== ledgerSize) {
     throw new Error("zone coin count mismatch");
   }
   if (ledgerSize !== expectedCoins) throw new Error("coin ledger mismatch");

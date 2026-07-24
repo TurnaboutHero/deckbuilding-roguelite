@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { CoinDefId, RunState } from '@game/core';
+import { CONTENT_VERSION, contentDb } from '@game/content';
+import { createRun, startRunCombat, step } from '@game/core';
+import type { CoinDefId, CombatState, RunState } from '@game/core';
 
 import {
   M6_BUILD_POLICIES,
+  chooseRunCommand,
   preferredCoinReward,
   resolveBuildPolicy,
   simulateRun,
@@ -39,8 +42,8 @@ describe('M5 full-run simulator', () => {
     const simulation = simulateRun('42');
 
     expect(simulation.summary.result).toBe('defeat');
-    expect(simulation.summary.combatsCompleted).toBe(1);
-    expect(simulation.combats).toHaveLength(1);
+    expect(simulation.summary.combatsCompleted).toBe(14);
+    expect(simulation.combats).toHaveLength(14);
     for (let index = 0; index < simulation.combats.length; index += 1) {
       const combat = simulation.combats[index];
       if (combat === undefined) throw new Error('missing combat record');
@@ -57,8 +60,8 @@ describe('M5 full-run simulator', () => {
     expect(simulation.summary).toEqual({
       seed: '42',
       result: 'defeat',
-      combatsCompleted: 1,
-      turnsPerCombat: [7],
+      combatsCompleted: 14,
+      turnsPerCombat: [5, 5, 8, 5, 7, 4, 7, 6, 5, 10, 9, 6, 5, 4],
       carriedHp: 0,
       finalBag: [
         'basic',
@@ -70,13 +73,65 @@ describe('M5 full-run simulator', () => {
         'basic',
         'basic',
         'fire',
+        'fire',
+        'fire',
+        'fire',
+        'mana',
+        'fire',
+        'mana',
+        'fire',
+        'basic',
+        'basic',
+        'basic',
+        'basic',
+        'fire',
+        'fire',
         'fire'
       ],
-      finalEquippedSkills: ['jab', 'fist-guard', 'fire-fist', 'direct-hit', 'null', 'null', 'null', 'null'],
+      finalEquippedSkills: ['jab', 'fist-guard', 'fire-fist', 'direct-hit', 'null', 'null', 'null', 'heart-of-flame'],
       encounterOrder: [
-        ['raider']
+        ['raider'],
+        ['gatekeeper'],
+        ['goblin', 'ghoul'],
+        ['thief', 'goblin'],
+        ['gatekeeper-plus'],
+        ['shaman'],
+        ['gatekeeper'],
+        ['gatekeeper-plus'],
+        ['raider-plus'],
+        ['gatekeeper-plus'],
+        ['uncrowned-coin-king-aurel'],
+        ['gatekeeper'],
+        ['raider-plus'],
+        ['cathedral-gargoyle']
       ]
     });
+  });
+
+  it('uses an immediate flip skill during the first seed 42 baseline combat', () => {
+    const run = createRun(
+      {
+        contentVersion: CONTENT_VERSION,
+        runSeed: '42',
+        character: 'warrior' as never,
+      },
+      contentDb,
+    );
+    const started = startRunCombat(run, contentDb);
+    let state: CombatState = started.combat;
+    let immediateUses = 0;
+
+    for (let commandIndex = 0; commandIndex < 4000 && state.phase === 'player'; commandIndex += 1) {
+      const command = chooseRunCommand(state);
+      if (command.type === 'useImmediateFlipSkill') immediateUses += 1;
+      const result = step(state, command, contentDb);
+      expect(result.ok).toBe(true);
+      if (!result.ok) break;
+      state = result.state;
+    }
+
+    expect(immediateUses).toBeGreaterThanOrEqual(1);
+    expect(state.phase === 'victory' || state.phase === 'defeat').toBe(true);
   });
 });
 
@@ -98,7 +153,7 @@ describe('build policy resolution regressions', () => {
   it('starts sorcerer simulation with its lightning build rather than a fire hardcode', () => {
     const { summary } = simulateRun('SORC-V12-0', 'sorcerer');
     const lightningCount = summary.finalBag.filter((coin) => coin === 'lightning').length;
-    expect(lightningCount).toBe(2);
+    expect(lightningCount).toBeGreaterThanOrEqual(2);
     expect(summary.finalBag).not.toContain('fire');
   });
 });

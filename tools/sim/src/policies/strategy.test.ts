@@ -172,9 +172,7 @@ const policySlot = (
     commandKey(command),
   );
   if (
-    command.type !== "placeCoin" &&
     command.type !== "useImmediateFlipSkill" &&
-    command.type !== "useFlipSkill" &&
     command.type !== "useConsumeSkill"
   ) {
     throw new Error(`expected a slot command, received ${command.type}`);

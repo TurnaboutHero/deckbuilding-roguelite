@@ -16,14 +16,14 @@ const EXPECTED_RUNS = GAMES_PER_POLICY * POLICY_IDS.length;
 const SEED_42_GOLDEN = {
   seed: "42",
   result: "defeat",
-  // 2026-07-22 v4.5 immediate combat: the lower basic-skill floor and immediate
-  // RNG resolution intentionally change the deterministic opening outcome.
-  combatsCompleted: 1,
+  // v4.5 baseline automation now issues immediate flip commands, so seed 42
+  // clears thirteen combats before losing the fourteenth.
+  combatsCompleted: 14,
   // 1.1.0-p6 재고정 — 3막·격투가 셋·막 스케일 ×1.15/1.3·막 보스 전체 회복 (balance-provisional)
   // 1.6.0-blood 재고정 — 혈액 마검사 및 보상 풀 정책 반영 (balance-provisional)
   // 2026-07-16 P13: 보상 풀 전속성 가중 개방(basic+signature → all-element weighted)으로 재앵커
   // 2026-07-17 v1.2 화염 시작기 이관 — balance-provisional, 깊이 2 유지.
-  turnsPerCombat: [7],
+  turnsPerCombat: [5, 5, 8, 5, 7, 4, 7, 6, 5, 10, 9, 6, 5, 4],
   carriedHp: 0,
   finalBag: [
     "basic",
@@ -36,10 +36,36 @@ const SEED_42_GOLDEN = {
     "basic",
     "fire",
     "fire",
+    "fire",
+    "fire",
+    "mana",
+    "fire",
+    "mana",
+    "fire",
+    "basic",
+    "basic",
+    "basic",
+    "basic",
+    "fire",
+    "fire",
+    "fire",
   ],
-  finalEquippedSkills: ["jab", "fist-guard", "fire-fist", "direct-hit", "null", "null", "null", "null"],
+  finalEquippedSkills: ["jab", "fist-guard", "fire-fist", "direct-hit", "null", "null", "null", "heart-of-flame"],
   encounterOrder: [
     ["raider"],
+    ["gatekeeper"],
+    ["goblin", "ghoul"],
+    ["thief", "goblin"],
+    ["gatekeeper-plus"],
+    ["shaman"],
+    ["gatekeeper"],
+    ["gatekeeper-plus"],
+    ["raider-plus"],
+    ["gatekeeper-plus"],
+    ["uncrowned-coin-king-aurel"],
+    ["gatekeeper"],
+    ["raider-plus"],
+    ["cathedral-gargoyle"],
   ],
 } as const;
 
