@@ -8,6 +8,7 @@ export interface ResolutionSummary {
   costNote: string | null;
   baseLines: string[];
   bonusLines: string[];
+  coinLines: string[];
   triggerLines: string[];
   statusLines: string[];
   totalLine: string;
@@ -171,6 +172,7 @@ export function buildResolutionSummary(
       skill.type === 'consume' ? `${elementKo(skill.consume.element)} ×${skill.consume.count} 지불 — 플립 없음` : null,
     baseLines,
     bonusLines: skill.type === 'flip' && ladderSkill === undefined && bonusLines.length === 0 ? ['면 보너스 없음'] : bonusLines,
+    coinLines: [],
     triggerLines: triggerLines(events),
     statusLines: statusLines(events),
     totalLine: totalLine(events)

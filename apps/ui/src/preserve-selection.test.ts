@@ -1,5 +1,5 @@
 import { contentDb } from "@game/content";
-import type { CoinUid, SlotId } from "@game/core";
+import type { CoinUid } from "@game/core";
 import { createCombat, step } from "@game/core";
 import { describe, expect, it } from "vitest";
 
@@ -10,32 +10,15 @@ import {
   togglePreservedCoin,
 } from "./preserve-selection";
 
-const slot = (value: number) => value as SlotId;
-
 describe("turn-end preserve selection", () => {
-  it("exposes the keyboard contract and includes hand plus placed candidates", () => {
-    let state = createCombat(
+  it("exposes the keyboard contract and includes hand candidates", () => {
+    const state = createCombat(
       { character: "frost-knight" as never, enemies: ["raider" as never] },
       contentDb,
       "preserve-ui-candidates",
     );
-    const placedCoin = state.zones.hand[0]!;
-    const placed = step(
-      state,
-      { type: "placeCoin", coin: placedCoin, slot: slot(0) },
-      contentDb,
-    );
-    if (!placed.ok) throw new Error(placed.error);
-    state = placed.state;
-    expect(state.zones.placed[slot(0)]).toEqual([]);
-    expect(state.flipReservations).toEqual([
-      expect.objectContaining({ coinUids: [placedCoin] }),
-    ]);
     const selection = beginPreserveSelection(state, contentDb);
-    expect(selection?.candidates).toEqual([
-      ...state.zones.hand,
-      placedCoin,
-    ]);
+    expect(selection?.candidates).toEqual(state.zones.hand);
     expect(PRESERVE_SELECTION_INSTRUCTIONS).toContain("Enter");
     expect(PRESERVE_SELECTION_INSTRUCTIONS).toContain("Escape");
   });

@@ -6,10 +6,6 @@ export const sfxCuesFor = (event: CombatEvent): SfxKind[] => {
   switch (event.type) {
     case "coinFlipped":
       return [event.face === "heads" ? "flip-heads" : "flip-tails"];
-    case "coinPlaced":
-      return ["coin-place"];
-    case "coinUnplaced":
-      return ["coin-return"];
     case "coinCreated":
       return ["coin-create"];
     case "coinsConsumed":

@@ -16,10 +16,6 @@
   z-index: var(--z-tooltip);
 }
 
-.overlay-layer-drag {
-  z-index: var(--z-drag);
-}
-
 .overlay-layer-modal {
   z-index: var(--z-modal);
 }

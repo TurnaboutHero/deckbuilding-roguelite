@@ -36,9 +36,10 @@ const withOneDecision = (): {
   );
   if (coin === undefined) throw new Error("missing basic test coin");
   const command = {
-    type: "placeCoin" as const,
-    coin: coin as CoinUid,
+    type: "useImmediateFlipSkill" as const,
     slot: 0 as SlotId,
+    coins: [coin as CoinUid],
+    target: 0,
   };
   const result = step(combat, command, contentDb);
   if (!result.ok) throw new Error(result.error);
@@ -133,8 +134,9 @@ describe("human telemetry capture", () => {
     if (coin === undefined) throw new Error("missing test coin");
     const commands: Command[] = [
       {
-        type: "useFlipSkill",
+        type: "useImmediateFlipSkill",
         slot: 0 as SlotId,
+        coins: [coin],
         target: 1,
         chosen: [coin],
         desiredCoin: "fire" as never,
@@ -166,8 +168,9 @@ describe("human telemetry capture", () => {
       source: "auto-turn-end",
       commands: [
         {
-          type: "useFlipSkill",
+          type: "useImmediateFlipSkill",
           slot: 0,
+          coins: [Number(coin)],
           target: 1,
           chosen: [Number(coin)],
           desiredCoin: "fire",
@@ -236,15 +239,22 @@ describe("human telemetry capture", () => {
     });
     expect(trace.combats[0]?.decisions[0]).toEqual({
       turn: 1,
-      commands: [{ type: "placeCoin", coin: expect.any(Number), slot: 0 }],
-      skills: [],
-      flips: [],
-      damage: [],
+      commands: [
+        {
+          type: "useImmediateFlipSkill",
+          slot: 0,
+          coins: [expect.any(Number)],
+          target: 0,
+        },
+      ],
+      skills: [{ slot: 0, skill: "jab", kind: "flip" }],
+      flips: [expect.objectContaining({ coin: expect.any(Number) })],
+      damage: expect.any(Array),
       hp: {
         playerBefore: initial.player.hp,
         playerAfter: initial.player.hp,
         enemiesBefore: initial.enemies.map((enemy) => enemy.hp),
-        enemiesAfter: initial.enemies.map((enemy) => enemy.hp),
+        enemiesAfter: [73],
         enemyFurnaceBefore: initial.enemies.map((enemy) => enemy.furnaceTemperature ?? 0),
         enemyFurnaceAfter: initial.enemies.map((enemy) => enemy.furnaceTemperature ?? 0),
         enemyRoyalVaultBefore: [],
@@ -257,9 +267,12 @@ describe("human telemetry capture", () => {
 
   it("captures flip, damage, and HP deltas only from the returned core events/state", () => {
     const { trace: placed, combat } = withOneDecision();
+    const coin = combat.zones.hand[0];
+    if (coin === undefined) throw new Error("missing test coin");
     const command = {
-      type: "useFlipSkill" as const,
+      type: "useImmediateFlipSkill" as const,
       slot: 0 as SlotId,
+      coins: [coin],
       target: 0,
     };
     const result = step(combat, command, contentDb);
@@ -274,7 +287,12 @@ describe("human telemetry capture", () => {
     });
     const fact = trace.combats[0]?.decisions[1];
     expect(fact?.commands).toEqual([
-      { type: "useFlipSkill", slot: 0, target: 0 },
+      {
+        type: "useImmediateFlipSkill",
+        slot: 0,
+        coins: [Number(coin)],
+        target: 0,
+      },
     ]);
     // P6 D5: 화염 격투가 시작 슬롯 0은 slash → jab (정권)
     expect(fact?.skills).toEqual([{ slot: 0, skill: "jab", kind: "flip" }]);

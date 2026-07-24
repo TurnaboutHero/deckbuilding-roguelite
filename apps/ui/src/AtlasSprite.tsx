@@ -84,6 +84,7 @@ export const AtlasSprite = ({ atlasUrl, manifest, motion, playKey, side }: Atlas
       aria-hidden="true"
       className={`sprite-frame ${side}`}
       focusable="false"
+      pointerEvents="none"
       preserveAspectRatio="xMidYMid meet"
       viewBox={`${rect.x} ${rect.y} ${rect.w} ${rect.h}`}
     >
@@ -91,6 +92,7 @@ export const AtlasSprite = ({ atlasUrl, manifest, motion, playKey, side }: Atlas
         height={manifest.frame_layout.sheetHeight}
         href={atlasUrl}
         imageRendering="pixelated"
+        pointerEvents="none"
         width={manifest.frame_layout.sheetWidth}
         onError={(event) => {
           // P5.4 자산 폴백: 아틀라스 로드 실패 시 깨진 사각형 대신 조용히 제거

@@ -6,7 +6,7 @@ const cues = (event: CombatEvent) => sfxCuesFor(event);
 
 describe("sfxCuesFor", () => {
   it("distinguishes coin and resource actions", () => {
-    expect(cues({ type: "coinPlaced", coin: 1 as never, slot: 0 as never })).toEqual(["coin-place"]);
+    expect(cues({ type: "coinFlipped", coin: 1 as never, face: "heads" })).toEqual(["flip-heads"]);
     expect(cues({ type: "coinsConsumed", coins: [1 as never] })).toEqual(["coin-consume"]);
     expect(cues({ type: "pileShuffled", count: 4 })).toEqual(["coin-shuffle"]);
   });

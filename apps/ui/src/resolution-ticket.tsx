@@ -18,10 +18,15 @@ const Section = ({ label, lines }: { label: string; lines: readonly string[] }):
     </div>
   );
 
-export function ResolutionTicket(props: { summary: ResolutionSummary }): JSX.Element {
-  const { summary } = props;
+export function ResolutionTicket(props: { fading?: boolean; summary: ResolutionSummary }): JSX.Element {
+  const { fading = false, summary } = props;
   return (
-    <article className="resolution-ticket" role="status" aria-live="polite" aria-label="스킬 해결 결산">
+    <article
+      className={`resolution-ticket ${fading ? 'is-fading' : ''}`}
+      role="status"
+      aria-live="polite"
+      aria-label={`${summary.skillName} 해결, ${summary.totalLine}`}
+    >
       <header className="resolution-ticket__header">
         <strong>{summary.skillName}</strong>
       </header>
@@ -36,8 +41,8 @@ export function ResolutionTicket(props: { summary: ResolutionSummary }): JSX.Ele
           ))}
         </div>
       )}
-      <Section label="기본" lines={summary.baseLines} />
-      <Section label="보너스" lines={summary.bonusLines} />
+      <Section label="스킬" lines={[...summary.baseLines, ...summary.bonusLines]} />
+      <Section label="코인" lines={summary.coinLines} />
       <Section label="트리거" lines={summary.triggerLines} />
       <Section label="상태" lines={summary.statusLines} />
       <div className="resolution-ticket__total">

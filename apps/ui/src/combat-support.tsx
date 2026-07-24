@@ -1,6 +1,21 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export function CombatHelp({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }): JSX.Element {
+  const [prompted, setPrompted] = useState(false);
+
+  useEffect(() => {
+    const key = "deckbuilding-roguelite.combat-help-prompted";
+    try {
+      if (window.sessionStorage.getItem(key) !== null) return undefined;
+      window.sessionStorage.setItem(key, "true");
+    } catch {
+      // 저장소를 쓸 수 없어도 현재 전투의 유도 강조는 제공한다.
+    }
+    setPrompted(true);
+    const timer = window.setTimeout(() => setPrompted(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     if (!open) return undefined;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -11,7 +26,7 @@ export function CombatHelp({ open, onOpenChange }: { open: boolean; onOpenChange
   }, [onOpenChange, open]);
 
   return (
-    <div className="combat-help-host">
+    <div className={`combat-help-host ${prompted ? "prompted" : ""}`}>
       <button aria-controls="combat-help-panel" aria-expanded={open} aria-label="전투 도움말 열기" className="combat-help-open" data-testid="combat-help-open" type="button" onClick={() => onOpenChange(!open)}>?</button>
       {open ? (
         <section aria-label="전투 도움말" className="combat-help-panel" data-testid="combat-help" id="combat-help-panel" role="region">

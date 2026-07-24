@@ -11,29 +11,6 @@ import {
 
 const slot = (value: number): SlotId => value as SlotId;
 
-const chargedState = (): CombatState => {
-  const initial = createCombat(
-    { character: "arcanist" as never, enemies: ["raider" as never] },
-    contentDb,
-    "equipment-choice",
-  );
-  const equipped: CombatState = {
-    ...initial,
-    slots: initial.slots.map((entry, index) =>
-      index === 0 ? { ...entry, skillId: "arcane-charge" as never } : entry,
-    ),
-  };
-  const coin = equipped.zones.hand[0] as CoinUid | undefined;
-  if (coin === undefined) throw new Error("missing test coin");
-  const placed = step(
-    equipped,
-    { type: "placeCoin", coin, slot: slot(0) },
-    contentDb,
-  );
-  if (!placed.ok) throw new Error(placed.error);
-  return placed.state;
-};
-
 const immediateChargedState = (): CombatState => {
   const initial = createCombat(
     { character: "arcanist" as never, enemies: ["raider" as never] },
@@ -50,12 +27,12 @@ const immediateChargedState = (): CombatState => {
 
 describe("equipment choice", () => {
   it("offers every equipment definition in stable order only for a chosen-equipment skill", () => {
-    const state = chargedState();
+    const state = immediateChargedState();
     const command = legalCommands(state, contentDb).find(
       (candidate) =>
-        candidate.type === "useFlipSkill" && candidate.slot === slot(0),
+        candidate.type === "useImmediateFlipSkill" && candidate.slot === slot(0),
     );
-    if (command?.type !== "useFlipSkill") throw new Error("missing command");
+    if (command?.type !== "useImmediateFlipSkill") throw new Error("missing command");
 
     expect(requiresEquipmentChoice(state, command, contentDb)).toBe(true);
     expect(equipmentChoiceOptions(contentDb)).toEqual([
@@ -72,19 +49,20 @@ describe("equipment choice", () => {
     ]);
 
     const ordinary = {
-      type: "useFlipSkill" as const,
+      type: "useImmediateFlipSkill" as const,
       slot: slot(1),
+      coins: [state.zones.hand[0] as CoinUid],
     };
     expect(requiresEquipmentChoice(state, ordinary, contentDb)).toBe(false);
   });
 
   it("replaces the policy default while preserving the rest of the explicit command", () => {
-    const state = chargedState();
+    const state = immediateChargedState();
     const suggested = legalCommands(state, contentDb).find(
       (candidate) =>
-        candidate.type === "useFlipSkill" && candidate.slot === slot(0),
+        candidate.type === "useImmediateFlipSkill" && candidate.slot === slot(0),
     );
-    if (suggested?.type !== "useFlipSkill") throw new Error("missing command");
+    if (suggested?.type !== "useImmediateFlipSkill") throw new Error("missing command");
     const explicitBase = {
       ...suggested,
       chosen: [state.zones.hand[0] as CoinUid],

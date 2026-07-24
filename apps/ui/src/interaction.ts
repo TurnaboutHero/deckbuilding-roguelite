@@ -1,5 +1,4 @@
 import type {
-  CoinUid,
   CombatEvent,
   CombatState,
   Command,
@@ -7,9 +6,7 @@ import type {
   Element,
   Face,
   RunState,
-  SlotId,
 } from "@game/core";
-import { legalCommands, step } from "@game/core";
 
 // 코인 면 기록 — 진실 소스는 코어의 coinFlipped 이벤트(상태에는 면이 없다, P9 소멸).
 // UI는 연출을 위해 마지막 플립 결과를 기억하되, 코인이 더미에서 다시 뽑히면
@@ -74,15 +71,6 @@ export const cardActionView = (input: CardActionViewInput): CardActionView => {
   };
 };
 
-export const pendingLoadedCoinCount = (state: CombatState): number =>
-  Object.values(state.zones.placed).reduce(
-    (count, coins) => count + coins.length,
-    state.flipReservations.reduce(
-      (count, reservation) => count + reservation.coinUids.length,
-      0,
-    ),
-  );
-
 // 보상 순서 자체는 코어가 PendingRewards 플래그로 결정한다. UI는 그 상태를
 // 어느 패널로 보여줄지만 투영하며, 보상 적용이나 완료 판정은 코어 API에 맡긴다.
 export const rewardViewStage = (run: RunState): RewardViewStage | null => {
@@ -126,12 +114,6 @@ export const coinFacesAfterEvent = (
   }
   return faces;
 };
-
-export type DragSource = { kind: "hand" } | { kind: "socket"; slot: SlotId };
-export type DropTarget =
-  | { kind: "slot"; slot: SlotId; coin?: CoinUid }
-  | { kind: "tray" }
-  | { kind: "none" };
 
 // 뽑을 더미 구성 — 종류·매수만 공개한다. 순서는 시드 파생 비밀이라 절대 노출하지 않는다
 // (PRD §15.1은 잔여 매수 표시만 확정 — 구성 공개는 StS 관례를 따르되 순서 은닉이 긴장감의 전제).
@@ -187,68 +169,6 @@ export const pileComposition = (
   });
 };
 
-export const drawPileComposition = (
-  state: CombatState,
-  db: ContentDb,
-): CoinPileGroup[] => pileComposition(state, "draw", db);
-
-// 드래그 중 하이라이트할 합법 목적지 — 규칙 판정은 전부 코어(legalCommands/step)에 위임.
-// 소켓 출발이면 "회수 후 장전"이 둘 다 합법일 때만 목적지로 인정한다.
-export const dragTargetSlots = (
-  state: CombatState,
-  coin: CoinUid,
-  source: DragSource,
-  db: ContentDb,
-): Set<number> => {
-  let base = state;
-  if (source.kind === "socket") {
-    const unplaced = step(state, { type: "unplaceCoin", coin }, db);
-    if (!unplaced.ok) return new Set();
-    base = unplaced.state;
-  }
-  const targets = new Set<number>();
-  for (const command of legalCommands(base, db)) {
-    if (command.type === "placeCoin" && command.coin === coin)
-      targets.add(Number(command.slot));
-  }
-  if (source.kind === "socket") targets.delete(Number(source.slot));
-  return targets;
-};
-
-// 드롭 결과를 커맨드 열로 변환 — 합법성 판정은 stepSequence가 legalCommands로 수행한다.
-// 반환 null = 무효 드롭(아무 것도 디스패치하지 않음).
-export const dropCommands = (
-  coin: CoinUid,
-  source: DragSource,
-  target: DropTarget,
-): Command[] | null => {
-  if (source.kind === "hand") {
-    if (target.kind !== "slot") return null;
-    return [{ type: "placeCoin", coin, slot: target.slot }];
-  }
-  // 이미 장전된 동전 위에 놓으면 두 동전을 맞바꾼다. 같은 카드 안의
-  // 소켓 순서 변경과 서로 다른 카드 사이의 교환을 동일한 규칙으로 처리한다.
-  if (target.kind === "slot" && target.coin !== undefined && target.coin !== coin) {
-    return [
-      { type: "unplaceCoin", coin },
-      { type: "unplaceCoin", coin: target.coin },
-      { type: "placeCoin", coin: target.coin, slot: source.slot },
-      { type: "placeCoin", coin, slot: target.slot },
-    ];
-  }
-  // 소켓 출발: 트레이/빈 곳 = 회수, 다른 카드의 빈 소켓 = 이동(회수 후 장전)
-  if (target.kind === "slot" && Number(target.slot) !== Number(source.slot)) {
-    return [
-      { type: "unplaceCoin", coin },
-      { type: "placeCoin", coin, slot: target.slot },
-    ];
-  }
-  if (target.kind === "tray" || target.kind === "none") {
-    return [{ type: "unplaceCoin", coin }];
-  }
-  return null;
-};
-
 export const sameCommand = (left: Command, right: Command): boolean => {
   if (left.type !== right.type) return false;
   if (left.type === "useImmediateFlipSkill" && right.type === "useImmediateFlipSkill") {
@@ -263,20 +183,6 @@ export const sameCommand = (left: Command, right: Command): boolean => {
       left.coins.every((coin, index) => coin === right.coins[index])
     );
   }
-  if (left.type === "placeCoin" && right.type === "placeCoin")
-    return left.coin === right.coin && left.slot === right.slot;
-  if (left.type === "unplaceCoin" && right.type === "unplaceCoin")
-    return left.coin === right.coin;
-  if (left.type === "useFlipSkill" && right.type === "useFlipSkill")
-    return (
-      left.slot === right.slot &&
-      left.reservationId === right.reservationId &&
-      left.target === right.target &&
-      left.chosenSummon === right.chosenSummon &&
-      left.chosenEquipment === right.chosenEquipment &&
-      left.desiredCoin === right.desiredCoin &&
-      JSON.stringify(left.chosen ?? []) === JSON.stringify(right.chosen ?? [])
-    );
   if (left.type === "endTurn" && right.type === "endTurn") return true;
   if (left.type === "useConsumeSkill" && right.type === "useConsumeSkill") {
     return (
@@ -289,64 +195,4 @@ export const sameCommand = (left: Command, right: Command): boolean => {
     );
   }
   return false;
-};
-
-// 커맨드 열을 순차 검증·실행 — 각 단계가 legalCommands에 있어야 하고(코어가 step에서
-// 안 막는 무의미 배치까지 걸러진다), 하나라도 불법이면 전체 취소.
-export const stepSequence = (
-  state: CombatState,
-  commands: readonly Command[],
-  db: ContentDb,
-): { state: CombatState; events: CombatEvent[] } | null => {
-  let current = state;
-  const events: CombatEvent[] = [];
-  for (const command of commands) {
-    const legal =
-      (command.type === "unplaceCoin" &&
-        current.flipReservations.some((reservation) =>
-          reservation.coinUids.includes(command.coin),
-        )) ||
-      legalCommands(current, db).some((candidate) =>
-        sameCommand(candidate, command),
-      );
-    if (!legal) return null;
-    const result = step(current, command, db);
-    if (!result.ok) return null;
-    current = result.state;
-    events.push(...result.events);
-  }
-  return { state: current, events };
-};
-
-// 드래그 중 교환 가능한 상대 동전만 공개한다. 양쪽 스킬의 속성 제한과
-// 소켓 수용량은 실제 커맨드 시퀀스를 끝까지 시뮬레이션해 판정한다.
-export const dragSwapTargetCoins = (
-  state: CombatState,
-  coin: CoinUid,
-  source: DragSource,
-  db: ContentDb,
-): Set<number> => {
-  if (source.kind !== "socket") return new Set();
-  const targets = new Set<number>();
-  const placedBySlot: readonly (readonly [SlotId, readonly CoinUid[]])[] = [
-    ...Object.entries(state.zones.placed).map(
-      ([slotKey, coins]) => [Number(slotKey) as SlotId, coins] as const,
-    ),
-    ...state.flipReservations.map(
-      (reservation) => [reservation.slot, reservation.coinUids] as const,
-    ),
-  ];
-  for (const [targetSlot, coins] of placedBySlot) {
-    for (const targetCoin of coins) {
-      if (targetCoin === coin) continue;
-      const commands = dropCommands(coin, source, {
-        kind: "slot",
-        slot: targetSlot,
-        coin: targetCoin,
-      });
-      if (commands !== null && stepSequence(state, commands, db) !== null)
-        targets.add(Number(targetCoin));
-    }
-  }
-  return targets;
 };

@@ -10,7 +10,6 @@ import "./overlay.css";
 export type OverlayLayer =
   | "popover"
   | "tooltip"
-  | "drag"
   | "modal"
   | "notice";
 
@@ -98,10 +97,22 @@ export const AnchoredOverlay = ({
           return;
         }
         const anchorRect = anchor.getBoundingClientRect();
+        const plate =
+          anchor.closest(".unit-plate") ??
+          anchor.closest(".unit")?.querySelector(".unit-plate");
+        const plateRect = plate?.getBoundingClientRect();
         const overlayRect = overlay.getBoundingClientRect();
         setPosition(
           placeAnchoredOverlay({
-            anchor: anchorRect,
+            anchor:
+              plateRect === undefined
+                ? anchorRect
+                : {
+                    left: anchorRect.left,
+                    right: anchorRect.right,
+                    top: Math.min(anchorRect.top, plateRect.top),
+                    bottom: Math.max(anchorRect.bottom, plateRect.bottom),
+                  },
             overlayHeight: overlayRect.height,
             overlayWidth: overlayRect.width,
             viewportHeight: window.innerHeight,

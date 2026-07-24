@@ -24,7 +24,6 @@ export function beginPreserveSelection(
   const candidates = unique([
     ...state.zones.hand,
     ...Object.values(state.zones.placed).flat(),
-    ...state.flipReservations.flatMap((reservation) => reservation.coinUids),
   ]);
   if (candidates.length === 0) return null;
   const locked = candidates.filter(

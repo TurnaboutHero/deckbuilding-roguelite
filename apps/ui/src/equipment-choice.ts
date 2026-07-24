@@ -30,7 +30,7 @@ const flipSkillFor = (
   command: TargetingCommand,
   db: ContentDb,
 ): FlipSkillDef | null => {
-  if (command.type !== "useImmediateFlipSkill" && command.type !== "useFlipSkill") return null;
+  if (command.type !== "useImmediateFlipSkill") return null;
   const slot = state.slots[Number(command.slot)];
   const skill = slot === undefined ? undefined : db.skills[String(slot.skillId)];
   return skill?.type === "flip" ? skill : null;
@@ -50,13 +50,13 @@ export const equipmentChoiceCommand = (
   command: TargetingCommand,
   equipment: EquipmentDefId,
   db: ContentDb,
-): Extract<TargetingCommand, { type: "useImmediateFlipSkill" | "useFlipSkill" }> | null => {
+): Extract<TargetingCommand, { type: "useImmediateFlipSkill" }> | null => {
   if (!requiresEquipmentChoice(state, command, db)) return null;
   if ((db.equipment ?? {})[String(equipment)] === undefined) return null;
   const explicit = {
     ...command,
     chosenEquipment: equipment,
   };
-  if (explicit.type !== "useImmediateFlipSkill" && explicit.type !== "useFlipSkill") return null;
+  if (explicit.type !== "useImmediateFlipSkill") return null;
   return explicit;
 };

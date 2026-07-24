@@ -16,13 +16,6 @@ export type TelemetryCommand =
       slot: number;
       coins: number[];
       target?: number;
-    }
-  | { type: "placeCoin"; coin: number; slot: number }
-  | { type: "unplaceCoin"; coin: number }
-  | {
-      type: "useFlipSkill";
-      slot: number;
-      target?: number;
       chosen?: number[];
       desiredCoin?: string;
       chosenEquipment?: string;
@@ -213,26 +206,6 @@ const commandFact = (command: Command): TelemetryCommand => {
       type: command.type,
       slot: Number(command.slot),
       coins: command.coins.map(Number),
-    };
-    if (command.target !== undefined) fact.target = command.target;
-    return fact;
-  }
-  if (command.type === "placeCoin") {
-    return {
-      type: command.type,
-      coin: Number(command.coin),
-      slot: Number(command.slot),
-    };
-  }
-  if (command.type === "unplaceCoin") {
-    return { type: command.type, coin: Number(command.coin) };
-  }
-  if (command.type === "useFlipSkill") {
-    // P6 v3 — 선택 파라미터(기본 코인/장비/소환)를 사실로 보존해 리플레이가 발명된
-    // 기본값에 의존하지 않게 한다 (v2는 chosen을 제안 재구성에 맡겼다 — 가산 유지).
-    const fact: TelemetryCommand = {
-      type: command.type,
-      slot: Number(command.slot),
     };
     if (command.target !== undefined) fact.target = command.target;
     if (command.chosen !== undefined) fact.chosen = command.chosen.map(Number);
@@ -674,9 +647,6 @@ const sanitizeCommand = (value: unknown, label: string): TelemetryCommand => {
     object.type,
     [
       "useImmediateFlipSkill",
-      "placeCoin",
-      "unplaceCoin",
-      "useFlipSkill",
       "useConsumeSkill",
       "endTurn",
     ] as const,
@@ -687,25 +657,6 @@ const sanitizeCommand = (value: unknown, label: string): TelemetryCommand => {
       type,
       slot: nonNegativeInteger(object, "slot", label),
       coins: numberArray(object.coins, `${label}.coins`),
-    };
-    const target = optionalIndex(object, "target", label);
-    if (target !== undefined) command.target = target;
-    return command;
-  }
-  if (type === "placeCoin") {
-    return {
-      type,
-      coin: nonNegativeInteger(object, "coin", label),
-      slot: nonNegativeInteger(object, "slot", label),
-    };
-  }
-  if (type === "unplaceCoin") {
-    return { type, coin: nonNegativeInteger(object, "coin", label) };
-  }
-  if (type === "useFlipSkill") {
-    const command: Extract<TelemetryCommand, { type: "useFlipSkill" }> = {
-      type,
-      slot: nonNegativeInteger(object, "slot", label),
     };
     const target = optionalIndex(object, "target", label);
     const chosenSummon = optionalIndex(object, "chosenSummon", label);

@@ -151,7 +151,7 @@ const report = await measure(combatPage, [
   [".card-effect-copy", "카드 효과 본문"],
   [".run-meta strong", "진행 메타"],
   [".end-turn", "턴 종료 버튼"],
-  [".tutorial-strip", "튜토리얼 안내"],
+  ['[data-testid="combat-step-guide"] .combat-step-detail', "전투 단계 안내"],
   [".combat-utility-button", "전투 설정 버튼"],
   [".combat-preferences-panel label", "전투 설정 항목"],
 ]);

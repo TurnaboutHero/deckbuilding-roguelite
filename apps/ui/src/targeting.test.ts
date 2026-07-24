@@ -28,9 +28,9 @@ describe("targeting", () => {
 
   it("matches targetable skills by type and slot without replacing manual fuel", () => {
     const commands: Command[] = [
-      { type: "useFlipSkill", slot: slot(0), target: 0 },
-      { type: "useFlipSkill", slot: slot(0), target: 2 },
-      { type: "useFlipSkill", slot: slot(1), target: 1 },
+      { type: "useImmediateFlipSkill", slot: slot(0), coins: [coin(1)], target: 0 },
+      { type: "useImmediateFlipSkill", slot: slot(0), coins: [coin(1)], target: 2 },
+      { type: "useImmediateFlipSkill", slot: slot(1), coins: [coin(2)], target: 1 },
       {
         type: "useConsumeSkill",
         slot: slot(2),
@@ -47,8 +47,9 @@ describe("targeting", () => {
 
     expect(
       legalTargetsForCommand(commands, {
-        type: "useFlipSkill",
+        type: "useImmediateFlipSkill",
         slot: slot(0),
+        coins: [coin(1)],
         target: 0,
       }),
     ).toEqual([0, 2]);

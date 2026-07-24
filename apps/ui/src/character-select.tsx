@@ -116,10 +116,14 @@ export const CharacterSelect = ({ artByCharacter, characters, contentDb, seed, o
     role="dialog"
   >
     <div className="result-panel character-select-panel">
-      <p className="run-kicker">신규 런</p>
-      <h1>캐릭터 선택</h1>
-      <p>초상화를 고른 뒤, 시작 동전과 스킬을 확인하고 런을 시작하세요.</p>
-      {seed !== null ? <p className="select-seed">SEED {seed}</p> : null}
+      <header className="character-select-intro">
+        <span>
+          <p className="run-kicker">신규 런</p>
+          <h1>캐릭터 선택</h1>
+        </span>
+        <p>초상화를 고른 뒤, 시작 동전과 스킬을 확인하고 런을 시작하세요.</p>
+        {seed !== null ? <p className="select-seed">SEED {seed}</p> : null}
+      </header>
       <div aria-label="캐릭터 초상화 목록" className="character-portrait-rail" role="listbox">
         {characters.map((character) => {
           const portrait = artByCharacter[String(character.id)];
@@ -156,9 +160,12 @@ export const CharacterSelect = ({ artByCharacter, characters, contentDb, seed, o
           <span className="character-section"><b>시작 동전</b><span className="character-coins">{bagSummary(selected, contentDb).map((item) => <i className={`character-coin coin-${String(contentDb.coins[String(item.coin)]?.element ?? "basic")}`} key={String(item.coin)}>{item.name} x{item.count}</i>)}</span></span>
           <span className="character-section"><b>시작 스킬</b><span className="character-skills">{selected.startingSkills.map((skill) => <i key={String(skill)}>{contentDb.skills[String(skill)]?.name ?? String(skill)}</i>)}</span></span>
           <span className="character-trait"><b>{selected.trait.name}</b><small>{characterTraitDescription(selected, contentDb)}</small></span>
-          <button className="character-start" data-testid="character-start" type="button" onClick={() => onSelect(selected.id)}>이 캐릭터로 시작</button>
         </div>
       </article>
+      <footer className="character-select-action">
+        <span><small>선택한 캐릭터</small><strong>{selected.name}</strong></span>
+        <button className="character-start" data-testid="character-start" type="button" onClick={() => onSelect(selected.id)}>출발</button>
+      </footer>
     </div>
   </section>
   );

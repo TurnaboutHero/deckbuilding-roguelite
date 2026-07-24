@@ -31,7 +31,6 @@
   --z-controls: 100;
   --z-popover: 200;
   --z-tooltip: 300;
-  --z-drag: 400;
   --z-modal: 500;
   --z-notice: 600;
   font-family: "NeoDunggeunmo", ui-monospace, Menlo, Consolas, monospace;
@@ -141,6 +140,28 @@ button:focus-visible {
   text-overflow: ellipsis;
 }
 
+.run-settings-host {
+  position: relative;
+}
+
+.run-seed-setting {
+  position: fixed;
+  top: 68px;
+  right: max(24px, env(safe-area-inset-right));
+  z-index: var(--z-popover);
+  width: max-content;
+  max-width: min(320px, calc(100vw - 24px)) !important;
+  padding: 5px 8px;
+  color: #c7cee0 !important;
+  background: #171a23;
+  border: 2px solid #5d4d34;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
+}
+
+.run-settings-host:has(.run-seed-setting) .combat-preferences-panel {
+  padding-top: 48px;
+}
+
 /* ---- 상단: 유닛 ---- */
 
 .battlefield {
@@ -162,6 +183,42 @@ button:focus-visible {
   flex-wrap: nowrap;
   gap: clamp(12px, 2vw, 28px);
   min-width: 0;
+}
+
+.enemy-action-banner {
+  position: absolute;
+  top: 58px;
+  left: 62%;
+  z-index: var(--z-notice);
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  max-width: min(360px, 42vw);
+  padding: 7px 11px;
+  color: var(--paper);
+  background: rgba(18, 16, 26, 0.96);
+  border: 3px solid var(--gold);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 243, 196, 0.18),
+    0 4px 0 rgba(28, 23, 36, 0.55);
+  transform: translateX(-50%);
+  animation: enemy-action-banner-in 180ms steps(3) 1;
+  pointer-events: none;
+}
+
+.enemy-action-banner strong {
+  color: #fff1bf;
+}
+
+.enemy-action-banner small {
+  color: #d9e7ff;
+}
+
+@keyframes enemy-action-banner-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -5px);
+  }
 }
 
 .unit {
@@ -388,6 +445,16 @@ button:focus-visible {
   gap: 3px;
 }
 
+.intent .intent-keyword,
+.intent .intent-keyword .kw {
+  display: inline-flex;
+  align-items: center;
+}
+
+.intent .intent-keyword .kw {
+  border-bottom-color: currentColor;
+}
+
 .sprite {
   position: relative;
   /* 지면선 고정: 유닛 컬럼 하단으로 밀착 → 양측 발이 같은 y에 닿는다 */
@@ -434,6 +501,12 @@ button:focus-visible {
   display: block;
   image-rendering: pixelated;
   filter: drop-shadow(2px 3px 0 rgba(28, 23, 36, 0.3));
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.sprite-frame image {
+  pointer-events: none;
 }
 
 .sprite-frame.player,
@@ -508,14 +581,25 @@ button:focus-visible {
 .skill-row {
   position: relative;
   display: flex;
-  justify-content: center;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 2px 0;
-  isolation: isolate;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  gap: 4px;
+  padding: 0;
   transition:
     opacity 0.25s,
     filter 0.25s;
+}
+
+.skill-card-rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 0;
+  min-width: 0;
+  isolation: isolate;
 }
 
 /* 해결 연출 중에는 카드 단위로 디밍 — 플립 중인 카드(.resolving)는 밝게 남아 무대가 된다 */
@@ -530,10 +614,10 @@ button:focus-visible {
 
 .skill-card {
   position: relative;
-  width: 120px;
-  flex: 0 0 120px;
-  height: 232px;
-  min-height: 232px;
+  width: 152px;
+  flex: 0 0 152px;
+  height: 252px;
+  min-height: 252px;
   padding: 16px 8px 8px;
   margin-left: 0;
   background: linear-gradient(#353b4c, #242936 56%, #171a23);
@@ -555,7 +639,7 @@ button:focus-visible {
 
 /* 장전(.lifted)은 절제된 리프트+금테 상시 표식 — 확대·가로 겹침 없음. */
 .skill-card.lifted {
-  transform: translateY(-10px);
+  transform: none;
   z-index: 5;
   border-color: var(--gold);
 }
@@ -568,7 +652,7 @@ button:focus-visible {
 .skill-card:focus-visible,
 .skill-card:has(:focus-visible),
 .skill-card.resolving {
-  transform: translateY(-28px);
+  transform: none;
   z-index: 7;
   border-color: var(--gold-2);
   box-shadow:
@@ -612,24 +696,6 @@ button:focus-visible {
   border-color: #765248;
 }
 
-/* 드래그 중 합법 목적지 위에 있을 때 — 포인터 캡처로 :hover가 안 붙으므로 클래스로 상승 */
-.skill-card.drop-target {
-  transform: translateY(-28px);
-  z-index: 7;
-  border-color: var(--gold-2);
-  box-shadow:
-    0 0 0 3px var(--gold-2),
-    0 5px 0 rgba(28, 23, 36, 0.5);
-}
-
-.skill-card.drop-target p {
-  opacity: 1;
-}
-
-.skill-card.drop-target .card-effects {
-  opacity: 1;
-}
-
 .card-title {
   position: relative;
   width: calc(100% + 16px);
@@ -646,34 +712,6 @@ button:focus-visible {
   text-shadow: 1px 1px 0 rgba(255, 238, 175, 0.45);
 }
 
-.execution-card-badge {
-  position: absolute;
-  top: 3px;
-  right: 4px;
-  display: inline-grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  color: #fff8d7;
-  background: #372458;
-  border: 2px solid #fff0a8;
-  border-radius: 50%;
-  font-style: normal;
-  font-size: 12px;
-  text-shadow: 1px 1px 0 #120c1c;
-}
-
-.execution-partial-badge {
-  display: block;
-  margin-top: 2px;
-  color: #5b2632;
-  font-style: normal;
-  font-size: 9px;
-  line-height: 1.1;
-}
-
-/* 장전 완료 카드만 나타나는 턴 단위 실행 레일. 카드/소켓 드래그와 분리해
-   순서 드래그가 장전 동전 교환을 가로채지 않는다. */
 .card-action {
   width: calc(100% + 16px);
   min-height: 44px;
@@ -691,28 +729,47 @@ button:focus-visible {
   background: var(--gold-2);
 }
 
-/* 소켓은 카드 상단 모서리에 얹힘 — 제목은 아래쪽 패딩으로 분리 */
+.card-action[aria-disabled="true"] {
+  cursor: not-allowed;
+  filter: saturate(0.55) brightness(0.82);
+}
+
+/* 제목 아래 전용 코스트 행. 버튼은 44px, 보이는 원은 기존 24px을 유지한다. */
 .sockets {
-  position: absolute;
-  top: -13px;
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
-  z-index: 2;
+  min-height: 44px;
+  flex: 0 0 44px;
+}
+
+.face-forecast {
+  width: 100%;
+  max-height: 42px;
+  padding: 3px 5px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  color: #f3ead2;
+  background: #171a23;
+  border: 1px solid #8e7040;
+  font-size: 9px;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.face-forecast strong {
+  color: var(--gold-2);
 }
 
 .socket {
   position: relative;
-  width: 24px;
-  height: 24px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border: 0;
   border-radius: 50%;
-  border: 3px solid var(--out);
-  background: radial-gradient(
-    circle at 35% 30%,
-    var(--gold-2),
-    var(--gold) 70%
-  );
+  background: transparent;
   color: var(--ink);
   font-size: 12px;
   display: inline-flex;
@@ -722,45 +779,29 @@ button:focus-visible {
   touch-action: none;
 }
 
-.socket.accept {
+.socket[aria-disabled="true"] {
+  cursor: not-allowed;
+  filter: saturate(0.45) brightness(0.72);
+}
+
+.socket::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border: 3px solid var(--out);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 30%,
+    var(--gold-2),
+    var(--gold) 70%
+  );
+}
+
+.socket.accept::before {
   animation: socket-pulse 0.7s steps(2) infinite alternate;
 }
 
-/* 장전 동전 드래그 중에는 교환 가능한 상대만 청색 링과 ↔ 배지로 표시한다. */
-.socket.swap-accept {
-  z-index: 4;
-  box-shadow:
-    0 0 0 2px #8de1ff,
-    0 0 9px rgba(93, 205, 255, 0.9);
-  animation: swap-target-pulse 0.7s steps(2) infinite alternate;
-}
-
-.socket.swap-accept::after {
-  content: "↔";
-  position: absolute;
-  top: -18px;
-  right: -13px;
-  z-index: 3;
-  min-width: 19px;
-  height: 17px;
-  border: 2px solid var(--out);
-  border-radius: 9px;
-  background: #8de1ff;
-  color: #101824;
-  font-size: 12px;
-  font-weight: 900;
-  line-height: 13px;
-  pointer-events: none;
-}
-
-.socket.swap-over {
-  transform: scale(1.14);
-  box-shadow:
-    0 0 0 4px #f8e27b,
-    0 0 14px rgba(248, 226, 123, 0.95);
-}
-
-.socket.loaded {
+.socket.loaded::before {
   background: none;
 }
 
@@ -781,16 +822,7 @@ button:focus-visible {
   }
 }
 
-@keyframes swap-target-pulse {
-  from {
-    filter: brightness(1);
-  }
-  to {
-    filter: brightness(1.35);
-  }
-}
-
-/* ---- 동전 원판 (소켓·드래그 프록시 공용) ---- */
+/* ---- 동전 원판 ---- */
 
 .socket-coin {
   position: relative;
@@ -802,25 +834,15 @@ button:focus-visible {
   image-rendering: auto;
 }
 
-/* 장전된 동전은 소켓 위로 솟아오른 34px 원판 — 히트 타깃(24px 버튼)과 제목 가독성은 그대로,
-   정체(기본/화염/임시/취급)와 플립 결과 면이 카드 위에서 읽힌다 */
+/* 장전된 동전은 44px 히트 영역 중앙의 34px 원판으로 표시한다. */
 .socket .socket-coin {
   position: absolute;
-  left: -5px;
-  top: -11px;
+  left: 5px;
+  top: 5px;
   width: 34px;
   height: 34px;
   pointer-events: none;
   filter: drop-shadow(0 2px 0 rgba(28, 23, 36, 0.4));
-}
-
-.socket-coin.fire,
-.socket-coin.granted-fire {
-  background-image: url("./assets/coin-fire.png");
-}
-
-.socket-coin.mana {
-  background-image: url("./assets/coin-mana.png");
 }
 
 .socket-coin.granted-fire {
@@ -949,11 +971,6 @@ button:focus-visible {
   border: 2px solid var(--out);
 }
 
-.consume-condition.met {
-  background: var(--gold);
-  color: var(--ink);
-}
-
 .consume-condition.selecting {
   box-shadow: 0 0 0 2px var(--gold-2);
 }
@@ -1001,35 +1018,90 @@ button:focus-visible {
   z-index: 2;
 }
 
-/* P7 D2 — 빈 슬롯: 테두리만 남긴 자리 표시 */
-.skill-card.empty-slot {
-  opacity: 0.45;
-  background: transparent;
-  border-style: dashed;
+.skill-row-notices {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  z-index: 8;
 }
 
-.preview-tip {
-  width: max-content;
-  max-width: min(320px, calc(100vw - 16px));
-  padding: 7px 10px;
-  font-size: 12.5px;
-  line-height: 1.5;
-  background: var(--out);
-  color: var(--paper);
-  border: 2px solid var(--gold);
-  pointer-events: auto;
+.skill-row-notices:empty,
+.skill-row-notices:not(:has(.resolution-ticket, .combat-step-guide)) {
+  display: none;
 }
 
-.preview-tip .kw {
-  color: inherit;
+.combat-step-guide {
+  display: grid;
+  gap: 3px;
+  flex: 0 1 610px;
+  min-width: 0;
+  max-width: min(92vw, 610px);
+  padding: 5px 9px;
+  color: #d9e7ff;
+  background: rgba(20, 24, 32, 0.96);
+  border: 2px solid #5d4d34;
+  box-shadow: 0 3px 0 rgba(28, 23, 36, 0.55);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.combat-step-track {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.combat-step-track span {
+  min-width: 0;
+  padding: 2px 5px;
+  overflow: hidden;
+  color: #9ca5b7;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid #43495a;
+}
+
+.combat-step-track span.active {
+  color: #17131b;
+  background: var(--gold-2);
+  border-color: var(--gold);
+}
+
+.combat-step-track span.feedback {
+  color: #fff3d0;
+  background: #6e3a1f;
+  border-color: var(--flame);
+}
+
+.combat-step-detail {
+  min-height: 1.25em;
+  overflow: hidden;
+  color: #d9e7ff;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combat-step-guide.flash {
+  animation: combat-step-flash 0.24s steps(2) 3 alternate;
+}
+
+@keyframes combat-step-flash {
+  to {
+    border-color: var(--flame);
+    box-shadow:
+      0 0 0 2px rgba(240, 144, 44, 0.55),
+      0 3px 0 rgba(28, 23, 36, 0.55);
+  }
 }
 
 .resolution-ticket-anchor {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 8px);
-  z-index: 8;
-  transform: translateX(-50%);
+  display: flex;
+  justify-content: center;
+  min-width: 0;
   pointer-events: none;
 }
 
@@ -1277,14 +1349,6 @@ button:focus-visible {
   flex: none;
 }
 
-.pop-coin.fire {
-  background-image: url("./assets/coin-fire.png");
-}
-
-.pop-coin.mana {
-  background-image: url("./assets/coin-mana.png");
-}
-
 /* 냉기/전기는 PNG 자산이 없어 트레이 코인과 동일한 정본 그라디언트를 공유한다 */
 .pop-coin.frost {
   background: radial-gradient(
@@ -1422,15 +1486,6 @@ button:focus-visible {
   margin-top: 19px;
 }
 
-.coin.fire,
-.coin.granted-fire {
-  background-image: url("./assets/coin-fire.png");
-}
-
-.coin.mana {
-  background-image: url("./assets/coin-mana.png");
-}
-
 .coin.granted-fire {
   outline: 3px solid var(--flame);
   outline-offset: -1px;
@@ -1464,43 +1519,6 @@ button:focus-visible {
 .coin:disabled {
   cursor: default;
   filter: brightness(0.85);
-}
-
-/* 드래그 중 원본 자리 표시 — 프록시가 진짜처럼 보이게 원본은 흐려진다 */
-.coin.drag-origin {
-  opacity: 0.35;
-}
-
-.coin.drag-cancel {
-  animation: drag-shake 0.32s steps(4);
-}
-
-@keyframes drag-shake {
-  0% {
-    translate: 0 0;
-  }
-  25% {
-    translate: -5px 0;
-  }
-  50% {
-    translate: 5px 0;
-  }
-  75% {
-    translate: -3px 0;
-  }
-  100% {
-    translate: 0 0;
-  }
-}
-
-.drag-proxy {
-  position: fixed;
-  z-index: var(--z-drag);
-  width: 46px;
-  height: 46px;
-  transform: translate(-50%, -58%) scale(1.1);
-  pointer-events: none;
-  filter: drop-shadow(0 7px 3px rgba(0, 0, 0, 0.4));
 }
 
 @keyframes coin-flip {
@@ -1625,14 +1643,10 @@ button:focus-visible {
 
 /* P7 D6 — 점진 튜토리얼: 닫기 버튼이 있는 문맥 안내 (hint-strip 위층) */
 .tutorial-strip {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 4;
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   max-width: min(92vw, 560px);
   padding: 4px 10px;
   font-size: 11px;
@@ -1644,8 +1658,15 @@ button:focus-visible {
   pointer-events: none;
 }
 
+.tutorial-copy {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .tutorial-strip .tutorial-dismiss {
   flex: none;
+  min-width: 44px;
+  min-height: 44px;
   padding: 2px 8px;
   font-size: 11px;
   background: #274a2c;
@@ -1841,6 +1862,44 @@ button:focus-visible {
   gap: 10px;
 }
 
+.title-continue-group {
+  display: grid;
+  gap: 4px;
+}
+
+.title-continue-group .title-continue {
+  width: 100%;
+}
+
+.result-panel .title-continue:disabled {
+  color: #777b86 !important;
+  background: linear-gradient(#292c34, #202229 58%, #181a20) !important;
+  border-color: #111319 !important;
+  box-shadow:
+    inset 0 1px 0 #3d414b,
+    inset 0 -3px 0 #111319,
+    0 3px 0 rgba(9, 8, 12, 0.55) !important;
+  opacity: 1;
+  filter: saturate(0.15);
+}
+
+.title-disabled-reason {
+  color: #9298a7;
+  font-size: 12px;
+  text-align: left;
+}
+
+.result-panel .title-primary-action {
+  color: #21180b;
+  background: linear-gradient(#ffe694, #e6b94f 54%, #aa711f);
+  border-color: #3a2814;
+  box-shadow:
+    inset 0 2px 0 #fff3bd,
+    inset 0 -4px 0 #8e5e1b,
+    0 4px 0 rgba(9, 8, 12, 0.75),
+    0 0 0 2px rgba(242, 207, 91, 0.24);
+}
+
 .title-confirm-panel {
   width: min(500px, calc(100vw - 48px));
 }
@@ -1914,15 +1973,73 @@ button:focus-visible {
   font-size: clamp(36px, 2.7vw, 54px);
 }
 
+.ready-enemy-preview {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  min-height: 148px;
+  margin: 4px 0;
+}
+
+.ready-enemy-preview figure {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  width: clamp(116px, 12vw, 156px);
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  background: radial-gradient(circle at 50% 62%, rgba(217, 164, 65, 0.25), transparent 58%), #12151d;
+  border: 2px solid #6b5937;
+  box-shadow: inset 0 0 0 2px #090b10;
+}
+
+.ready-enemy-sprite {
+  position: relative;
+  display: grid;
+  min-height: 104px;
+  place-items: center;
+}
+
+.ready-enemy-sprite .sprite-frame {
+  position: static;
+  width: 104px;
+  height: 104px;
+}
+
+.ready-enemy-preview figcaption {
+  color: #fff1bf;
+  font-size: 13px;
+}
+
 .character-select-overlay {
   padding: 24px;
 }
 
 .character-select-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 10px;
   width: min(1120px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
   min-width: 0;
-  overflow-y: auto;
+  overflow: hidden;
+}
+
+.character-select-intro {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 16px;
+  text-align: left;
+}
+
+.character-select-intro h1,
+.character-select-intro p {
+  margin: 0;
+}
+
+.character-select-intro > p {
+  padding-bottom: 4px;
 }
 
 /* Portrait-first character selection: browse horizontally, then inspect one full build. */
@@ -1970,10 +2087,45 @@ button:focus-visible {
   background: linear-gradient(#32394a, #202531 58%, #171a23);
   border: 3px solid #806638;
   box-shadow: inset 0 0 0 2px #11131a;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .character-detail-art { min-height: min(46vh, 370px); }
-.character-start { margin-top: auto; align-self: flex-start; }
+
+.character-select-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 58px;
+  padding: 7px 10px;
+  text-align: left;
+  background: linear-gradient(#282d3a, #171a23);
+  border: 3px solid #806638;
+  box-shadow: inset 0 0 0 2px #11131a;
+}
+
+.character-select-action span {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.character-select-action small {
+  color: #aeb7cf;
+}
+
+.character-select-action strong {
+  color: var(--gold-2);
+  font-size: clamp(16px, 1.2vw, 21px);
+}
+
+.character-select-action .character-start {
+  min-width: clamp(180px, 22vw, 280px);
+}
 
 .tutorial-panel { min-height: 360px; justify-content: center; }
 .tutorial-screen-copy { min-height: 86px; font-size: clamp(17px, 1.3vw, 22px) !important; line-height: 1.6 !important; }
@@ -1983,49 +2135,112 @@ button:focus-visible {
 .tutorial-actions { flex-direction: row; }
 .tutorial-actions button { flex: 1; }
 
-.title-settings-list { display: grid; gap: 12px; padding: 14px; background: rgba(12, 15, 22, 0.52); border: 2px solid #4c5268; }
-.title-settings-list label { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #e9e1cc; }
-.title-settings-list select { min-height: 36px; font: inherit; color: var(--paper); background: #202430; border: 2px solid #5d4d34; }
+.title-settings-list { display: grid; gap: 8px; padding: 14px; background: rgba(12, 15, 22, 0.52); border: 2px solid #4c5268; }
+.title-setting-field { display: flex; align-items: center; justify-content: flex-start; gap: 12px; min-height: 54px; padding: 7px 9px; color: #e9e1cc; text-align: left; background: #171a23; border: 2px solid #272c39; }
+.title-setting-field:first-child { justify-content: space-between; }
+.title-setting-copy { display: grid; gap: 3px; min-width: 0; }
+.title-setting-copy strong { color: #fff1bf; font-weight: 400; }
+.title-setting-copy small { color: #9fa8bd; font-size: 12px; line-height: 1.25; }
+.title-settings-list select {
+  min-width: 126px;
+  min-height: 42px;
+  padding: 6px 32px 6px 10px;
+  appearance: none;
+  font: inherit;
+  color: var(--paper);
+  background:
+    linear-gradient(45deg, transparent 50%, var(--gold-2) 50%) calc(100% - 16px) 17px / 6px 6px no-repeat,
+    linear-gradient(135deg, var(--gold-2) 50%, transparent 50%) calc(100% - 10px) 17px / 6px 6px no-repeat,
+    linear-gradient(#303545, #1c202a);
+  border: 2px solid #806638;
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px #11131a, 0 2px 0 #0d0f15;
+}
+.title-settings-list input[type="checkbox"] {
+  display: grid;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  appearance: none;
+  place-content: center;
+  background: #151821;
+  border: 3px solid #806638;
+  border-radius: 0;
+  box-shadow: inset 0 0 0 2px #090b10, 0 2px 0 #0d0f15;
+}
+.title-settings-list input[type="checkbox"]::before {
+  width: 12px;
+  height: 12px;
+  content: "";
+  background: var(--gold-2);
+  box-shadow: inset 0 -3px 0 #a16d20;
+  transform: scale(0);
+}
+.title-settings-list input[type="checkbox"]:checked::before { transform: scale(1); }
+.title-settings-list :is(select, input[type="checkbox"]):focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.portrait-orientation-guard {
+  display: none;
+}
+
+@media (orientation: portrait) {
+  .portrait-orientation-guard {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: grid;
+    grid-template-rows: auto auto auto;
+    place-content: center;
+    place-items: center;
+    gap: 12px;
+    padding: 32px;
+    color: #fff1bf;
+    text-align: center;
+    background:
+      radial-gradient(circle at 50% 45%, rgba(128, 102, 56, 0.22), transparent 34%),
+      #0e1017;
+    border: 8px solid var(--out);
+    box-shadow: inset 0 0 0 4px #806638;
+  }
+
+  .portrait-orientation-guard span {
+    display: grid;
+    width: 88px;
+    height: 88px;
+    place-items: center;
+    color: var(--gold-2);
+    border: 4px solid #806638;
+    font-size: 56px;
+    line-height: 1;
+  }
+
+  .portrait-orientation-guard strong {
+    font-size: clamp(24px, 7vw, 38px);
+    text-shadow: 3px 3px 0 #090a0e;
+  }
+
+  .portrait-orientation-guard small {
+    color: #aeb7cf;
+    font-size: clamp(13px, 3.8vw, 17px);
+  }
+}
 
 .passive-inventory-host { position: relative; }
 .passive-inventory-open { min-height: 30px; padding: 3px 7px; color: #fff1bf; background: #202430; border: 2px solid #5d4d34; }
-.passive-inventory { position: absolute; top: calc(100% + 8px); right: 0; z-index: var(--z-popover); width: min(360px, calc(100vw - 28px)); max-height: min(420px, 68vh); overflow-y: auto; padding: 12px; color: var(--paper); background: #171a23; border: 3px solid var(--gold); box-shadow: 0 6px 0 rgba(0, 0, 0, 0.45); }
+.passive-inventory { position: absolute; top: calc(100% + 8px); right: 0; z-index: var(--z-popover); width: min(360px, calc(100vw - 28px)); max-width: calc(100vw - 20px); max-height: min(420px, 68vh); overflow-x: hidden; overflow-y: auto; padding: 12px; color: var(--paper); background: #171a23; border: 3px solid var(--gold); box-shadow: 0 6px 0 rgba(0, 0, 0, 0.45); white-space: normal; }
 .passive-inventory header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; color: #fff1bf; }
 .passive-inventory header button { min-width: 32px; min-height: 32px; color: var(--paper); background: #303549; border: 2px solid #0f1118; }
-.passive-inventory p { margin: 0; color: #c8c3b3; font-size: 13px; line-height: 1.45; }
+.passive-inventory p { min-width: 0; margin: 0; color: #c8c3b3; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 .passive-inventory ul { display: grid; gap: 8px; padding: 0; margin: 0; list-style: none; }
 .passive-inventory li { display: grid; gap: 4px; padding: 9px; background: #222735; border: 2px solid #353b4c; }
 .passive-inventory li b { color: var(--gold-2); }
-.passive-inventory li span { color: #d9e7ff; font-size: 12px; line-height: 1.4; }
+.passive-inventory li span { min-width: 0; color: #d9e7ff; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
 
 
 .select-seed {
   color: #aeb7cf !important;
   font-size: clamp(12px, 0.78vw, 15px) !important;
-}
-
-.character-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(12px, 1.2vw, 20px);
-  text-align: left;
-}
-
-.result-panel .character-card {
-  min-height: 0;
-  height: 100%;
-  padding: clamp(14px, 1.25vw, 20px);
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: flex-start;
-  gap: clamp(10px, 0.85vw, 14px);
-  color: var(--paper);
-  background:
-    linear-gradient(#3b4154, #242936 58%, #171a23) padding-box,
-    linear-gradient(#e7bd59, #755223) border-box;
-  border-color: transparent;
-  text-align: left;
 }
 
 .character-card-head {
@@ -2050,13 +2265,6 @@ button:focus-visible {
   background: #171a23;
   border: 2px solid var(--out);
   font-style: normal;
-}
-
-.character-card-body {
-  display: grid;
-  grid-template-columns: minmax(112px, 0.42fr) minmax(0, 1fr);
-  gap: clamp(12px, 1vw, 18px);
-  align-items: stretch;
 }
 
 .character-portrait {
@@ -2289,14 +2497,6 @@ button:focus-visible {
   filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.42));
 }
 
-.reward-choice.coin-fire .reward-coin {
-  background-image: url("./assets/coin-fire.png");
-}
-
-.reward-choice.coin-mana .reward-coin {
-  background-image: url("./assets/coin-mana.png");
-}
-
 .skill-rewards {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -2382,10 +2582,20 @@ button:focus-visible {
   background: url("./assets/coin-basic.png") center / contain no-repeat;
 }
 
+.socket-coin.fire,
+.socket-coin.granted-fire,
+.pop-coin.fire,
+.coin.fire,
+.coin.granted-fire,
+.reward-choice.coin-fire .reward-coin,
 .bag-choice-coin.coin-fire {
   background-image: url("./assets/coin-fire.png");
 }
 
+.socket-coin.mana,
+.pop-coin.mana,
+.coin.mana,
+.reward-choice.coin-mana .reward-coin,
 .bag-choice-coin.coin-mana {
   background-image: url("./assets/coin-mana.png");
 }
@@ -2576,9 +2786,7 @@ button:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .socket-coin.flipping,
   .socket.accept,
-  .socket.swap-accept,
   .float-text,
-  .coin.drag-cancel,
   .pile-flow,
   .rejection-chip,
   .pouch-circle.receiving,
@@ -2802,39 +3010,197 @@ button:focus-visible {
 
 /* ---------- P4.3 갈림길 (노드 선택) ---------- */
 .node-choice {
-  max-width: 640px;
-  margin: 40px auto;
-  padding: 20px;
+  width: min(960px, calc(100% - 24px));
+  max-width: 960px;
+  margin: 18px auto;
+  padding: 16px;
   text-align: center;
   color: #f3e9d2;
+  background: linear-gradient(180deg, rgba(28, 32, 44, 0.96), rgba(13, 16, 24, 0.96));
+  border: 3px solid var(--frame-edge);
+  box-shadow:
+    inset 0 0 0 2px #171a23,
+    0 6px 0 rgba(10, 11, 17, 0.5);
+}
+
+.node-choice-heading {
+  display: grid;
+  gap: 2px;
+}
+
+.node-choice-heading h2,
+.node-choice-heading p {
+  margin: 0;
 }
 
 .node-choice-sub {
   opacity: 0.8;
 }
 
-.node-choice-options {
-  display: flex;
-  gap: 16px;
-  justify-content: center;
-  margin-top: 16px;
+.run-map-viewport {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 10px auto 12px;
+  padding: 0 8px 8px;
+  scrollbar-color: var(--gold) #171a23;
+  scrollbar-width: thin;
+  overscroll-behavior-inline: contain;
+  scroll-behavior: smooth;
+  touch-action: pan-x;
 }
 
-.run-map { display: flex; align-items: center; justify-content: center; gap: 0; max-width: 680px; margin: 20px auto 16px; padding: 0; list-style: none; }
-.run-map li { position: relative; display: grid; justify-items: center; min-width: 34px; color: #788096; }
-.run-map li:not(:last-child)::after { content: ""; position: absolute; top: 14px; left: calc(50% + 12px); width: calc(100% - 18px); height: 3px; background: #485064; }
-.run-map li span { display: grid; place-items: center; width: 28px; height: 28px; z-index: 1; color: #d6dcec; background: #242a38; border: 2px solid #485064; border-radius: 50%; }
-.run-map li small { margin-top: 4px; font-size: 9px; }
-.run-map li.visited span { color: var(--ink); background: var(--gold); border-color: #fff1bf; }
-.run-map li.current span { color: #fff1bf; border-color: var(--gold-2); box-shadow: 0 0 0 3px rgba(242, 207, 91, 0.22); }
+.node-choice-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+  gap: 10px;
+  justify-content: center;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 10px;
+  background: rgba(20, 24, 34, 0.72);
+  border: 2px solid #383e50;
+}
+
+.run-map {
+  display: flex;
+  align-items: flex-start;
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  padding: 24px max(18px, calc(50% - 32px)) 2px;
+  list-style: none;
+}
+
+.run-map li {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  min-width: 64px;
+  padding-top: 4px;
+  color: #788096;
+}
+
+.run-map li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 25px;
+  left: calc(50% + 25px);
+  width: calc(100% - 50px);
+  height: 3px;
+  background: #485064;
+}
+
+.run-map li.act-start:not(:first-child) {
+  margin-left: 18px;
+  border-left: 2px dashed #7f6b42;
+}
+
+.run-map li.act-start::before {
+  content: attr(data-act-label);
+  position: absolute;
+  top: -23px;
+  left: 7px;
+  min-width: 42px;
+  padding: 2px 6px;
+  color: #fff1bf;
+  background: #302819;
+  border: 1px solid #8f7543;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.run-map-markers {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 44px;
+  padding: 5px;
+  background: #242a38;
+  border: 2px solid #485064;
+  clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 8px, 100% calc(100% - 8px), calc(100% - 8px) 100%, 8px 100%, 0 calc(100% - 8px), 0 8px);
+}
+
+.run-map-markers i {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-inline: -4px;
+  font-style: normal;
+}
+
+.run-map-markers svg {
+  max-width: 24px;
+  max-height: 24px;
+}
+
+.run-map-dot {
+  width: 8px !important;
+  height: 8px !important;
+  background: #737b91;
+  border-radius: 50%;
+}
+
+.run-map li small {
+  margin-top: 3px;
+  font-size: 10px;
+}
+
+.run-map li.future .run-map-markers {
+  opacity: 0.58;
+  filter: grayscale(0.8) brightness(0.78);
+}
+
+.run-map li.visited .run-map-markers {
+  opacity: 0.64;
+  filter: saturate(0.45) brightness(0.68);
+  border-color: #706446;
+}
+
+.run-map li.visited .run-map-markers::after {
+  content: "✓";
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: #171a23;
+  background: #b89a58;
+  border: 2px solid #171a23;
+  border-radius: 50%;
+  font-size: 10px;
+}
+
+.run-map li.visited:not(:last-child)::after {
+  background: #8d7848;
+}
+
+.run-map li.current {
+  color: #fff1bf;
+}
+
+.run-map li.current .run-map-markers {
+  background: #302b24;
+  border-color: var(--gold-2);
+  box-shadow:
+    0 0 0 3px rgba(242, 207, 91, 0.25),
+    0 0 12px rgba(242, 207, 91, 0.35);
+}
 
 .node-card {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  min-width: 180px;
-  padding: 18px 16px;
+  min-width: 0;
+  min-height: 94px;
+  padding: 10px 12px;
   border: 3px solid #6b5a2c;
   border-radius: 10px;
   background: rgba(20, 26, 40, 0.95);
@@ -2959,180 +3325,6 @@ button:focus-visible {
    원칙: 페이지 스크롤 금지 유지, 넓은 레일(카드·트레이)만 자체
    가로 스크롤, 패널(상점·이벤트·갈림길·보상)은 자체 세로 스크롤.
    ============================================================ */
-@media (max-width: 700px) {
-  .combat-shell {
-    min-height: 100svh;
-    min-height: 100dvh;
-    padding: calc(6px + env(safe-area-inset-top))
-      calc(6px + env(safe-area-inset-right))
-      calc(10px + env(safe-area-inset-bottom))
-      calc(6px + env(safe-area-inset-left));
-    gap: 6px;
-  }
-  .run-meta {
-    position: static;
-    transform: none;
-    width: 100%;
-    min-height: 0;
-    flex-wrap: wrap;
-    white-space: normal;
-    font-size: 10px;
-    gap: 6px;
-    padding: 4px 8px;
-  }
-  .run-meta strong {
-    font-size: 12px;
-  }
-  .battlefield {
-    padding: 26px 4px 0;
-    min-height: 190px;
-    gap: 4px;
-  }
-  .unit,
-  .enemy-line .unit {
-    min-width: 0;
-    gap: 4px;
-  }
-  .unit-plate,
-  .enemy-line .unit-plate {
-    width: clamp(118px, 44vw, 180px);
-    padding: 4px 7px;
-    gap: 3px;
-  }
-  .unit-name {
-    font-size: 12px;
-  }
-  .block-chip,
-  .burn-chip,
-  .poison-chip,
-  .heal-lock-chip,
-  .frost-chip,
-  .shock-chip,
-  .attack-buff-chip,
-  .passive-chip {
-    font-size: 9px;
-    padding: 1px 4px;
-  }
-  .hp-num {
-    font-size: 11px;
-  }
-  .intent {
-    font-size: 12px;
-    padding: 3px 6px;
-    gap: 4px;
-  }
-  .unit.player .sprite,
-  .unit.enemy .sprite,
-  .enemy-line .unit.enemy .sprite {
-    width: clamp(96px, 32vw, 150px);
-    height: clamp(80px, 26vw, 120px);
-  }
-  .sprite-frame.player,
-  .sprite-frame.enemy {
-    width: clamp(120px, 38vw, 170px);
-    height: clamp(120px, 38vw, 170px);
-    bottom: -12px;
-  }
-  .enemy-line {
-    gap: 4px;
-  }
-  /* 카드 레일: 자체 가로 스크롤 (터치 스와이프) — 겹침 레일 해제.
-     center 정렬은 오버플로 시 양측을 잘라먹으므로 flex-start. */
-  .skill-row {
-    overflow-x: auto;
-    overflow-y: visible;
-    -webkit-overflow-scrolling: touch;
-    justify-content: flex-start;
-    align-items: flex-start;
-    padding: 6px 28px 10px 4px;
-    gap: 8px;
-    scroll-snap-type: x proximity;
-  }
-  .skill-row .skill-card {
-    flex: 0 0 auto;
-    min-width: 118px;
-    max-width: 136px;
-    height: auto;
-    min-height: 194px;
-    padding: 10px 8px 8px;
-    scroll-snap-align: start;
-  }
-  .card-art {
-    width: 72px;
-    height: 46px;
-  }
-  .run-stage-shell {
-    min-height: 100svh;
-  }
-  .bottom-hud {
-    gap: 6px;
-    padding: 6px;
-  }
-  .hand-tray {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    justify-content: flex-start;
-    padding: 4px 28px 4px 4px;
-  }
-  /* 패널류: 자체 세로 스크롤로 하단 제어 도달 보장 */
-  .shop-screen,
-  .event-screen,
-  .node-choice {
-    max-width: 100%;
-    max-height: calc(100svh - 90px);
-    overflow-y: auto;
-    margin: 8px auto;
-    padding: 12px;
-  }
-  .node-choice-options {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .result-overlay .result-panel {
-    max-width: 96vw;
-    max-height: calc(100svh - 40px);
-    overflow-y: auto;
-  }
-  .title-overlay,
-  .run-menu-overlay,
-  .character-select-overlay {
-    padding: 12px;
-  }
-  .title-panel,
-  .title-confirm-panel,
-  .run-menu-panel,
-  .character-select-panel {
-    width: min(100%, calc(100vw - 24px));
-  }
-  .title-panel h1 {
-    white-space: normal;
-  }
-  .title-save-summary {
-    grid-template-columns: 1fr;
-  }
-  .character-grid {
-    grid-template-columns: 1fr;
-  }
-  .character-card-body {
-    grid-template-columns: minmax(105px, 0.38fr) minmax(0, 1fr);
-  }
-  .character-portrait {
-    min-height: 176px;
-  }
-  .run-menu-open {
-    top: max(8px, env(safe-area-inset-top));
-    right: max(8px, env(safe-area-inset-right));
-    min-width: 64px;
-    min-height: 40px;
-  }
-  .shop-section ul {
-    gap: 6px;
-  }
-  .shop-item {
-    padding: 6px 8px;
-    font-size: 12px;
-  }
-}
 
 @media (max-height: 500px) {
   .combat-shell {
@@ -3153,59 +3345,104 @@ button:focus-visible {
     font-size: 10px;
     padding: 3px 8px;
   }
-  .battlefield {
-    padding: 4px 24px 0;
-    min-height: 120px;
-  }
-  .unit.player .sprite,
-  .unit.enemy .sprite,
-  .enemy-line .unit.enemy .sprite {
-    width: clamp(80px, 16vw, 130px);
-    height: clamp(64px, 12vw, 100px);
-  }
-  .sprite-frame.player,
-  .sprite-frame.enemy {
-    width: clamp(100px, 18vw, 150px);
-    height: clamp(100px, 18vw, 150px);
-    bottom: -10px;
-  }
-  .unit-plate,
-  .enemy-line .unit-plate {
-    width: clamp(140px, 22vw, 220px);
-    padding: 3px 7px;
-  }
-  .skill-row {
+  .skill-card-rail {
     overflow-x: auto;
+    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     justify-content: flex-start;
     align-items: flex-start;
-    padding: 4px 28px 8px 4px;
-    scroll-snap-type: x proximity;
+    scroll-behavior: auto;
+    scroll-snap-type: none;
+    touch-action: pan-x;
   }
-  .skill-row .skill-card {
-    flex: 0 0 auto;
-    min-width: 104px;
-    max-width: 120px;
-    height: auto;
-    min-height: 0;
-    padding: 8px 8px 6px;
-    scroll-snap-align: start;
+  .skill-card-rail .skill-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px;
+    grid-template-rows: 25px 44px minmax(13px, 1fr) 44px;
+    flex: 0 0 216px;
+    width: 216px;
+    min-width: 216px;
+    max-width: 216px;
+    height: 136px;
+    min-height: 136px;
+    padding: 0 6px 6px;
+    gap: 2px 4px;
+    align-items: stretch;
+  }
+  .skill-card.lifted,
+  .skill-card:hover,
+  .skill-card:focus-visible,
+  .skill-card:has(:focus-visible),
+  .skill-card.resolving {
+    transform: none;
+  }
+  .skill-row-notices {
+    align-items: stretch;
+    max-height: 56px;
+    overflow: hidden;
+  }
+  .resolution-ticket-anchor .resolution-ticket {
+    max-height: 56px;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .combat-step-guide {
+    flex: 0 1 560px;
+    max-height: 56px;
+    padding: 3px 6px;
+    font-size: 9px;
   }
   .run-stage-shell {
     min-height: 100svh;
   }
-  /* 저높이 가로: 카드 아트를 접어 페이지 스크롤 없이 전 제어 노출 */
+  /* 저높이 가로: 아트는 축소하되 카드 골격을 유지한다. */
   .card-art {
-    display: none;
+    display: flex;
+    grid-column: 2;
+    grid-row: 2;
+    width: 48px;
+    height: 44px;
+    min-height: 44px;
   }
-  /* 효과 행 기본 접힘 — 장전(.lifted)·키보드 포커스 시 펼침 (정보 손실 없이 압축) */
-  .skill-card .card-effects {
+  .card-title {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    width: calc(100% + 12px);
+    margin: 0 -6px;
+    padding: 6px 4px 3px;
+  }
+  .sockets,
+  .consume-condition {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .skill-card .face-forecast {
+    position: absolute;
+    top: 72px;
+    right: 6px;
+    left: 6px;
+    z-index: 3;
+    width: auto;
     max-height: 34px;
-    overflow: hidden;
+  }
+  /* 효과 표는 고정 영역 안에서 자체 스크롤해 다음 카드의 골격을 밀어내지 않는다. */
+  .skill-card .card-effects {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    min-height: 0;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
   .skill-card.lifted .card-effects,
   .skill-card:focus-within .card-effects {
     max-height: none;
+  }
+  .skill-card .card-action {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    width: calc(100% + 12px);
+    margin: 0 -6px -6px;
   }
   .battlefield {
     min-height: 90px;
@@ -3226,22 +3463,19 @@ button:focus-visible {
     flex: 1 1 0;
     min-width: 0;
   }
-  .unit-plate,
-  .enemy-line .unit-plate {
-    width: min(100%, 220px);
-  }
   .unit.player .sprite,
   .unit.enemy .sprite,
   .enemy-line .unit.enemy .sprite {
-    width: clamp(64px, 12vw, 96px);
-    height: clamp(44px, 7.6vw, 62px);
-    --ground-lift: 3px;
+    width: clamp(48px, 7vw, 58px);
+    height: clamp(48px, 7vw, 58px);
+    margin-bottom: 0;
+    --ground-lift: 0;
   }
   .sprite-frame.player,
   .sprite-frame.enemy {
-    width: clamp(88px, 15vw, 120px);
-    height: clamp(88px, 15vw, 120px);
-    bottom: -8px;
+    width: 100%;
+    height: 100%;
+    bottom: 0;
   }
   .unit-plate,
   .enemy-line .unit-plate {
@@ -3252,6 +3486,17 @@ button:focus-visible {
   .unit-name {
     font-size: 12px;
   }
+  .plate-row {
+    flex-wrap: wrap;
+    gap: 3px;
+  }
+  .plate-row .chip-keyword,
+  .plate-row :is(.block-chip, .burn-chip, .poison-chip, .heal-lock-chip, .frost-chip, .shock-chip, .attack-buff-chip, .passive-chip) {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .intent {
     font-size: 11px;
     padding: 2px 5px;
@@ -3259,7 +3504,7 @@ button:focus-visible {
   .test-encounter-badge {
     display: none;
   }
-  .skill-row {
+  .skill-card-rail {
     padding: 2px 4px 0;
   }
   .bottom-hud {
@@ -3285,6 +3530,131 @@ button:focus-visible {
 @media (hover: hover) and (pointer: fine) and (max-height: 500px) {
   .skill-card:hover .card-effects {
     max-height: none;
+  }
+}
+
+@media (min-height: 501px) and (max-height: 800px) {
+  .combat-shell {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+  }
+  .battlefield {
+    min-height: 280px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .run-meta {
+    width: calc(100% - 84px);
+    margin-right: auto;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 2px 8px;
+    padding: 3px 6px;
+    white-space: normal;
+  }
+
+  .run-meta > :is(strong, span, .run-settings-host, .passive-inventory-host) {
+    flex: 0 0 auto;
+  }
+
+  .character-select-overlay {
+    padding: 6px;
+  }
+
+  .character-select-panel {
+    width: min(1120px, calc(100vw - 12px));
+    max-height: calc(100dvh - 12px);
+    gap: 4px;
+    padding: 8px;
+  }
+
+  .character-select-intro {
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+  }
+
+  .character-select-intro h1 {
+    font-size: 22px;
+  }
+
+  .character-select-intro > p {
+    display: none;
+  }
+
+  .character-select-intro .run-kicker,
+  .character-select-intro .select-seed {
+    font-size: 10px !important;
+  }
+
+  .character-portrait-rail {
+    gap: 5px;
+    margin: 0;
+  }
+
+  .result-panel .character-portrait-choice {
+    min-height: 66px;
+    grid-template-rows: 42px auto;
+    gap: 2px;
+    padding: 3px;
+  }
+
+  .character-portrait-mini {
+    min-height: 42px;
+  }
+
+  .character-detail {
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .character-detail-art {
+    min-height: 132px;
+  }
+
+  .character-card-info {
+    gap: 6px;
+  }
+
+  .character-section,
+  .character-trait {
+    gap: 3px;
+  }
+
+  .character-trait {
+    margin-top: 0;
+    padding: 6px;
+  }
+
+  .character-select-action {
+    min-height: 48px;
+    padding: 3px 8px;
+  }
+
+  .character-select-action .character-start {
+    min-width: 180px;
+    min-height: 44px;
+    padding-block: 6px;
+  }
+
+  .ready-enemy-preview {
+    min-height: 92px;
+  }
+
+  .ready-enemy-preview figure {
+    width: 100px;
+    padding: 4px;
+  }
+
+  .ready-enemy-sprite {
+    min-height: 62px;
+  }
+
+  .ready-enemy-sprite .sprite-frame {
+    width: 62px;
+    height: 62px;
   }
 }
 
@@ -3327,6 +3697,222 @@ button:focus-visible {
   }
   .card-title,
   .intent {
+    forced-color-adjust: auto;
+  }
+}
+
+/* ── R3 지도·전투 시각 위계 ───────────────────────────────────────── */
+.run-resource {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  color: #f4e5b4;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-resource::before {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: #171a23;
+  background: var(--gold);
+  border: 1px solid #fff1bf;
+  border-radius: 50%;
+  font-size: 9px;
+}
+
+.run-gold::before {
+  content: "G";
+}
+
+.run-attempt::before {
+  content: "↻";
+  color: #d9e7ff;
+  background: #39415a;
+  border-color: #7f8ab0;
+  font-size: 12px;
+}
+
+.run-passive-control {
+  flex: 0 0 auto;
+}
+
+.run-passive-control .passive-inventory-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  color: #f0e8ff;
+  background: #2d2440;
+  border-color: #7b6aa8;
+  font-size: 11px;
+}
+
+.run-passive-control .passive-inventory-open::before {
+  content: "★";
+  color: #d9c2ff;
+}
+
+/* 빈 슬롯은 슬롯 수를 읽을 수 있는 작은 윤곽 카드로 남기고, 실제 스킬의 정보 밀도를
+   흉내 내지 않는다. DOM 골격은 유지해 장착/회귀 계약에는 영향을 주지 않는다. */
+.skill-card-rail .skill-card.empty-slot {
+  width: 82px;
+  min-width: 82px;
+  max-width: 82px;
+  height: 112px;
+  min-height: 112px;
+  flex: 0 0 82px;
+  align-self: flex-start;
+  padding: 10px 6px 6px;
+  opacity: 0.34;
+  background: rgba(23, 26, 35, 0.32);
+  border: 2px dashed #596071;
+  box-shadow: none;
+  filter: grayscale(0.75);
+  cursor: default;
+}
+
+.skill-card-rail .skill-card.empty-slot:hover,
+.skill-card-rail .skill-card.empty-slot:focus-visible,
+.skill-card-rail .skill-card.empty-slot:has(:focus-visible) {
+  transform: none;
+  border-color: #70788d;
+  box-shadow: none;
+}
+
+.skill-card.empty-slot .card-title {
+  width: calc(100% + 12px);
+  margin: -10px -6px 0;
+  padding: 7px 2px;
+  color: #aeb4c3;
+  background: #252a36;
+  border-bottom: 2px solid #4d5363;
+  text-shadow: none;
+  font-size: 10px;
+}
+
+.skill-card.empty-slot :is(.sockets, .card-art, .card-effects, .repeat-label, .once-badge) {
+  display: none;
+}
+
+/* 속성 텍스트 토큰 — 기존 코인 팔레트와 같은 계열, 어두운 바탕에서 AA 대비 유지. */
+.character-coins .character-coin {
+  border-width: 2px;
+}
+
+.character-coins .coin-basic {
+  color: #f6e8bd;
+  background: #3c3527;
+  border-color: #a98a4d;
+}
+
+.character-coins .coin-fire,
+.consume-condition.element-fire,
+.card-effect-row.element-face .card-effect-badge,
+.card-effect-row .kw {
+  color: #ffe1c2;
+  background: #4b2417;
+  border-color: #c56b35;
+}
+
+.character-coins .coin-mana,
+.consume-condition.element-mana {
+  color: #dbe9ff;
+  background: #1f3358;
+  border-color: #6389c9;
+}
+
+.character-coins .coin-frost,
+.consume-condition.element-frost {
+  color: #dff8ff;
+  background: #1d4050;
+  border-color: #64a9bf;
+}
+
+.character-coins .coin-lightning,
+.consume-condition.element-lightning {
+  color: #fff3ad;
+  background: #49421b;
+  border-color: #c8ae36;
+}
+
+.character-coins .coin-blood,
+.consume-condition.element-blood {
+  color: #ffdbe0;
+  background: #541f2b;
+  border-color: #bf6073;
+}
+
+.consume-condition.met {
+  color: #17131b;
+  background: var(--gold-2);
+  border-color: #fff1bf;
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .node-choice {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 0.9fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 6px 12px;
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - 16px);
+    padding: 8px;
+  }
+
+  .node-choice-heading {
+    grid-column: 1 / -1;
+  }
+
+  .node-choice-heading .run-kicker {
+    display: none;
+  }
+
+  .node-choice-heading h2 {
+    font-size: 20px;
+  }
+
+  .run-map-viewport {
+    align-self: center;
+    margin: 0;
+  }
+
+  .node-choice-options {
+    min-width: 0;
+    align-self: stretch;
+    grid-template-columns: 1fr;
+    align-content: center;
+    overflow-y: auto;
+    padding: 6px;
+  }
+
+  .node-card {
+    display: grid;
+    grid-template-columns: 32px auto;
+    min-height: 58px;
+    padding: 6px 8px;
+    text-align: left;
+  }
+
+  .node-card .node-icon {
+    grid-row: 1 / 3;
+  }
+}
+
+@media (forced-colors: active) {
+  .run-map-markers,
+  .run-map li.act-start,
+  .run-resource::before,
+  .run-passive-control .passive-inventory-open,
+  .skill-card-rail .skill-card.empty-slot,
+  .character-coins .character-coin,
+  .consume-condition {
+    color: ButtonText;
+    background: Canvas;
+    border-color: ButtonText;
     forced-color-adjust: auto;
   }
 }
@@ -3413,6 +3999,23 @@ button:focus-visible {
   font-size: 20px;
 }
 
+.combat-help-host.prompted .combat-help-open {
+  color: #17131b;
+  background: var(--gold-2);
+  box-shadow:
+    0 0 0 3px var(--out),
+    0 0 0 6px rgba(242, 207, 91, 0.7);
+  animation: combat-help-pulse 0.8s steps(2) 5 alternate;
+}
+
+@keyframes combat-help-pulse {
+  to {
+    box-shadow:
+      0 0 0 3px var(--out),
+      0 0 0 11px rgba(242, 207, 91, 0.08);
+  }
+}
+
 .combat-help-panel {
   position: fixed;
   top: 64px;
@@ -3463,38 +4066,10 @@ button:focus-visible {
   gap: 4px;
 }
 
-.turn-resource-summary {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 2px 7px;
-  padding: 4px 7px;
-  color: #d9e7ff;
-  background: #171a23;
-  border: 2px solid #4c5268;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.turn-resource-summary span {
-  display: flex;
-  justify-content: space-between;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.turn-resource-summary .warn {
-  color: #ffcf96;
-}
-
 @media (min-width: 701px) {
   .turn-primary-controls {
     min-width: 120px;
     align-items: stretch;
-  }
-
-  .turn-resource-summary {
-    align-content: center;
-    padding-block: 2px;
   }
 
   .turn-primary-controls .end-turn {
@@ -3503,7 +4078,7 @@ button:focus-visible {
   }
 }
 
-@media (min-width: 701px) and (max-height: 760px) {
+@media (min-width: 701px) and (min-height: 501px) and (max-height: 760px) {
   .skill-card {
     height: 226px;
     min-height: 226px;
@@ -3523,12 +4098,31 @@ button:focus-visible {
   width: 100%;
 }
 
+.draw-penalty-host {
+  flex: 0 0 auto;
+  margin-right: 6px;
+}
+
+.draw-penalty-host .kw {
+  min-width: 68px;
+  min-height: 44px;
+  padding: 4px 7px;
+  color: #ffd9b0;
+  background: #4a2524;
+  border: 2px solid var(--flame);
+  white-space: nowrap;
+}
+
+.draw-penalty-badge {
+  font-size: 11px;
+}
+
 .coin-rail-nav,
 .coin-rail-position {
   display: none;
 }
 
-.combat-shell[data-tooltip-size="large"] :is(.preview-tip, .kw-tip, .pile-pop) {
+.combat-shell[data-tooltip-size="large"] :is(.kw-tip, .pile-pop) {
   font-size: calc(1em * var(--tooltip-font-scale, 1));
 }
 
@@ -3552,7 +4146,7 @@ button:focus-visible {
   box-shadow: inset 0 0 0 2px #08090d, 0 4px 0 rgba(0, 0, 0, 0.8);
 }
 
-.combat-shell[data-high-contrast="true"] :is(.card-effects, .turn-resource-summary) {
+.combat-shell[data-high-contrast="true"] .card-effects {
   color: #fffbea;
 }
 
@@ -3565,7 +4159,12 @@ button:focus-visible {
   transition-duration: 0.001ms !important;
 }
 
-@media (max-width: 700px), (max-height: 500px) {
+@media (max-height: 500px) {
+  .combat-shell > .run-meta {
+    margin-right: 0;
+    margin-left: auto;
+  }
+
   .combat-help-host {
     top: max(6px, env(safe-area-inset-top));
     left: max(6px, env(safe-area-inset-left));
@@ -3628,53 +4227,14 @@ button:focus-visible {
   .turn-primary-controls {
     min-width: 172px;
   }
-  .turn-resource-summary {
-    font-size: 12px;
-  }
 }
 
-@media (max-width: 700px) and (min-height: 501px) {
-  .bottom-hud {
-    display: grid;
-    grid-template-columns: 52px minmax(0, 1fr) 72px;
-    align-items: center;
-    gap: 6px;
-  }
-  .pouch {
-    justify-content: center;
-  }
-  .pouch > span {
-    display: none;
-  }
-  .coin-rail {
-    min-width: 0;
-  }
-  .coin-rail .coin {
-    width: 56px;
-    height: 56px;
-    flex-basis: 56px;
-  }
-  .pile-counts {
-    min-width: 0;
-  }
-  .turn-primary-controls {
-    grid-column: 1 / -1;
-    flex: 1 0 100%;
-    align-items: stretch;
-  }
-  .turn-primary-controls .end-turn {
-    min-height: 44px;
-    padding: 5px 7px;
-    font-size: 12px;
-  }
-  .turn-primary-controls .end-turn {
-    padding: 2px 4px;
-    font-size: 10px;
-    line-height: 1.1;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
+  .combat-help-host.prompted .combat-help-open {
+    animation: none;
+  }
+
   .combat-shell *,
   .combat-shell *::before,
   .combat-shell *::after {
@@ -3722,15 +4282,6 @@ button:focus-visible {
 }
 
 /* ── P6 — 3막 런 UI (휴식/보물/패시브/강화/소환 슬롯) ─────────────────── */
-.passive-count {
-  color: #d9ccf5;
-  border: 1px solid #7b6aa8;
-  background: #2d2440;
-  border-radius: 8px;
-  padding: 1px 6px;
-  font-size: 11px;
-}
-
 .rest-screen,
 .treasure-screen {
   display: flex;
@@ -3837,15 +4388,6 @@ button:focus-visible {
   margin-left: 3px;
 }
 
-@media (max-width: 700px) {
-  .summon-rail {
-    flex-direction: row;
-    min-width: 0;
-  }
-  .rest-upgrade-list {
-    max-height: 34vh;
-  }
-}
 
 .custody-pile {
   display: grid;
@@ -3911,7 +4453,7 @@ button:focus-visible {
   outline-offset: -4px;
 }
 
-@media (max-width: 700px), (max-height: 500px) {
+@media (max-height: 500px) {
   .custody-pile {
     min-width: 0;
     grid-column: 1 / -1;
@@ -3930,8 +4472,7 @@ button:focus-visible {
   }
   .summon-slot,
   .rest-upgrade,
-  .treasure-passive,
-  .passive-count {
+  .treasure-passive {
     border: 1px solid ButtonText;
   }
 }

@@ -2,7 +2,7 @@ import type { Command } from "@game/core";
 
 export type TargetingCommand = Extract<
   Command,
-  { type: "useImmediateFlipSkill" | "useFlipSkill" | "useConsumeSkill" }
+  { type: "useImmediateFlipSkill" | "useConsumeSkill" }
 >;
 
 export type TargetDirection = "left" | "right";
@@ -36,7 +36,6 @@ export const legalTargetsForCommand = (
 ): number[] =>
   commands.flatMap((candidate) =>
     (candidate.type === "useImmediateFlipSkill" ||
-      candidate.type === "useFlipSkill" ||
       candidate.type === "useConsumeSkill") &&
     sameTargetingBase(candidate, command) &&
     candidate.target !== undefined

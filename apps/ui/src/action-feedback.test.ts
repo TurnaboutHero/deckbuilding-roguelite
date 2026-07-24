@@ -33,7 +33,7 @@ describe("rejectionReason", () => {
     expect(rejectionReason(state, { type: "useImmediateFlipSkill", slot: slot(7), coins: [] }, contentDb)).toBe(REJECTION_TEXT.emptySlot);
 
     const locked = withSlotState(state, 4, { skillId: "flame-rampage" as never, cooldownRemaining: 0, usedThisCombat: true });
-    expect(rejectionReason(locked, { type: "useFlipSkill", slot: slot(4) }, contentDb)).toBe(REJECTION_TEXT.usedThisCombat);
+    expect(rejectionReason(locked, { type: "useImmediateFlipSkill", slot: slot(4), coins: [] }, contentDb)).toBe(REJECTION_TEXT.usedThisCombat);
   });
 
   it("explains missing or invalid immediate coins", () => {

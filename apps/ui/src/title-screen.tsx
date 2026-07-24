@@ -75,7 +75,7 @@ export const TitleScreen = ({
         <h1>코인플립 로그라이크</h1>
         {save === null ? (
           <p className="title-empty" data-testid="title-save-summary">
-            저장된 런이 없습니다.
+            운명을 뒤집을 새로운 원정을 시작하세요.
           </p>
         ) : (
           <dl className="title-save-summary" data-testid="title-save-summary">
@@ -96,17 +96,21 @@ export const TitleScreen = ({
           </dl>
         )}
         <div className="title-actions">
+          <div className="title-continue-group">
+            <button
+              className="secondary-action title-continue"
+              data-testid="title-continue"
+              disabled={save === null}
+              ref={primaryRef}
+              type="button"
+              onClick={onContinue}
+            >
+              이어하기
+            </button>
+            {save === null ? <small className="title-disabled-reason">저장된 런이 없습니다</small> : null}
+          </div>
           <button
-            data-testid="title-continue"
-            disabled={save === null}
-            ref={primaryRef}
-            type="button"
-            onClick={onContinue}
-          >
-            이어하기
-          </button>
-          <button
-            className="secondary-action"
+            className="title-primary-action"
             data-testid="title-new-run"
             type="button"
             onClick={() => (save === null ? onNewRun() : setConfirming(true))}

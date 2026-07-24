@@ -3,7 +3,7 @@ import { createCombat, type CombatState } from "@game/core";
 import { contentDb } from "@game/content";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { enemyIntentDamageTotal, IntentBadge, UnitPanel, unusedElementalCoinCount } from "./App";
+import { IntentBadge, UnitPanel, unusedElementalCoinCount } from "./App";
 import { KEYWORD_GLOSSARY } from "./keywords";
 
 const enemy = (overrides: Partial<CombatState["enemies"][number]>): CombatState["enemies"][number] => ({
@@ -263,17 +263,6 @@ describe("enemy telegraph UI", () => {
     expect(KEYWORD_GLOSSARY.healLock.label).toBe("회복 봉인");
     expect(KEYWORD_GLOSSARY.unusedElementalThreshold.label).toBe("미사용 속성 코인 경고");
     expect(KEYWORD_GLOSSARY.ringGrowth.label).toBe("나이테");
-  });
-
-  it("includes growth-scaled attacks in the visible incoming-damage total", () => {
-    expect(
-      enemyIntentDamageTotal([
-        enemy({
-          growthStacks: 2,
-          intent: { id: "charge", actions: [{ kind: "attack", damage: 20, damagePerGrowthPercent: 0.15 }] },
-        }),
-      ]),
-    ).toBe(26);
   });
 
   it("counts post-return elemental coins across hand and placed slots exactly once for M12", () => {

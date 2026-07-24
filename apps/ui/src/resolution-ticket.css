@@ -10,6 +10,12 @@
     0 4px 0 rgba(28, 23, 36, 0.55);
   font-size: 11px;
   line-height: 1.45;
+  opacity: 1;
+  transition: opacity 300ms linear;
+}
+
+.resolution-ticket.is-fading {
+  opacity: 0;
 }
 
 .resolution-ticket__header {

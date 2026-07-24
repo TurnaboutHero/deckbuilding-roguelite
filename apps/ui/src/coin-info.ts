@@ -1,4 +1,5 @@
-import type { ContentDb } from "@game/core";
+import { effectiveElements } from "@game/core";
+import type { CoinInstance, ContentDb, EffectAtom } from "@game/core";
 
 import { statusKo } from "./resolution-summary";
 
@@ -36,4 +37,28 @@ export const coinRewardDetailFor = (db: ContentDb, coin: string): string => {
   if ((procs.heads ?? []).length > 0) parts.push(`앞면 ${(procs.heads ?? []).map(procEffectText).join(" + ")}`);
   if ((procs.tails ?? []).length > 0) parts.push(`뒷면 ${(procs.tails ?? []).map(procEffectText).join(" + ")}`);
   return parts.length === 0 ? "속성 효과 없음" : parts.join(" · ");
+};
+
+export const coinFaceEffectsFor = (
+  db: ContentDb,
+  coin: CoinInstance,
+): { heads: EffectAtom[]; tails: EffectAtom[] } => {
+  const base = db.coins[String(coin.defId)];
+  const definitions = [
+    base,
+    ...effectiveElements(coin, db).flatMap((element) =>
+      Object.values(db.coins).filter((definition) => definition.element === element),
+    ),
+  ];
+  const unique = [
+    ...new Map(
+      definitions
+        .filter((definition): definition is NonNullable<typeof definition> => definition !== undefined)
+        .map((definition) => [String(definition.id), definition]),
+    ).values(),
+  ];
+  return {
+    heads: unique.flatMap((definition) => definition.procs?.heads ?? []),
+    tails: unique.flatMap((definition) => definition.procs?.tails ?? []),
+  };
 };

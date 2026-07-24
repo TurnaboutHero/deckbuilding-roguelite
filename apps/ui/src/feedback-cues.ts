@@ -64,10 +64,6 @@ export const feedbackCuesFor = (event: CombatEvent): FeedbackCue[] => {
       return [cue("unit-player", 420)];
     case "summonAoeGranted":
       return [cue(`summon-${event.uid}`, 380)];
-    case "coinPlaced":
-      return [cue(`coin-${Number(event.coin)}`, 360)];
-    case "coinUnplaced":
-      return [cue(`coin-${Number(event.coin)}`, 360)];
     case "skillUsed":
       return [cue(`skill-slot-${Number(event.slot)}`, 260)];
     case "enemyWindupStarted":

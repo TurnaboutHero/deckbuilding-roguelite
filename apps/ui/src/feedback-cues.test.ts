@@ -37,15 +37,6 @@ describe("feedbackCuesFor", () => {
     ]);
   });
 
-  it("maps coin placement and recovery to the rendered coin key", () => {
-    expect(keys({ type: "coinPlaced", coin: 4 as never, slot: 0 as never })).toEqual([
-      "coin-4",
-    ]);
-    expect(keys({ type: "coinUnplaced", coin: 4 as never, slot: 0 as never })).toEqual([
-      "coin-4",
-    ]);
-  });
-
   it("maps enemy telegraph feedback to the rendered enemy unit", () => {
     const intent = { id: "charge", actions: [{ kind: "attack" as const, damage: 12 }] };
     expect(keys({ type: "enemyWindupStarted", enemy: 1, intent, turnsLeft: 1, cancelThreshold: 8 })).toEqual([
